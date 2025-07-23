@@ -1,0 +1,3 @@
+iri	label	element type	definition	is a
+ex:Sam	Samuel Clemens	NamedIndividual	An instance of person who is wonderful	cco:Person
+ex:Mark	Mark Twain	NamedIndividual	An instance of person who is a writer	cco:Person
