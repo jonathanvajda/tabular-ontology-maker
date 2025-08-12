@@ -126,13 +126,12 @@
 
 
   <!-- Manage Predicate Modal -->
-  <div id="manage-predicate-modal" style="display:none; position:fixed; background:white; border:1px solid gray; padding:20px; z-index:1000; top:25%; left:30%; width:40%;">
+  <div id="manage-predicates-modal" style="display:none; position:fixed; background:white; border:1px solid gray; padding:20px; z-index:1000; top:25%; left:30%; width:40%;">
     <h2>Add Predicate Column</h2>
 
     <label for="predicate-select">Select a common predicate:</label><br>
     <select id="predicate-select" style="width:100%">
       <option value="">-- choose one --</option>
-      <option value="rdfs:isDefinedBy">rdfs:isDefinedBy</option>
       <option value="rdfs:seeAlso">rdfs:seeAlso</option>
       <option value="skos:example">skos:example</option>
       <option value="dcterms:bibliographicCitation">dcterms:bibliographicCitation</option>
@@ -160,7 +159,7 @@
 
     <div style="margin-top:12px; text-align:right;">
       <button id="manage-predicates-save-btn">Save & Close</button>
-      <button onclick="document.getElementById('manage-predicate-modal').style.display='none'">Cancel</button>
+      <button id="manage-predicates-cancel-btn">Cancel</button>
     </div>
   </div>
 
