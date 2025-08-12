@@ -15,11 +15,11 @@ function showToast(message, type = "success", duration = 3000) {
     toast.textContent = message;
 
     container.appendChild(toast);
-    setTimeout(() => toast.classList.add("show"), 10);
+    setTimeout(() => toast.classList.add("show"), 200);
 
     setTimeout(() => {
       toast.classList.remove("show");
-      setTimeout(() => container.removeChild(toast), 300);
+      setTimeout(() => container.removeChild(toast), 1000);
     }, duration);
   } catch (error) {
     console.error("Toast error:", error);
@@ -144,7 +144,7 @@ const getColumnDefinitions = () => {
       }, // Element Type
     { type: 'text' }, // Definition
     { type: 'text' }, // Is A (object only)
-    { type: 'text' } // rdfs:isDefinedBy
+    { type: 'text' } // cco2:ont00001760 ('is curated in ontology')
   ];
 };
 
@@ -161,7 +161,7 @@ const getInitialData = () => {
 
 const getColumnHeaders = () => {
   console.info('getColumnHeaders happened');
-  return ["iri", "label", "element type", "definition", "is a", "is defined by"].concat(customPredicates);
+  return ["iri", "label", "element type", "definition", "is a", "is curated in ontology"].concat(customPredicates);
 };
 
 const createTable = (container, data, colHeaders, columns) => {
@@ -293,23 +293,23 @@ function populateColumnsToggleUI() {
 hotInstance = createTable(container, getInitialData(), getColumnHeaders(), getColumnDefinitions(), applyHiddenColumnsToHot());
 
 /**
- * Sets rdfs:isDefinedBy value for rows with empty cells in that column,
+ * Sets cco2:ont00001760 ('is curated in ontology') value for rows with empty cells in that column,
  * using the ontology's IRI from ontology settings.
  */
-function setIsDefinedByForAllRows() {
+function setIsCuratedInForAllRows() {
   const settings = JSON.parse(localStorage.getItem("ontologySettings") || "{}");
   const ontologyIRI = settings["iri"];
 
   if (!ontologyIRI) {
-    console.warn("[setIsDefinedByForAllRows] Ontology IRI not found in settings");
+    console.warn("[setIsCuratedInForAllRows] Ontology IRI not found in settings");
     return;
   }
 
   const headers = hotInstance.getColHeader();
-  const columnIndex = headers.indexOf("is defined by");
+  const columnIndex = headers.indexOf("is curated in");
 
   if (columnIndex === -1) {
-    console.warn("[setIsDefinedByForAllRows] 'rdfs:isDefinedBy' column not found in table");
+    console.warn("[setIsCuratedInForAllRows] 'cco2:ont00001760' column not found in table");
     return;
   }
 
@@ -324,11 +324,11 @@ function setIsDefinedByForAllRows() {
     }
   }
 
-  console.info(`[setIsDefinedByForAllRows] Set for ${updatedCount} of ${totalRows} rows (only empty cells updated)`);
+  console.info(`[setIsCuratedInForAllRows] Set for ${updatedCount} of ${totalRows} rows (only empty cells updated)`);
 }
 
 
-setIsDefinedByForAllRows(); // This uses the ontology IRI from localStorage
+setIsCuratedInForAllRows(); // This uses the ontology IRI from localStorage
 
 
 window.getIsAPredicateForRow = (rowIndex) => {
@@ -388,7 +388,7 @@ const generateRdfString = (rows, format = 'ttl') => {
 
 
   rows.forEach((row) => {
-    const [subject, label, type, definition, isAObject, isDefinedBy] = row;
+    const [subject, label, type, definition, isAObject, isCuratedInOntology] = row;
     if (!subject || !type) return;
 
     writer.addQuad(N3.DataFactory.namedNode(subject),
@@ -414,10 +414,10 @@ const generateRdfString = (rows, format = 'ttl') => {
         N3.DataFactory.namedNode(isAObject));
     }
 
-    if (isDefinedBy) {
+    if (isCuratedInOntology) {
       writer.addQuad(N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode('rdfs:isDefinedBy'),
-        N3.DataFactory.literal(isDefinedBy));
+        N3.DataFactory.namedNode('cco2:ont00001760'), // 'cco2:ont00001760' is curated in ontology
+        N3.DataFactory.literal(isCuratedInOntology));
     }
 
     customPredicates.forEach((predicate, index) => {
@@ -521,7 +521,8 @@ const iriPrefixes = {
   dc: 'http://purl.org/dc/elements/1.1/',
   dcterms: 'http://purl.org/dc/terms/',
   obo: 'http://purl.obolibrary.org/obo/',
-  cco: 'https://www.commoncoreontologies.org/',
+  cco2: 'https://www.commoncoreontologies.org/',
+  cceo: 'http://www.ontologyrepository.com/CommonCoreOntologies/',
   iofcore: 'https://spec.industrialontologies.org/ontology/core/',
   ex: 'http://example.org/'
 };
@@ -818,7 +819,6 @@ function confirmAddPredicate() {
     applyHiddenColumnsByName();
 
     // 4) Close modal
-    document.getElementById('manage-predicates-modal').style.display = 'none';
     showToast('✅ Predicates/columns updated', 'success');
   } catch (e) {
     console.error('[ManagePredicates] confirmAddPredicate failed', e);
@@ -850,6 +850,23 @@ function saveManagePredicates() {
     showToast('❌ Failed to save column settings', 'error');
   }
 }
+
+document.getElementById('manage-predicates-save-btn')
+  .addEventListener('click', () => {
+  saveManagePredicates; // 👈 save visibility settings
+  document.getElementById('manage-predicates-modal').style.display = 'none';})
+
+document.getElementById('manage-predicates-cancel-btn')
+  .addEventListener('click', () => {
+    document.getElementById('manage-predicates-modal').style.display = 'none';
+  });
+
+// When opening the modal, remember to rebuild the checkboxes:
+document.getElementById('addPredicateBtn').addEventListener('click', () => {
+  document.getElementById('predicate-iri').value = '';
+  populateColumnsToggleUI(); // 👈 ensures the checkboxes reflect current table
+  document.getElementById('manage-predicates-modal').style.display = 'block';
+});
 
 
 /*
@@ -1193,7 +1210,10 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
     "definition": "definition",
     "is a": "is a",
     "subclass of": "is a",
-    "rdfs:subclassof": "is a"
+    "rdfs:subclassof": "is a",
+    "is curated in": "is curated in",
+    "is defined by": "is curated in",
+    "is curated in ontology": "is curated in"
     // Add more aliases as needed
   };
 
@@ -1343,7 +1363,7 @@ document.getElementById("ontologyImportsBtn").addEventListener("click", openImpo
 
 // Attach listener after DOM is ready
 document.getElementById("add-rows-btn").addEventListener("click", () => {
-  const count = parseInt(document.getElementById("rows-count").value, 10);
+  const count = parseInt(document.getElementById("row-count").value, 10);
   if (isNaN(count) || count < 1) {
     alert("Please enter a valid number of rows to add.");
     return;
@@ -1362,7 +1382,7 @@ document.getElementById("add-rows-btn").addEventListener("click", () => {
 document.getElementById('addPredicateBtn').addEventListener('click', () => {
   document.getElementById('predicate-iri').value = '';
   populateColumnsToggleUI();
-  document.getElementById('manage-predicate-modal').style.display = 'block';
+  document.getElementById('manage-predicates-modal').style.display = 'block';
   });
 document.getElementById("manage-prefixes-btn").addEventListener("click", function () {
   openPrefixManagerModal();
