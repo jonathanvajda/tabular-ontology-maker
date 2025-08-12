@@ -125,8 +125,8 @@
   </div>
 
 
-  <!-- Add Predicate Modal -->
-  <div id="add-predicate-modal" style="display:none; position:fixed; background:white; border:1px solid gray; padding:20px; z-index:1000; top:25%; left:30%; width:40%;">
+  <!-- Manage Predicate Modal -->
+  <div id="manage-predicate-modal" style="display:none; position:fixed; background:white; border:1px solid gray; padding:20px; z-index:1000; top:25%; left:30%; width:40%;">
     <h2>Add Predicate Column</h2>
 
     <label for="predicate-select">Select a common predicate:</label><br>
@@ -144,7 +144,24 @@
     <input type="text" id="predicate-iri" style="width:100%" placeholder="e.g. http://example.org/myPredicate"><br><br>
 
     <button onclick="confirmAddPredicate()">Add</button>
-    <button onclick="document.getElementById('add-predicate-modal').style.display='none'">Cancel</button>
+
+
+    <hr style="margin:12px 0">
+
+    <h3 style="margin:6px 0;">Show / Hide Columns</h3>
+    <!-- Optional quick actions -->
+    <div style="margin-top:8px;">
+      <button id="columns-select-all-btn" type="button">Select All</button>
+      <button id="columns-select-none-btn" type="button">Select None</button>
+    </div>
+    <div id="columns-toggle-list" style="max-height:220px; overflow:auto; border:1px solid #eee; padding:8px; font-size:.95em;">
+      <!-- JS populates checkboxes here -->
+    </div>
+
+    <div style="margin-top:12px; text-align:right;">
+      <button id="manage-predicates-save-btn">Save & Close</button>
+      <button onclick="document.getElementById('manage-predicate-modal').style.display='none'">Cancel</button>
+    </div>
   </div>
 
   <!-- Insert Data Modal -->

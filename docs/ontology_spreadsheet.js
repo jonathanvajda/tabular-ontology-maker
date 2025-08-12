@@ -168,26 +168,129 @@ const createTable = (container, data, colHeaders, columns) => {
   console.info('createTable happened');
   return new Handsontable(container, {
     
-    data,
-    colHeaders,
-    columns,
+    data: data,
+    colHeaders: colHeaders,
+    columns: columns,
     rowHeaders: true,
-    contextMenu: {
-      items: {
-        // keep defaults and add show all
-        ...Handsontable.plugins.ContextMenu.SEPARATOR,
-        hidden_columns_show: { name: 'Show column' },
-        hidden_columns_show_all: { name: 'Show all columns' }
-      }
-    },
-    hiddenColumns: { indicators: true }, // little triangle indicator
+    contextMenu: true,
+    hiddenColumns: { columns: loadHiddenColumns(), indicators: true }, // little triangle indicator
     licenseKey: 'non-commercial-and-evaluation'
   });
 };
 
+//
+function saveHiddenColumns(indices) {
+  try {
+    localStorage.setItem('hiddenColumns', JSON.stringify(indices || []));
+    console.info('[ManageColumns] Saved hidden columns:', indices);
+  } catch (e) {
+    console.error('[ManageColumns] Failed saving hidden columns', e);
+  }
+}
+
+function loadHiddenColumns() {
+  try {
+    var raw = localStorage.getItem('hiddenColumns');
+    var arr = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(arr)) return [];
+    return arr;
+  } catch (e) {
+    console.error('[ManageColumns] Failed loading hidden columns', e);
+    return [];
+  }
+}
+
+function applyHiddenColumnsToHot() {
+  try {
+    var indices = loadHiddenColumns();
+    hotInstance.updateSettings({ hiddenColumns: { columns: indices, indicators: true } });
+    console.info('[ManageColumns] Applied hidden columns to table:', indices);
+  } catch (e) {
+    console.error('[ManageColumns] Failed applying hidden columns', e);
+  }
+}
 
 
-hotInstance = createTable(container, getInitialData(), getColumnHeaders(), getColumnDefinitions());
+
+// Applies hidden columns to the current Handsontable instance
+function loadHiddenColumnNames() {
+  try {
+    const raw = localStorage.getItem('hiddenColumnNames');
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    console.error('[ManagePredicates] loadHiddenColumnNames failed', e);
+    return [];
+  }
+}
+
+// Returns array of hidden column indices for current HOT instance
+function saveHiddenColumnNames(names) {
+  try {
+    localStorage.setItem('hiddenColumnNames', JSON.stringify(names || []));
+    console.info('[ManagePredicates] Saved hidden names:', names);
+  } catch (e) {
+    console.error('[ManagePredicates] saveHiddenColumnNames failed', e);
+  }
+}
+
+/** Apply hidden names to current HOT by mapping names -> indices */
+function applyHiddenColumnsByName() {
+  if (!hotInstance) return;
+  try {
+    const headers = hotInstance.getColHeader();
+    const hiddenNames = new Set(loadHiddenColumnNames());
+    const indices = [];
+    headers.forEach((h, i) => {
+      if (hiddenNames.has(String(h))) indices.push(i);
+    });
+    hotInstance.updateSettings({ hiddenColumns: { columns: indices, indicators: true }});
+    console.info('[ManagePredicates] Applied hidden columns:', indices, '(names=', [...hiddenNames], ')');
+  } catch (e) {
+    console.error('[ManagePredicates] applyHiddenColumnsByName failed', e);
+  }
+}
+
+// Applies hidden columns to current HOT instance
+function populateColumnsToggleUI() {
+  try {
+    const container = document.getElementById('columns-toggle-list');
+    if (!container) return;
+    const headers = hotInstance.getColHeader();
+    const hidden = new Set(loadHiddenColumnNames());
+
+    container.innerHTML = '';
+    headers.forEach((name, idx) => {
+      const safeId = 'colvis-' + btoa(String(name)).replace(/=/g, '');
+      const row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.alignItems = 'center';
+      row.style.gap = '8px';
+      row.style.margin = '4px 0';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.id = safeId;
+      cb.dataset.name = String(name);
+      // checked = visible; unchecked = hidden
+      cb.checked = !hidden.has(String(name));
+
+      const label = document.createElement('label');
+      label.htmlFor = safeId;
+      label.textContent = String(name);
+
+      row.appendChild(cb);
+      row.appendChild(label);
+      container.appendChild(row);
+    });
+  } catch (e) {
+    console.error('[ManagePredicates] populateColumnsToggleUI failed', e);
+  }
+}
+
+
+
+hotInstance = createTable(container, getInitialData(), getColumnHeaders(), getColumnDefinitions(), applyHiddenColumnsToHot());
 
 /**
  * Sets rdfs:isDefinedBy value for rows with empty cells in that column,
@@ -669,45 +772,83 @@ function removeRowsFromBottom(n = 1) {
 */
 
 function confirmAddPredicate() {
-  const select = document.getElementById('predicate-select');
-  const iriInput = document.getElementById('predicate-iri');
+  try {
+    // 1) Handle add predicate (existing flow)
+    const select = document.getElementById('predicate-select');
+    const iriInput = document.getElementById('predicate-iri');
+    const selectedIRI = select?.value.trim() || '';
+    const customIRI  = iriInput?.value.trim() || '';
+    const finalIRI = customIRI || selectedIRI;
 
-  const selectedIRI = select?.value.trim() || "";
-  const customIRI = iriInput?.value.trim() || "";
+    if (finalIRI) {
+      if (customPredicates.includes(finalIRI)) {
+        alert("Predicate already added.");
+      } else {
+        customPredicates.push(finalIRI);
 
-  const finalIRI = customIRI || selectedIRI;
-  if (!finalIRI) return;
+        // Rebuild table with new predicate column appended
+        const newHeaders = getColumnHeaders().concat(customPredicates);
+        const newColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
+        const oldData = hotInstance.getData();
+        const elementTypes = getElementTypes();
 
-  // Avoid adding duplicates
-  if (customPredicates.includes(finalIRI)) {
-    alert("Predicate already added.");
-    return;
-  }
+        const cleanedRows = oldData.map(row => {
+          const fixedRow = [...row];
+          if (!elementTypes.includes(fixedRow[2])) fixedRow[2] = '';
+          const baseCols = getColumnHeaders().length; // count base headers
+          const existingCustomCount = Math.max(0, fixedRow.length - baseCols);
+          const missing = customPredicates.length - existingCustomCount;
+          return fixedRow.concat(Array(missing).fill(''));
+        });
 
-  customPredicates.push(finalIRI);
-  document.getElementById('add-predicate-modal').style.display = 'none';
-
-  const newHeaders = getColumnHeaders().concat(customPredicates);
-  const newColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
-
-  const oldData = hotInstance.getData();
-  const elementTypes = getElementTypes();
-
-  const cleanedRows = oldData.map(row => {
-    const fixedRow = [...row];
-
-    // Validate 'Element Type' (column index 2)
-    if (!elementTypes.includes(fixedRow[2])) {
-      fixedRow[2] = ""; // or default to "Class"
+        hotInstance.destroy();
+        hotInstance = createTable(container, cleanedRows, newHeaders, newColumns);
+      }
     }
 
-    const existingCustomCount = fixedRow.length - 5;
-    const missingCells = customPredicates.length - existingCustomCount;
-    return fixedRow.concat(Array(missingCells).fill(""));
-  });
+    // 2) Read visibility checkboxes and persist
+    const hiddenNames = [];
+    document.querySelectorAll('#columns-toggle-list input[type="checkbox"]').forEach(cb => {
+      const name = cb.dataset.name;
+      if (!cb.checked) hiddenNames.push(name); // unchecked = hidden
+    });
+    saveHiddenColumnNames(hiddenNames);
 
-  hotInstance.destroy();
-  hotInstance = createTable(container, cleanedRows, newHeaders, newColumns);
+    // 3) Apply to HOT
+    applyHiddenColumnsByName();
+
+    // 4) Close modal
+    document.getElementById('manage-predicates-modal').style.display = 'none';
+    showToast('✅ Predicates/columns updated', 'success');
+  } catch (e) {
+    console.error('[ManagePredicates] confirmAddPredicate failed', e);
+    showToast('❌ Failed to update predicates/columns', 'error');
+  }
+}
+
+// This function saves the current column visibility settings from the Manage Predicates modal.
+// It reads the visibility checkboxes, persists the hidden names, applies them to the current Hands
+function saveManagePredicates() {
+  try {
+    // Read visibility checkboxes and persist by name
+    const hiddenNames = [];
+    document
+      .querySelectorAll('#columns-toggle-list input[type="checkbox"]')
+      .forEach(cb => {
+        const name = cb.dataset.name;
+        if (!cb.checked) hiddenNames.push(name); // unchecked = hidden
+      });
+
+    saveHiddenColumnNames(hiddenNames);
+    applyHiddenColumnsByName();
+
+    // Close modal
+    document.getElementById('add-predicate-modal').style.display = 'none';
+    showToast('✅ Column visibility saved', 'success');
+  } catch (e) {
+    console.error('[ManagePredicates] saveManagePredicates failed', e);
+    showToast('❌ Failed to save column settings', 'error');
+  }
 }
 
 
@@ -989,7 +1130,8 @@ async function handleInsertDataSave() {
       container,
       mergedRows,
       getColumnHeaders().concat(customPredicates),
-      getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })))
+      getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' }))),
+      applyHiddenColumnsToHot()
     );
 
     
@@ -1219,7 +1361,8 @@ document.getElementById("add-rows-btn").addEventListener("click", () => {
 // Event Listeners for Predicate Management
 document.getElementById('addPredicateBtn').addEventListener('click', () => {
   document.getElementById('predicate-iri').value = '';
-  document.getElementById('add-predicate-modal').style.display = 'block';
+  populateColumnsToggleUI();
+  document.getElementById('manage-predicate-modal').style.display = 'block';
   });
 document.getElementById("manage-prefixes-btn").addEventListener("click", function () {
   openPrefixManagerModal();
