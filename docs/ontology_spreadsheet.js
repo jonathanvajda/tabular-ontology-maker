@@ -521,6 +521,7 @@ const iriPrefixes = {
   dc: 'http://purl.org/dc/elements/1.1/',
   dcterms: 'http://purl.org/dc/terms/',
   obo: 'http://purl.obolibrary.org/obo/',
+  oboInOwl: 'http://www.geneontology.org/formats/oboInOwl#',
   cco2: 'https://www.commoncoreontologies.org/',
   cceo: 'http://www.ontologyrepository.com/CommonCoreOntologies/',
   iofcore: 'https://spec.industrialontologies.org/ontology/core/',
@@ -788,7 +789,7 @@ function confirmAddPredicate() {
         customPredicates.push(finalIRI);
 
         // Rebuild table with new predicate column appended
-        const newHeaders = getColumnHeaders().concat(customPredicates);
+        const newHeaders = getColumnHeaders();
         const newColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
         const oldData = hotInstance.getData();
         const elementTypes = getElementTypes();
@@ -843,17 +844,17 @@ function saveManagePredicates() {
     applyHiddenColumnsByName();
 
     // Close modal
-    document.getElementById('add-predicate-modal').style.display = 'none';
-    showToast('✅ Column visibility saved', 'success');
+    document.getElementById('manage-predicates-modal').style.display = 'none';
+    showToast('✅ Saved predicate management settings', 'success');
   } catch (e) {
     console.error('[ManagePredicates] saveManagePredicates failed', e);
-    showToast('❌ Failed to save column settings', 'error');
+    showToast('❌ Failed to save predicate management settings', 'error');
   }
 }
 
 document.getElementById('manage-predicates-save-btn')
   .addEventListener('click', () => {
-  saveManagePredicates; // 👈 save visibility settings
+  saveManagePredicates(); // 👈 save visibility settings
   document.getElementById('manage-predicates-modal').style.display = 'none';})
 
 document.getElementById('manage-predicates-cancel-btn')
@@ -862,7 +863,7 @@ document.getElementById('manage-predicates-cancel-btn')
   });
 
 // When opening the modal, remember to rebuild the checkboxes:
-document.getElementById('addPredicateBtn').addEventListener('click', () => {
+document.getElementById('managePredicatesBtn').addEventListener('click', () => {
   document.getElementById('predicate-iri').value = '';
   populateColumnsToggleUI(); // 👈 ensures the checkboxes reflect current table
   document.getElementById('manage-predicates-modal').style.display = 'block';
@@ -1379,7 +1380,7 @@ document.getElementById("add-rows-btn").addEventListener("click", () => {
 });
 
 // Event Listeners for Predicate Management
-document.getElementById('addPredicateBtn').addEventListener('click', () => {
+document.getElementById('managePredicatesBtn').addEventListener('click', () => {
   document.getElementById('predicate-iri').value = '';
   populateColumnsToggleUI();
   document.getElementById('manage-predicates-modal').style.display = 'block';
