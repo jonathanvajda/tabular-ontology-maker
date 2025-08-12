@@ -167,10 +167,20 @@ const getColumnHeaders = () => {
 const createTable = (container, data, colHeaders, columns) => {
   console.info('createTable happened');
   return new Handsontable(container, {
+    
     data,
     colHeaders,
     columns,
     rowHeaders: true,
+    contextMenu: {
+      items: {
+        // keep defaults and add show all
+        ...Handsontable.plugins.ContextMenu.SEPARATOR,
+        hidden_columns_show: { name: 'Show column' },
+        hidden_columns_show_all: { name: 'Show all columns' }
+      }
+    },
+    hiddenColumns: { indicators: true }, // little triangle indicator
     licenseKey: 'non-commercial-and-evaluation'
   });
 };
@@ -612,17 +622,44 @@ function isValidOntology(content) {
 }
 
 
-/**
- * Adds N empty rows to the table
- */
+// Gets n rows to the bottom of the Handsontable instance.
+function getRowCountInput() {
+  const n = parseInt(document.getElementById("row-count").value, 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+
+// Listeners for adding rows
+document.getElementById("add-rows-btn").addEventListener("click", () => {
+  const n = getRowCountInput();
+  if (!n) { showToast("Enter a valid row count.", "error"); return; }
+  addRowsToTable(n);
+  showToast(`✅ ${n} row${n>1?'s':''} added`, "success");
+});
+
+// Listeners for removing rows
+document.getElementById("remove-rows-btn").addEventListener("click", () => {
+  const n = getRowCountInput();
+  if (!n) { showToast("Enter a valid row count.", "error"); return; }
+  removeRowsFromBottom(n);
+  showToast(`🗑️ ${n} row${n>1?'s':''} removed`, "info");
+});
+
+// This function adds n blank rows to the bottom of the Handsontable instance.
 function addRowsToTable(n = 1) {
-  if (!hotInstance || isNaN(n) || n < 1) return;
+  if (!hotInstance || n < 1) return;
+  const blankRow = getColumnHeaders().map(() => "");
+  const newRows = Array.from({ length: n }, () => [...blankRow]);
+  const current = hotInstance.getData();
+  hotInstance.loadData([...current, ...newRows]);
+}
 
-  const emptyRow = getColumnHeaders().map(() => "");  // blank row for each column
-  const currentData = hotInstance.getData();
-  const newData = [...currentData, ...Array(n).fill(emptyRow)];
-
-  hotInstance.loadData(newData);
+// This function deletes n rows from the bottom of the Handsontable instance.
+function removeRowsFromBottom(n = 1) {
+  if (!hotInstance || n < 1) return;
+  const total = hotInstance.countRows();
+  const toRemove = Math.min(n, total);
+  if (toRemove > 0) hotInstance.alter("remove_row", total - toRemove, toRemove);
 }
 
 
@@ -1163,8 +1200,8 @@ initializePrefixManagerListeners();
 document.getElementById("ontologyImportsBtn").addEventListener("click", openImportsModal);
 
 // Attach listener after DOM is ready
-document.getElementById("add-row-btn").addEventListener("click", () => {
-  const count = parseInt(document.getElementById("add-row-count").value, 10);
+document.getElementById("add-rows-btn").addEventListener("click", () => {
+  const count = parseInt(document.getElementById("rows-count").value, 10);
   if (isNaN(count) || count < 1) {
     alert("Please enter a valid number of rows to add.");
     return;
