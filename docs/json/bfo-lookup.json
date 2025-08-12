@@ -1,0 +1,724 @@
+[
+  {
+    "iri": "http://purl.org/dc/elements/1.1/contributor",
+    "type": "owl:AnnotationProperty",
+    "curie": "dc11:contributor",
+    "label": null,
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.org/dc/elements/1.1/identifier",
+    "type": "owl:AnnotationProperty",
+    "curie": "dc11:identifier",
+    "label": null,
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.org/dc/elements/1.1/license",
+    "type": "owl:AnnotationProperty",
+    "curie": "dc11:license",
+    "label": null,
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.org/dc/terms/description",
+    "type": "owl:AnnotationProperty",
+    "curie": "dc:description",
+    "label": null,
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.org/dc/terms/license",
+    "type": "owl:AnnotationProperty",
+    "curie": "dc:license",
+    "label": null,
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.org/dc/terms/title",
+    "type": "owl:AnnotationProperty",
+    "curie": "dc:title",
+    "label": null,
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://www.w3.org/2004/02/skos/core#altLabel",
+    "type": "owl:AnnotationProperty",
+    "curie": "skos:altLabel",
+    "label": null,
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://www.w3.org/2004/02/skos/core#definition",
+    "type": "owl:AnnotationProperty",
+    "curie": "skos:definition",
+    "label": null,
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://www.w3.org/2004/02/skos/core#example",
+    "type": "owl:AnnotationProperty",
+    "curie": "skos:example",
+    "label": null,
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://www.w3.org/2004/02/skos/core#prefLabel",
+    "type": "owl:AnnotationProperty",
+    "curie": "skos:prefLabel",
+    "label": null,
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://www.w3.org/2004/02/skos/core#scopeNote",
+    "type": "owl:AnnotationProperty",
+    "curie": "skos:scopeNote",
+    "label": null,
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000001",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000001",
+    "label": "entity",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000002",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000002",
+    "label": "continuant",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000003",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000003",
+    "label": "occurrent",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000004",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000004",
+    "label": "independent continuant",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000006",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000006",
+    "label": "spatial region",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000008",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000008",
+    "label": "temporal region",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000009",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000009",
+    "label": "two-dimensional spatial region",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000011",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000011",
+    "label": "spatiotemporal region",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000015",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000015",
+    "label": "process",
+    "synonym": [
+      "event"
+    ],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000016",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000016",
+    "label": "disposition",
+    "synonym": [
+      "internally-grounded realizable entity"
+    ],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000017",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000017",
+    "label": "realizable entity",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000018",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000018",
+    "label": "zero-dimensional spatial region",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000019",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000019",
+    "label": "quality",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000020",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000020",
+    "label": "specifically dependent continuant",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000023",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000023",
+    "label": "role",
+    "synonym": [
+      "externally-grounded realizable entity"
+    ],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000024",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000024",
+    "label": "fiat object part",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000026",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000026",
+    "label": "one-dimensional spatial region",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000027",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000027",
+    "label": "object aggregate",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000028",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000028",
+    "label": "three-dimensional spatial region",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000029",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000029",
+    "label": "site",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000030",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000030",
+    "label": "object",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000031",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000031",
+    "label": "generically dependent continuant",
+    "synonym": [
+      "g-dependent continuant"
+    ],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000034",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000034",
+    "label": "function",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000035",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000035",
+    "label": "process boundary",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000038",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000038",
+    "label": "one-dimensional temporal region",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000040",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000040",
+    "label": "material entity",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000140",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000140",
+    "label": "continuant fiat boundary",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000141",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000141",
+    "label": "immaterial entity",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000142",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000142",
+    "label": "fiat line",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000145",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000145",
+    "label": "relational quality",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000146",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000146",
+    "label": "fiat surface",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000147",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000147",
+    "label": "fiat point",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000148",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000148",
+    "label": "zero-dimensional temporal region",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000182",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000182",
+    "label": "history",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000202",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000202",
+    "label": "temporal interval",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000203",
+    "type": "owl:Class",
+    "curie": "obo:BFO_0000203",
+    "label": "temporal instant",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000054",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000054",
+    "label": "has realization",
+    "synonym": [
+      "realized in"
+    ],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000055",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000055",
+    "label": "realizes",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000056",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000056",
+    "label": "participates in",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000057",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000057",
+    "label": "has participant",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000058",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000058",
+    "label": "is concretized by",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000059",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000059",
+    "label": "concretizes",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000062",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000062",
+    "label": "preceded by",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000063",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000063",
+    "label": "precedes",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000066",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000066",
+    "label": "occurs in",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000084",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000084",
+    "label": "generically depends on",
+    "synonym": [
+      "g-depends on"
+    ],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000101",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000101",
+    "label": "is carrier of",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000108",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000108",
+    "label": "exists at",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000115",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000115",
+    "label": "has member part",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000117",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000117",
+    "label": "has occurrent part",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000121",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000121",
+    "label": "has temporal part",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000124",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000124",
+    "label": "location of",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000127",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000127",
+    "label": "material basis of",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000129",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000129",
+    "label": "member part of",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000132",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000132",
+    "label": "occurrent part of",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000139",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000139",
+    "label": "temporal part of",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000153",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000153",
+    "label": "temporally projects onto",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000171",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000171",
+    "label": "located in",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000176",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000176",
+    "label": "continuant part of",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000178",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000178",
+    "label": "has continuant part",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000183",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000183",
+    "label": "environs",
+    "synonym": [
+      "contains process"
+    ],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000184",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000184",
+    "label": "history of",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000185",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000185",
+    "label": "has history",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000194",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000194",
+    "label": "specifically depended on by",
+    "synonym": [
+      "s-depended on by"
+    ],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000195",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000195",
+    "label": "specifically depends on",
+    "synonym": [
+      "s-depends on"
+    ],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000196",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000196",
+    "label": "bearer of",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000197",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000197",
+    "label": "inheres in",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000199",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000199",
+    "label": "occupies temporal region",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000200",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000200",
+    "label": "occupies spatiotemporal region",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000210",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000210",
+    "label": "occupies spatial region",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000216",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000216",
+    "label": "spatially projects onto",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000218",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000218",
+    "label": "has material basis",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000221",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000221",
+    "label": "first instant of",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000222",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000222",
+    "label": "has first instant",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000223",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000223",
+    "label": "last instant of",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/BFO_0000224",
+    "type": "owl:ObjectProperty",
+    "curie": "obo:BFO_0000224",
+    "label": "has last instant",
+    "synonym": [],
+    "deprecated": false
+  },
+  {
+    "iri": "http://purl.obolibrary.org/obo/bfo.owl",
+    "type": "owl:Ontology",
+    "curie": "obo:bfo.owl",
+    "label": null,
+    "synonym": [],
+    "deprecated": false
+  }
+]
