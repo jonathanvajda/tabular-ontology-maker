@@ -151,10 +151,10 @@ const getColumnDefinitions = () => {
 const getInitialData = () => {
   console.info('getInitialData happened');
   return [
-    ["ex:Person", "Person", "Class", "A human person.", "ex:Agent", "ex:ExampleOntology"],
-    ["ex:Bob", "Bob", "NamedIndividual", "An instance of a Person.", "ex:Person", "ex:ExampleOntology"],
-    ["ex:hasVehicle", "has vehicle", "ObjectProperty", "x hasVehicle y iff x possesses y and y is a Vehicle.", "ex:Owns", "ex:ExampleOntology"],
-    ["ex:Automobile", "Automobile", "Class", "A ground vehicle that is designed to transport passengers.", "ex:GroundVehicle", "ex:ExampleOntology"],
+    ["ex:Person", "Person", "Class", "A human person.", "ex:Agent", "http://example.org/ExampleOntology"],
+    ["ex:Bob", "Bob", "NamedIndividual", "An instance of a Person.", "ex:Person", "http://example.org/ExampleOntology"],
+    ["ex:hasVehicle", "has vehicle", "ObjectProperty", "x hasVehicle y iff x possesses y and y is a Vehicle.", "ex:Owns", "http://example.org/ExampleOntology"],
+    ["ex:Automobile", "Automobile", "Class", "A ground vehicle that is designed to transport passengers.", "ex:GroundVehicle", "http://example.org/ExampleOntology"],
     ["", "", "", "", "", ""]
 ];
 };
