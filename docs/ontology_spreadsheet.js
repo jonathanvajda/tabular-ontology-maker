@@ -54,6 +54,24 @@ const getIsAPredicate = (elementType) => {
 };
 
 
+// Fetch the lookup file file once at startup
+async function loadVocabFrom(url, source = "External") {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!Array.isArray(data)) throw new Error("Index JSON must be an array");
+    addToVocabIndex(data, source);
+    console.info(`[vocab] Loaded ${data.length} entries from ${source}`);
+  } catch (e) {
+    console.error("[vocab] Failed to load index:", e);
+    showToast("⚠️ Could not load lookup index", "error");
+  }
+}
+
+// Load BFO+CCO compact index (your path)
+loadVocabFrom('./json/bfo-cco-lookup.json', 'BFO/CCO');
+
 /*
   These functions are used to manage ontology settings:
     generateOntologySettings creates a default ontology settings object and saves it to localStorage.
@@ -131,22 +149,54 @@ function saveOntologySettingsFromModal() {
 }
 
 
+// Gets the columns definitions for the Handsontable instance.
 const getColumnDefinitions = () => {
-  console.info('getColumnDefinitions happened');
-  console.log(window.Handsontable);
   return [
     { type: 'text' }, // IRI
     { type: 'text' }, // Label
-    { type: 'dropdown',
-            source: getElementTypes(),
-            strict: true,
-            allowInvalid: false
-      }, // Element Type
+    {
+      type: 'dropdown',
+      source: getElementTypes(),
+      strict: true,
+      allowInvalid: false
+    },                // Element Type
     { type: 'text' }, // Definition
-    { type: 'text' }, // Is A (object only)
-    { type: 'text' } // cco2:ont00001760 ('is curated in ontology')
+    {
+      // "Is A" with smart lookup
+      editor: 'autocomplete',
+      strict: false,
+      filter: false,
+      allowInvalid: true,
+      source: function (query, callback) {
+        try {
+          // infer type constraints from the row's Element Type
+          const row = this.row;
+          const elType = hotInstance.getDataAtCell(row, 2); // "element type"
+          let typeHint = null;
+          if (elType === 'Class' || elType === 'NamedIndividual') typeHint = 'Class';
+          else if (elType === 'ObjectProperty') typeHint = 'ObjectProperty';
+          else if (elType === 'DatatypeProperty') typeHint = 'DatatypeProperty';
+
+          const results = searchVocab(query, { typeHint, max: 50 });
+          callback(results.map(displayFor));
+        } catch (e) {
+          console.error('[IsA] source failed', e);
+          callback([]);
+        }
+      },
+      // Render a nice label in the cell even if we store an IRI
+      renderer: function (instance, td, row, col, prop, value, cellProperties) {
+        let text = value || '';
+        // If the cell stores an IRI, show a friendly label
+        const rec = vocabByIri.get(String(value).trim());
+        if (rec) text = displayFor(rec);
+        Handsontable.renderers.TextRenderer.apply(this, [instance, td, row, col, prop, text, cellProperties]);
+      }
+    },
+    { type: 'text' } // is curated in ontology
   ];
 };
+
 
 const getInitialData = () => {
   console.info('getInitialData happened');
@@ -288,9 +338,9 @@ function populateColumnsToggleUI() {
   }
 }
 
-
-
-hotInstance = createTable(container, getInitialData(), getColumnHeaders(), getColumnDefinitions(), applyHiddenColumnsToHot());
+// Initialize the Handsontable instance with initial data and column definitions
+hotInstance = createTable(container, getInitialData(), getColumnHeaders(), getColumnDefinitions(), applyHiddenColumnsToHot(), harvestRowsIntoVocab(getInitialData()));
+attachHotHooks();
 
 /**
  * Sets cco2:ont00001760 ('is curated in ontology') value for rows with empty cells in that column,
@@ -327,10 +377,158 @@ function setIsCuratedInForAllRows() {
   console.info(`[setIsCuratedInForAllRows] Set for ${updatedCount} of ${totalRows} rows (only empty cells updated)`);
 }
 
-
 setIsCuratedInForAllRows(); // This uses the ontology IRI from localStorage
 
+/*
+* This set of functions are used to assist the user with a quick lookup service.
+*/
 
+// global
+const vocabIndex = [];         // flat array of entries (from all sources)
+let vocabByIri = new Map();    // quick deref
+let vocabByCurie = new Map();
+let vocabByLabelLC = new Map(); 
+
+
+// Add entries to the index
+function addToVocabIndex(entries, source = "External") {
+  for (const e of entries) {
+    const rec = {
+      iri: e.iri,
+      curie: e.curie || iriToCurie(e.iri),
+      label: e.label || "",
+      type: e.type || "Class",
+      altLabels: Array.isArray(e.altLabels) ? e.altLabels : [],
+      source: e.source || source,
+      deprecated: !!e.deprecated
+    };
+    vocabIndex.push(rec);
+    vocabByIri.set(rec.iri, rec);
+    if (rec.curie) vocabByCurie.set(rec.curie, rec);
+    if (rec.label) vocabByLabelLC.set(rec.label.toLowerCase(), rec);
+    for (const alt of rec.altLabels) {
+      if (alt) vocabByLabelLC.set(String(alt).toLowerCase(), rec);
+    }
+  }
+}
+
+
+
+// quick CURIE builder using your existing prefixes
+function iriToCurie(iri) {
+  for (const [pfx, base] of Object.entries(iriPrefixes)) {
+    if (iri.startsWith(base)) return `${pfx}:${iri.slice(base.length)}`;
+  }
+  return null;
+}
+
+
+// This function searches the vocabulary index for terms matching the query.
+function searchVocab(q, { max = 50, typeHint = null } = {}) {
+  const term = (q || "").trim().toLowerCase();
+  if (!term) return [];
+
+  const pool = typeHint ? vocabIndex.filter(x => x.type === typeHint) : vocabIndex;
+
+  const score = (rec) => {
+    const fields = [
+      rec.label,
+      rec.curie || "",
+      rec.iri,
+      ...(rec.altLabels || [])
+    ].map(s => (s || "").toLowerCase());
+
+    if (fields.some(f => f === term)) return 0;          // exact
+    if (fields.some(f => f.startsWith(term))) return 1;  // prefix
+    if (fields.some(f => f.includes(term))) return 2;    // substring
+    return 9;
+  };
+
+  const hits = [];
+  for (const r of pool) {
+    const s = score(r);
+    if (s < 9) hits.push([s, r]);
+  }
+  hits.sort((a,b) => a[0] - b[0] || a[1].label.localeCompare(b[1].label));
+  return hits.slice(0, max).map(([,r]) => r);
+}
+
+function displayFor(rec) {
+  return `${rec.label || rec.curie || rec.iri} — ${(rec.curie || rec.iri)}`;
+}
+
+// Try to resolve whatever the user typed to an IRI
+function resolveToIri(value) {
+  if (!value) return null;
+  const v = String(value).trim();
+
+  // If they picked from the dropdown, it may be "Label — CURIE"
+  const maybeCode = v.includes("—") ? v.split("—").pop().trim() : v;
+
+  // Already a full IRI?
+  if (/^https?:\/\//i.test(maybeCode)) return maybeCode;
+
+  // CURIE?
+  if (maybeCode.includes(":")) {
+    const [pfx, local] = maybeCode.split(":");
+    const base = iriPrefixes[pfx];
+    if (base) return base + local;
+    // Or look up by known curie
+    const rec = vocabByCurie.get(maybeCode);
+    if (rec) return rec.iri;
+  }
+
+  // Label match (case-insensitive)
+  const byLabel = vocabByLabelLC.get(maybeCode.toLowerCase());
+  if (byLabel) return byLabel.iri;
+
+  // Last resort: if it looks like an IRI, return as-is
+  if (/^[a-z]+:/i.test(maybeCode)) return maybeCode;
+
+  return null;
+}
+
+
+
+// This function is used to harvest rows from a Handsontable instance into the vocabulary index.
+function harvestRowsIntoVocab(rows) {
+  const IRI_COL = 0, LABEL_COL = 1, TYPE_COL = 2;
+  const entries = [];
+  for (const r of rows) {
+    const iri = r[IRI_COL];
+    const label = r[LABEL_COL];
+    const type = r[TYPE_COL];
+    if (iri && type) {
+      entries.push({ iri, label: label || "", type: type, source: "Local" });
+    }
+  }
+  if (entries.length) addToVocabIndex(entries, "Local");
+}
+
+// This function normalizes "Is A" edits by resolving them to IRIs.
+function normalizeIsAEdits(changes) {
+  if (!Array.isArray(changes)) return;
+  for (const ch of changes) {
+    // [row, prop(or col index), oldValue, newValue]
+    const row = ch[0];
+    const prop = ch[1];
+    const newVal = ch[3];
+
+    // Resolve prop to column index
+    const col = (typeof prop === 'number') ? prop : hotInstance.propToCol(prop);
+    if (col !== 4) continue; // only "Is A" column
+
+    const iri = resolveToIri(newVal);
+    if (iri) ch[3] = iri; // overwrite with IRI to store canonically
+  }
+}
+
+function attachHotHooks() {
+  hotInstance.addHook('beforeChange', normalizeIsAEdits);
+}
+
+
+// This function checks if the element type is a predicate
 window.getIsAPredicateForRow = (rowIndex) => {
   const row = hot.getSourceDataAtRow(rowIndex);
   const elementType = row ? row[2] : null;
@@ -407,12 +605,21 @@ const generateRdfString = (rows, format = 'ttl') => {
         N3.DataFactory.literal(definition));
     }
 
+    // Handle "Is A" relationships
     const isAPredicate = getIsAPredicate(type);
     if (isAPredicate && isAObject) {
-      writer.addQuad(N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode(isAPredicate),
-        N3.DataFactory.namedNode(isAObject));
+      const objIri = resolveToIri(isAObject);
+      if (objIri) {
+        writer.addQuad(
+          N3.DataFactory.namedNode(subject),
+          N3.DataFactory.namedNode(isAPredicate),
+          N3.DataFactory.namedNode(objIri)
+        );
+      } else {
+        console.warn(`[export] Could not resolve IsA value "${isAObject}" to an IRI for subject ${subject}`);
+      }
     }
+
 
     if (isCuratedInOntology) {
       writer.addQuad(N3.DataFactory.namedNode(subject),
@@ -805,6 +1012,8 @@ function confirmAddPredicate() {
 
         hotInstance.destroy();
         hotInstance = createTable(container, cleanedRows, newHeaders, newColumns);
+        attachHotHooks();
+        harvestRowsIntoVocab(mergedRows);
       }
     }
 
@@ -1149,7 +1358,9 @@ async function handleInsertDataSave() {
       mergedRows,
       getColumnHeaders().concat(customPredicates),
       getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' }))),
-      applyHiddenColumnsToHot()
+      applyHiddenColumnsToHot(),
+      harvestRowsIntoVocab(mergedRows),
+      attachHotHooks()
     );
 
     
@@ -1214,7 +1425,10 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
     "rdfs:subclassof": "is a",
     "is curated in": "is curated in",
     "is defined by": "is curated in",
-    "is curated in ontology": "is curated in"
+    "is curated in ontology": "is curated in",
+    "cco2:ont00001760": "is curated in",
+    "cco2:ont00001753": "acronym",
+    "cceo:acronym": "acronym"
     // Add more aliases as needed
   };
 
