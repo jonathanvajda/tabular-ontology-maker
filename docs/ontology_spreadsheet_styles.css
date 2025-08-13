@@ -32,6 +32,19 @@ body {
   border-bottom: 1px solid #ccc;
 }
 
+/* Only affect the Handsontable inside #hot */
+#hot .handsontable .htCore td,
+#hot .handsontable .htCore th {
+  font-size: 14px;     /* bump as you like: 14–16 is common */
+  line-height: 1.3;    /* optional: nicer spacing */
+}
+
+/* Optional: a smidge more row height for readability */
+#hot .handsontable .ht_master .wtHolder {
+  line-height: 1.3;
+}
+
+
 .header-menu {
   position: absolute;
   top: 4px;
