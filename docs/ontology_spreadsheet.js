@@ -26,6 +26,22 @@ function showToast(message, type = "success", duration = 3000) {
   }
 }
 
+// Global prefix store (prepopulated)
+const iriPrefixes = {
+  owl: 'http://www.w3.org/2002/07/owl#',
+  rdf: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+  rdfs: 'http://www.w3.org/2000/01/rdf-schema#',
+  skos: 'http://www.w3.org/2004/02/skos/core#',
+  dc: 'http://purl.org/dc/elements/1.1/',
+  dcterms: 'http://purl.org/dc/terms/',
+  obo: 'http://purl.obolibrary.org/obo/',
+  oboInOwl: 'http://www.geneontology.org/formats/oboInOwl#',
+  cco2: 'https://www.commoncoreontologies.org/',
+  cceo: 'http://www.ontologyrepository.com/CommonCoreOntologies/',
+  iofcore: 'https://spec.industrialontologies.org/ontology/core/',
+  ex: 'http://example.org/'
+};
+
 const getElementTypes = () => {
   console.info('getElementTypes happened');
   return [
@@ -53,24 +69,11 @@ const getIsAPredicate = (elementType) => {
   }
 };
 
-
-// Fetch the lookup file file once at startup
-async function loadVocabFrom(url, source = "External") {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (!Array.isArray(data)) throw new Error("Index JSON must be an array");
-    addToVocabIndex(data, source);
-    console.info(`[vocab] Loaded ${data.length} entries from ${source}`);
-  } catch (e) {
-    console.error("[vocab] Failed to load index:", e);
-    showToast("⚠️ Could not load lookup index", "error");
-  }
-}
-
-// Load BFO+CCO compact index (your path)
-loadVocabFrom('./json/bfo-cco-lookup.json', 'BFO/CCO');
+// These indicies are used to store vocabulary entries
+const vocabIndex = [];         // flat array of entries (from all sources)
+let vocabByIri = new Map();    // quick deref
+let vocabByCurie = new Map();
+let vocabByLabelLC = new Map(); 
 
 /*
   These functions are used to manage ontology settings:
@@ -339,8 +342,10 @@ function populateColumnsToggleUI() {
 }
 
 // Initialize the Handsontable instance with initial data and column definitions
-hotInstance = createTable(container, getInitialData(), getColumnHeaders(), getColumnDefinitions(), applyHiddenColumnsToHot(), harvestRowsIntoVocab(getInitialData()));
+hotInstance = createTable(container, getInitialData(), getColumnHeaders(), getColumnDefinitions());
 attachHotHooks();
+applyHiddenColumnsToHot();
+harvestRowsIntoVocab(getInitialData());
 
 /**
  * Sets cco2:ont00001760 ('is curated in ontology') value for rows with empty cells in that column,
@@ -356,7 +361,7 @@ function setIsCuratedInForAllRows() {
   }
 
   const headers = hotInstance.getColHeader();
-  const columnIndex = headers.indexOf("is curated in");
+  const columnIndex = headers.indexOf("is curated in ontology");
 
   if (columnIndex === -1) {
     console.warn("[setIsCuratedInForAllRows] 'cco2:ont00001760' column not found in table");
@@ -379,158 +384,9 @@ function setIsCuratedInForAllRows() {
 
 setIsCuratedInForAllRows(); // This uses the ontology IRI from localStorage
 
-/*
-* This set of functions are used to assist the user with a quick lookup service.
-*/
-
-// global
-const vocabIndex = [];         // flat array of entries (from all sources)
-let vocabByIri = new Map();    // quick deref
-let vocabByCurie = new Map();
-let vocabByLabelLC = new Map(); 
-
-
-// Add entries to the index
-function addToVocabIndex(entries, source = "External") {
-  for (const e of entries) {
-    const rec = {
-      iri: e.iri,
-      curie: e.curie || iriToCurie(e.iri),
-      label: e.label || "",
-      type: e.type || "Class",
-      altLabels: Array.isArray(e.altLabels) ? e.altLabels : [],
-      source: e.source || source,
-      deprecated: !!e.deprecated
-    };
-    vocabIndex.push(rec);
-    vocabByIri.set(rec.iri, rec);
-    if (rec.curie) vocabByCurie.set(rec.curie, rec);
-    if (rec.label) vocabByLabelLC.set(rec.label.toLowerCase(), rec);
-    for (const alt of rec.altLabels) {
-      if (alt) vocabByLabelLC.set(String(alt).toLowerCase(), rec);
-    }
-  }
-}
-
-
-
-// quick CURIE builder using your existing prefixes
-function iriToCurie(iri) {
-  for (const [pfx, base] of Object.entries(iriPrefixes)) {
-    if (iri.startsWith(base)) return `${pfx}:${iri.slice(base.length)}`;
-  }
-  return null;
-}
-
-
-// This function searches the vocabulary index for terms matching the query.
-function searchVocab(q, { max = 50, typeHint = null } = {}) {
-  const term = (q || "").trim().toLowerCase();
-  if (!term) return [];
-
-  const pool = typeHint ? vocabIndex.filter(x => x.type === typeHint) : vocabIndex;
-
-  const score = (rec) => {
-    const fields = [
-      rec.label,
-      rec.curie || "",
-      rec.iri,
-      ...(rec.altLabels || [])
-    ].map(s => (s || "").toLowerCase());
-
-    if (fields.some(f => f === term)) return 0;          // exact
-    if (fields.some(f => f.startsWith(term))) return 1;  // prefix
-    if (fields.some(f => f.includes(term))) return 2;    // substring
-    return 9;
-  };
-
-  const hits = [];
-  for (const r of pool) {
-    const s = score(r);
-    if (s < 9) hits.push([s, r]);
-  }
-  hits.sort((a,b) => a[0] - b[0] || a[1].label.localeCompare(b[1].label));
-  return hits.slice(0, max).map(([,r]) => r);
-}
-
-function displayFor(rec) {
-  return `${rec.label || rec.curie || rec.iri} — ${(rec.curie || rec.iri)}`;
-}
-
-// Try to resolve whatever the user typed to an IRI
-function resolveToIri(value) {
-  if (!value) return null;
-  const v = String(value).trim();
-
-  // If they picked from the dropdown, it may be "Label — CURIE"
-  const maybeCode = v.includes("—") ? v.split("—").pop().trim() : v;
-
-  // Already a full IRI?
-  if (/^https?:\/\//i.test(maybeCode)) return maybeCode;
-
-  // CURIE?
-  if (maybeCode.includes(":")) {
-    const [pfx, local] = maybeCode.split(":");
-    const base = iriPrefixes[pfx];
-    if (base) return base + local;
-    // Or look up by known curie
-    const rec = vocabByCurie.get(maybeCode);
-    if (rec) return rec.iri;
-  }
-
-  // Label match (case-insensitive)
-  const byLabel = vocabByLabelLC.get(maybeCode.toLowerCase());
-  if (byLabel) return byLabel.iri;
-
-  // Last resort: if it looks like an IRI, return as-is
-  if (/^[a-z]+:/i.test(maybeCode)) return maybeCode;
-
-  return null;
-}
-
-
-
-// This function is used to harvest rows from a Handsontable instance into the vocabulary index.
-function harvestRowsIntoVocab(rows) {
-  const IRI_COL = 0, LABEL_COL = 1, TYPE_COL = 2;
-  const entries = [];
-  for (const r of rows) {
-    const iri = r[IRI_COL];
-    const label = r[LABEL_COL];
-    const type = r[TYPE_COL];
-    if (iri && type) {
-      entries.push({ iri, label: label || "", type: type, source: "Local" });
-    }
-  }
-  if (entries.length) addToVocabIndex(entries, "Local");
-}
-
-// This function normalizes "Is A" edits by resolving them to IRIs.
-function normalizeIsAEdits(changes) {
-  if (!Array.isArray(changes)) return;
-  for (const ch of changes) {
-    // [row, prop(or col index), oldValue, newValue]
-    const row = ch[0];
-    const prop = ch[1];
-    const newVal = ch[3];
-
-    // Resolve prop to column index
-    const col = (typeof prop === 'number') ? prop : hotInstance.propToCol(prop);
-    if (col !== 4) continue; // only "Is A" column
-
-    const iri = resolveToIri(newVal);
-    if (iri) ch[3] = iri; // overwrite with IRI to store canonically
-  }
-}
-
-function attachHotHooks() {
-  hotInstance.addHook('beforeChange', normalizeIsAEdits);
-}
-
-
 // This function checks if the element type is a predicate
 window.getIsAPredicateForRow = (rowIndex) => {
-  const row = hot.getSourceDataAtRow(rowIndex);
+  const row = hotInstance.getSourceDataAtRow(rowIndex);
   const elementType = row ? row[2] : null;
   return getIsAPredicate(elementType);
 };
@@ -719,22 +575,6 @@ function toPascalCase(str) {
 
 // Prefix Manager Logic
 
-// Global prefix store (prepopulated)
-const iriPrefixes = {
-  owl: 'http://www.w3.org/2002/07/owl#',
-  rdf: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
-  rdfs: 'http://www.w3.org/2000/01/rdf-schema#',
-  skos: 'http://www.w3.org/2004/02/skos/core#',
-  dc: 'http://purl.org/dc/elements/1.1/',
-  dcterms: 'http://purl.org/dc/terms/',
-  obo: 'http://purl.obolibrary.org/obo/',
-  oboInOwl: 'http://www.geneontology.org/formats/oboInOwl#',
-  cco2: 'https://www.commoncoreontologies.org/',
-  cceo: 'http://www.ontologyrepository.com/CommonCoreOntologies/',
-  iofcore: 'https://spec.industrialontologies.org/ontology/core/',
-  ex: 'http://example.org/'
-};
-
 // Show Prefix Manager modal
 function showPrefixManagerModal() {
   populatePrefixTable();
@@ -855,6 +695,166 @@ function openPrefixManagerModal() {
 }
 
 
+/*
+* This set of functions are used to assist the user with a quick lookup service.
+*/
+
+// Add entries to the index
+function addToVocabIndex(entries, source = "External") {
+  for (const e of entries) {
+    const rec = {
+      iri: e.iri,
+      curie: e.curie || iriToCurie(e.iri),
+      label: e.label || "",
+      type: e.type || "Class",
+      altLabels: Array.isArray(e.altLabels) ? e.altLabels : [],
+      source: e.source || source,
+      deprecated: !!e.deprecated
+    };
+    vocabIndex.push(rec);
+    vocabByIri.set(rec.iri, rec);
+    if (rec.curie) vocabByCurie.set(rec.curie, rec);
+    if (rec.label) vocabByLabelLC.set(rec.label.toLowerCase(), rec);
+    for (const alt of rec.altLabels) {
+      if (alt) vocabByLabelLC.set(String(alt).toLowerCase(), rec);
+    }
+  }
+}
+
+// Fetch the lookup file file once at startup
+async function loadVocabFrom(url, source = "External") {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!Array.isArray(data)) throw new Error("Index JSON must be an array");
+    addToVocabIndex(data, source);
+    console.info(`[vocab] Loaded ${data.length} entries from ${source}`);
+  } catch (e) {
+    console.error("[vocab] Failed to load index:", e);
+    showToast("⚠️ Could not load lookup index", "error");
+  }
+}
+
+// Load BFO+CCO compact index (your path)
+loadVocabFrom('./json/bfo-cco-lookup.json', 'BFO/CCO');
+
+// quick CURIE builder using your existing prefixes
+function iriToCurie(iri) {
+  for (const [pfx, base] of Object.entries(iriPrefixes)) {
+    if (iri.startsWith(base)) return `${pfx}:${iri.slice(base.length)}`;
+  }
+  return null;
+}
+
+
+// This function searches the vocabulary index for terms matching the query.
+function searchVocab(q, { max = 50, typeHint = null } = {}) {
+  const term = (q || "").trim().toLowerCase();
+  if (!term) return [];
+
+  const pool = typeHint ? vocabIndex.filter(x => x.type === typeHint) : vocabIndex;
+
+  const score = (rec) => {
+    const fields = [
+      rec.label,
+      rec.curie || "",
+      rec.iri,
+      ...(rec.altLabels || [])
+    ].map(s => (s || "").toLowerCase());
+
+    if (fields.some(f => f === term)) return 0;          // exact
+    if (fields.some(f => f.startsWith(term))) return 1;  // prefix
+    if (fields.some(f => f.includes(term))) return 2;    // substring
+    return 9;
+  };
+
+  const hits = [];
+  for (const r of pool) {
+    const s = score(r);
+    if (s < 9) hits.push([s, r]);
+  }
+  hits.sort((a,b) => a[0] - b[0] || a[1].label.localeCompare(b[1].label));
+  return hits.slice(0, max).map(([,r]) => r);
+}
+
+function displayFor(rec) {
+  return `${rec.label || rec.curie || rec.iri} — ${(rec.curie || rec.iri)}`;
+}
+
+// Try to resolve whatever the user typed to an IRI
+function resolveToIri(value) {
+  if (!value) return null;
+  const v = String(value).trim();
+
+  // If they picked from the dropdown, it may be "Label — CURIE"
+  const maybeCode = v.includes("—") ? v.split("—").pop().trim() : v;
+
+  // Already a full IRI?
+  if (/^https?:\/\//i.test(maybeCode)) return maybeCode;
+
+  // CURIE?
+  if (maybeCode.includes(":")) {
+    const [pfx, local] = maybeCode.split(":");
+    const base = iriPrefixes[pfx];
+    if (base) return base + local;
+    // Or look up by known curie
+    const rec = vocabByCurie.get(maybeCode);
+    if (rec) return rec.iri;
+  }
+
+  // Label match (case-insensitive)
+  const byLabel = vocabByLabelLC.get(maybeCode.toLowerCase());
+  if (byLabel) return byLabel.iri;
+
+  // Last resort: if it looks like an IRI, return as-is
+  if (/^[a-z]+:/i.test(maybeCode)) return maybeCode;
+
+  return null;
+}
+
+
+
+// This function is used to harvest rows from a Handsontable instance into the vocabulary index.
+function harvestRowsIntoVocab(rows) {
+  const IRI_COL = 0, LABEL_COL = 1, TYPE_COL = 2;
+  const entries = [];
+  for (const r of rows) {
+    const iri = r[IRI_COL];
+    const label = r[LABEL_COL];
+    const type = r[TYPE_COL];
+    if (iri && type) {
+      entries.push({ iri, label: label || "", type: type, source: "Local" });
+    }
+  }
+  if (entries.length) addToVocabIndex(entries, "Local");
+}
+
+// This function normalizes "Is A" edits by resolving them to IRIs.
+function normalizeIsAEdits(changes) {
+  if (!Array.isArray(changes)) return;
+  for (const ch of changes) {
+    // [row, prop(or col index), oldValue, newValue]
+    const row = ch[0];
+    const prop = ch[1];
+    const newVal = ch[3];
+
+    // Resolve prop to column index
+    const col = (typeof prop === 'number') ? prop : hotInstance.propToCol(prop);
+    if (col !== 4) continue; // only "Is A" column
+
+    const iri = resolveToIri(newVal);
+    if (iri) ch[3] = iri; // overwrite with IRI to store canonically
+  }
+}
+
+function attachHotHooks() {
+  hotInstance.addHook('beforeChange', normalizeIsAEdits);
+}
+
+
+// This function opens the ontology imports modal and populates it with current imports.
+// It retrieves the imports from the ontology settings and displays them with their status.
 function openImportsModal() {
   const modal = document.getElementById("ontology-imports-modal");
   const listContainer = document.getElementById("import-list");
@@ -881,6 +881,8 @@ function openImportsModal() {
   modal.style.display = "block";
 }
 
+
+// This function handles the file upload for ontology imports.
 function handleImportFileUpload(event, iri) {
   const file = event.target.files[0];
   if (!file) return;
@@ -905,6 +907,7 @@ function handleImportFileUpload(event, iri) {
   reader.readAsText(file);
 }
 
+// This function adds a new import IRI to the ontology settings.
 function addImportIRI() {
   const iriInput = document.getElementById("new-import-iri");
   const iri = iriInput.value.trim();
@@ -1013,7 +1016,7 @@ function confirmAddPredicate() {
         hotInstance.destroy();
         hotInstance = createTable(container, cleanedRows, newHeaders, newColumns);
         attachHotHooks();
-        harvestRowsIntoVocab(mergedRows);
+        harvestRowsIntoVocab(cleanedRows);
       }
     }
 
