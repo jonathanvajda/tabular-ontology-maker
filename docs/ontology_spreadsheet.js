@@ -94,33 +94,88 @@ function getSelectedDelimiter() {
 }
 
 function updateOntologyPreview() {
-  const base = document.getElementById("ontology-base-iri-input").value;
-  const label = document.getElementById("ontology-label-input").value;
-  const creator = document.getElementById("ontology-creator-input").value;
-  const description = document.getElementById("ontology-description-input").value;
-  const delimiter = getSelectedDelimiter();
+  try {
+    const base = (document.getElementById("ontology-base-iri-input").value || '').trim() || 'http://example.org';
+    const label = (document.getElementById("ontology-label-input").value || '').trim() || 'Example Ontology';
+    const delimiter = getSelectedDelimiter();
+    const { year, month, day } = getCurrentDateParts();
+    const normalizedLabel = toPascalCase(label);
 
-  const settings = generateOntologySettings(base, label, creator, description, delimiter);
-
-  document.getElementById("version-iri-preview").textContent = settings["owl:versionIRI"];
-  document.getElementById("version-info-preview").textContent = settings["owl:versionInfo"];
+    // Only update the preview text — do NOT write to localStorage here.
+    document.getElementById("version-iri-preview").textContent =
+      `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`;
+    document.getElementById("version-info-preview").textContent = `${year}-${month}-${day}`;
+  } catch (e) {
+    console.error("[Preview] Failed to update preview", e);
+  }
 }
 
-function generateOntologySettings(base = "http://example.org", label = "Example Ontology", creator = "Barry Guarino", description = "An example ontology", delimiter = "/") {
+function generateOntologySettings(
+  base = "http://example.org",
+  label = "Example Ontology",
+  creator = "Barry Guarino",
+  description = "An example ontology",
+  delimiter = "/",
+  iriMode = "opaque",                 // "opaque" | "readable"
+  opaqueLeading = "ont",
+  opaqueDigits = 6,
+  opaqueStart = 1,
+  readableCase = "PascalCase"         // "PascalCase" | "camelCase" | "snake_case"
+) {
   const { year, month, day } = getCurrentDateParts();
   const normalizedLabel = toPascalCase(label);
 
   const settings = {
-    "iri": `${base}${delimiter}${normalizedLabel}`,
+    iri: `${base}${delimiter}${normalizedLabel}`,
     "owl:versionIRI": `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`,
     "owl:versionInfo": `${year}-${month}-${day}`,
     "rdfs:label": label,
     "dcterms:creator": creator,
-    "dcterms:description": description
+    "dcterms:description": description,
+
+    // NEW:
+    iriMode,
+    opaqueLeading,
+    opaqueDigits,
+    opaqueStart,
+    readableCase,
+    delimiter,     // keep delimiter explicitly too
+    base           // store base, handy later
   };
 
   localStorage.setItem("ontologySettings", JSON.stringify(settings));
   return settings;
+}
+
+function getEffectiveOntologySettings() {
+  const stored = loadOntologySettings() || {};
+  const modal = document.getElementById("ontology-settings-modal");
+
+  // If modal is open, prefer the values the user currently sees
+  if (modal && modal.style.display !== "none") {
+    const base = (document.getElementById("ontology-base-iri-input")?.value || '').trim() || stored.base || 'http://example.org';
+    const delimiter = getSelectedDelimiter() || stored.delimiter || '/';
+    const iriMode = document.querySelector('input[name="iri-mode"]:checked')?.value || stored.iriMode || 'opaque';
+
+    const opaqueLeadingInput = (document.getElementById("opaque-leading")?.value || '').trim();
+    const opaqueDigitsInput  = parseInt(document.getElementById("opaque-digits")?.value, 10);
+    const opaqueStartInput   = parseInt(document.getElementById("opaque-start")?.value, 10);
+    const readableCase       = document.getElementById("readable-case")?.value || stored.readableCase || 'PascalCase';
+
+    return {
+      ...stored,
+      base,
+      delimiter,
+      iriMode,
+      opaqueLeading: opaqueLeadingInput || stored.opaqueLeading || 'ont',
+      opaqueDigits: Number.isFinite(opaqueDigitsInput) ? opaqueDigitsInput : (stored.opaqueDigits || 6),
+      opaqueStart:  Number.isFinite(opaqueStartInput)  ? opaqueStartInput  : (stored.opaqueStart  || 1),
+      readableCase
+    };
+  }
+
+  // Otherwise, fall back to saved settings
+  return stored;
 }
 
 function loadOntologySettings() {
@@ -130,15 +185,36 @@ function loadOntologySettings() {
 
 function openOntologySettingsModal() {
   const modal = document.getElementById("ontology-settings-modal");
-  const settings = loadOntologySettings();
-  document.getElementById("ontology-base-iri-input").value = settings.iri.split("/").slice(0, -1).join("/");
-  document.getElementById("ontology-label-input").value = settings["rdfs:label"];
-  document.getElementById("ontology-creator-input").value = settings["dcterms:creator"];
-  document.getElementById("ontology-description-input").value = settings["dcterms:description"];
+  const s = loadOntologySettings();
+
+  // existing fields
+  document.getElementById("ontology-base-iri-input").value = (s.base || s.iri.split("/").slice(0, -1).join("/"));
+  document.getElementById("ontology-label-input").value = s["rdfs:label"] || "";
+  document.getElementById("ontology-creator-input").value = s["dcterms:creator"] || "";
+  document.getElementById("ontology-description-input").value = s["dcterms:description"] || "";
+
+  // delimiter
+  const delim = s.delimiter || getSelectedDelimiter();
+  document.querySelectorAll('input[name="base-iri-delimiter"]').forEach(r => {
+    r.checked = (r.value === delim);
+  });
+
+  // NEW: IRI mode + options
+  const iriMode = s.iriMode || "opaque";
+  document.querySelectorAll('input[name="iri-mode"]').forEach(r => {
+    r.checked = (r.value === iriMode);
+  });
+  document.getElementById("opaque-leading").value = s.opaqueLeading || "ont";
+  document.getElementById("opaque-digits").value = s.opaqueDigits ?? 6;
+  document.getElementById("opaque-start").value = s.opaqueStart ?? 1;
+  document.getElementById("readable-case").value = s.readableCase || "PascalCase";
+
+  // toggle sections
+  document.getElementById('opaque-opts').style.display   = (iriMode === 'opaque')   ? 'block' : 'none';
+  document.getElementById('readable-opts').style.display = (iriMode === 'readable') ? 'block' : 'none';
+
   modal.style.display = "block";
-  // Example: after showing the modal
-  document.getElementById("ontology-settings-modal").style.display = "block";
-  updateOntologyPreview(); // This forces preview to populate based on initial values
+  updateOntologyPreview();
 }
 
 function saveOntologySettingsFromModal() {
@@ -147,9 +223,99 @@ function saveOntologySettingsFromModal() {
   const creator = document.getElementById("ontology-creator-input").value.trim();
   const description = document.getElementById("ontology-description-input").value.trim();
   const delimiter = getSelectedDelimiter();
-  generateOntologySettings(base, label, creator, description, delimiter);
+
+  // NEW:
+  const iriMode = document.querySelector('input[name="iri-mode"]:checked')?.value || "opaque";
+  const opaqueLeading = document.getElementById("opaque-leading").value.trim() || "ont";
+  const opaqueDigits  = Math.max(1, parseInt(document.getElementById("opaque-digits").value, 10) || 6);
+  const opaqueStart   = Math.max(1, parseInt(document.getElementById("opaque-start").value, 10) || 1);
+  const readableCase  = document.getElementById("readable-case").value || "PascalCase";
+
+  generateOntologySettings(
+    base, label, creator, description, delimiter,
+    iriMode, opaqueLeading, opaqueDigits, opaqueStart, readableCase
+  );
+
   document.getElementById("ontology-settings-modal").style.display = "none";
 }
+
+
+function zeroPad(n, width) {
+  const s = String(Math.max(0, n|0));
+  return s.length >= width ? s : '0'.repeat(width - s.length) + s;
+}
+
+function toSnakeCase(str) {
+  return String(str || '')
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
+}
+
+function fromLabelWithCase(label, caseStyle) {
+  const raw = String(label || '').trim();
+  switch (caseStyle) {
+    case 'camelCase':   return toCamelCase(raw);
+    case 'snake_case':  return toSnakeCase(raw);
+    case 'PascalCase':
+    default:            return toPascalCase(raw);
+  }
+}
+
+// Returns { base, delimiter } where base excludes trailing delimiter
+function getBaseAndDelimiter(settings) {
+  const base = (settings.base || '').replace(/[\/#]+$/,'') || 'http://example.org';
+  const delimiter = settings.delimiter || '/';
+  return { base, delimiter };
+}
+
+
+// Scan current HOT for largest opaque number already used
+function findMaxOpaqueNumber(hot, settings) {
+  const { base, delimiter } = getBaseAndDelimiter(settings);
+  const lead = settings.opaqueLeading || 'ont';
+  const digits = Math.max(1, settings.opaqueDigits || 6);
+
+  const iriPrefix = `${base}${delimiter}${lead}`;
+  const re = new RegExp('^' + iriPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d{' + digits + '})$');
+
+  let max = (settings.opaqueStart ? settings.opaqueStart - 1 : 0);
+  const rows = hot.getData();
+  for (const row of rows) {
+    const iri = row?.[0] || '';
+    const m = re.exec(String(iri));
+    if (m) {
+      const num = parseInt(m[1], 10);
+      if (Number.isFinite(num) && num > max) max = num;
+    }
+  }
+  return max;
+}
+
+function buildOpaqueIri(nextNum, settings) {
+  const { base, delimiter } = getBaseAndDelimiter(settings);
+  const lead   = settings.opaqueLeading || 'ont';
+  const digits = Math.max(1, settings.opaqueDigits || 6);
+  return `${base}${delimiter}${lead}${zeroPad(nextNum, digits)}`;
+}
+
+function buildReadableIri(label, settings, existingIris = new Set()) {
+  const { base, delimiter } = getBaseAndDelimiter(settings);
+  const style = settings.readableCase || 'PascalCase';
+
+  let local = fromLabelWithCase(label, style) || 'Unnamed';
+  let candidate = `${base}${delimiter}${local}`;
+
+  // Ensure uniqueness within current table
+  let i = 2;
+  while (existingIris.has(candidate)) {
+    candidate = `${base}${delimiter}${local}_${i++}`;
+  }
+  return candidate;
+}
+
 
 
 // Gets the columns definitions for the Handsontable instance.
@@ -204,10 +370,10 @@ const getColumnDefinitions = () => {
 const getInitialData = () => {
   console.info('getInitialData happened');
   return [
-    ["ex:Person", "Person", "Class", "A human person.", "ex:Agent", "http://example.org/ExampleOntology"],
-    ["ex:Bob", "Bob", "NamedIndividual", "An instance of a Person.", "ex:Person", "http://example.org/ExampleOntology"],
-    ["ex:hasVehicle", "has vehicle", "ObjectProperty", "x hasVehicle y iff x possesses y and y is a Vehicle.", "ex:Owns", "http://example.org/ExampleOntology"],
-    ["ex:Automobile", "Automobile", "Class", "A ground vehicle that is designed to transport passengers.", "ex:GroundVehicle", "http://example.org/ExampleOntology"],
+    ["http://example.org/ont000001", "Person", "Class", "A human person.", "ex:Agent", "http://example.org/ExampleOntology"],
+    ["http://example.org/ont000002", "Bob", "NamedIndividual", "An instance of a Person.", "ex:Person", "http://example.org/ExampleOntology"],
+    ["http://example.org/ont000003", "has vehicle", "ObjectProperty", "x hasVehicle y iff x possesses y and y is a Vehicle.", "ex:Owns", "http://example.org/ExampleOntology"],
+    ["http://example.org/ont000004", "Automobile", "Class", "A ground vehicle that is designed to transport passengers.", "ex:GroundVehicle", "http://example.org/ExampleOntology"],
     ["", "", "", "", "", ""]
 ];
 };
@@ -850,7 +1016,138 @@ function normalizeIsAEdits(changes) {
 
 function attachHotHooks() {
   hotInstance.addHook('beforeChange', normalizeIsAEdits);
+
+  // NEW: when rows are created, auto-assign IRIs
+  hotInstance.addHook('afterCreateRow', (index, amount, source) => {
+    try {
+      const s = loadOntologySettings();
+      const mode = s.iriMode || 'opaque';
+
+      if (mode === 'opaque') {
+        let maxNum = findMaxOpaqueNumber(hotInstance, s);
+        for (let r = 0; r < amount; r++) {
+          const rowIndex = index + r;
+          maxNum += 1;
+          const iri = buildOpaqueIri(maxNum, s);
+          hotInstance.setDataAtCell(rowIndex, 0, iri); // col 0 = IRI
+        }
+      } else {
+        // readable: we’ll fill when/if label appears (see afterChange)
+        for (let r = 0; r < amount; r++) {
+          const rowIndex = index + r;
+          // leave IRI blank for now
+          hotInstance.setDataAtCell(rowIndex, 0, '');
+        }
+      }
+    } catch (e) {
+      console.error('[IRI] afterCreateRow failed', e);
+    }
+  });
+
+  // NEW: when label changes in readable mode, (re)build IRI if empty or previously auto-generated
+  hotInstance.addHook('afterChange', (changes, source) => {
+    if (!Array.isArray(changes) || source === 'LoadData') return;
+    try {
+      const s = loadOntologySettings();
+      if ((s.iriMode || 'opaque') !== 'readable') return;
+
+      // gather existing iris for uniqueness checks
+      const allIris = new Set(hotInstance.getData().map(r => String(r?.[0] || '')));
+
+      for (const ch of changes) {
+        const row = ch[0];
+        const col = (typeof ch[1] === 'number') ? ch[1] : hotInstance.propToCol(ch[1]);
+        const newVal = ch[3];
+
+        // Column 1 = label
+        if (col === 1) {
+          const currentIri = String(hotInstance.getDataAtCell(row, 0) || '');
+          const label = String(newVal || '').trim();
+          if (!label) continue;
+
+          // Rebuild if IRI is blank OR was previously auto-generated (matches our base+delimiter)
+          const { base, delimiter } = getBaseAndDelimiter(s);
+          const looksAuto = currentIri.startsWith(`${base}${delimiter}`);
+
+          if (!currentIri || looksAuto) {
+            // Temporarily exclude our own current IRI to avoid self-collision logic
+            if (currentIri) allIris.delete(currentIri);
+
+            const iri = buildReadableIri(label, s, allIris);
+            hotInstance.setDataAtCell(row, 0, iri);
+
+            allIris.add(iri); // reserve
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[IRI] afterChange label→IRI sync failed', e);
+    }
+  });
 }
+
+function backfillIris() {
+  try {
+    if (!hotInstance) {
+      console.warn('[IRI] No table instance');
+      showToast('⚠️ Table not ready', 'error');
+      return;
+    }
+
+    const s = getEffectiveOntologySettings();
+    const mode = s.iriMode || 'opaque';
+
+    const total = hotInstance.countRows();
+
+    // collect already-used IRIs to ensure uniqueness
+    const existing = new Set();
+    for (let r = 0; r < total; r++) {
+      const iri = String(hotInstance.getDataAtCell(r, 0) || '').trim();
+      if (iri) existing.add(iri);
+    }
+
+    let filled = 0;
+    let skipped = 0;
+
+    if (mode === 'opaque') {
+      // start at max seen (or start-1), then fill blanks
+      let next = Math.max(findMaxOpaqueNumber(hotInstance, s), (s.opaqueStart || 1) - 1);
+
+      for (let r = 0; r < total; r++) {
+        const iri = String(hotInstance.getDataAtCell(r, 0) || '').trim();
+        if (!iri) {
+          // advance until unique
+          do { next += 1; } while (existing.has(buildOpaqueIri(next, s)));
+          const newIri = buildOpaqueIri(next, s);
+          hotInstance.setDataAtCell(r, 0, newIri);
+          existing.add(newIri);
+          filled++;
+        }
+      }
+    } else {
+      // human-readable: derive from label when present
+      for (let r = 0; r < total; r++) {
+        const iri = String(hotInstance.getDataAtCell(r, 0) || '').trim();
+        if (!iri) {
+          const label = String(hotInstance.getDataAtCell(r, 1) || '').trim();
+          if (!label) { skipped++; continue; }
+          const newIri = buildReadableIri(label, s, existing);
+          hotInstance.setDataAtCell(r, 0, newIri);
+          existing.add(newIri);
+          filled++;
+        }
+      }
+    }
+
+    showToast(`✅ Backfilled ${filled} IRI${filled!==1?'s':''}` + (skipped ? ` (skipped ${skipped} unlabeled row${skipped!==1?'s':''})` : ''), 'success');
+  } catch (e) {
+    console.error('[IRI] Backfill failed', e);
+    showToast('❌ Backfill failed — see console', 'error');
+  }
+}
+
+document.getElementById('backfillIRIsBtn')
+  .addEventListener('click', backfillIris);
 
 
 // This function opens the ontology imports modal and populates it with current imports.
@@ -1579,30 +1876,13 @@ initializePrefixManagerListeners();
 // Event Listeners for Import Management
 document.getElementById("ontologyImportsBtn").addEventListener("click", openImportsModal);
 
-// Attach listener after DOM is ready
-document.getElementById("add-rows-btn").addEventListener("click", () => {
-  const count = parseInt(document.getElementById("row-count").value, 10);
-  if (isNaN(count) || count < 1) {
-    alert("Please enter a valid number of rows to add.");
-    return;
-  }
-
-  addRowsToTable(count);
-
-  // ✅ Toast feedback
-  showToast(`✅ ${count} row${count > 1 ? 's' : ''} added to the table`, "success");
-
-  // Optional: Reset the input
-  // document.getElementById("add-row-count").value = 1;
-});
-
 // Event Listeners for Predicate Management
 document.getElementById('managePredicatesBtn').addEventListener('click', () => {
   document.getElementById('predicate-iri').value = '';
   populateColumnsToggleUI();
   document.getElementById('manage-predicates-modal').style.display = 'block';
   });
-document.getElementById("manage-prefixes-btn").addEventListener("click", function () {
+document.getElementById("managePrefixesBtn").addEventListener("click", function () {
   openPrefixManagerModal();
 });
 
