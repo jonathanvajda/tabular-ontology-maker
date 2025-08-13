@@ -13,7 +13,7 @@
 
   <div id="toolbar">
     <button id="ontologySettingsBtn">Ontology Settings</button>
-    <button id="manage-prefixes-btn">Manage Prefixes</button>
+    <button id="managePrefixesBtn">Manage Prefixes</button>
     <button id="ontologyImportsBtn">Ontology Imports</button>
     <button id="managePredicatesBtn">Manage Predicates</button>
     <!-- Add curation status options later
@@ -49,6 +49,15 @@
   <!-- Ontology Settings Modal -->
   <div id="ontology-settings-modal" style="display:none; position:fixed; background:white; border:1px solid gray; padding:20px; z-index:1000; top:20%; left:30%; width:40%;">
     <h2>Ontology Settings</h2>
+    <label for="ontology-label-input">Ontology Label (rdfs:label):</label><br>
+    <input type="text" id="ontology-label-input" style="width:100%"><br><br>
+
+    <label for="ontology-creator-input">Ontology Creator (dcterms:creator)</label><br>
+    <input type="text" id="ontology-creator-input" style="width:100%"><br><br>
+
+    <label for="ontology-description-input">Ontology Description (dcterms:description)</label><br>
+    <input type="text" id="ontology-description-input" style="width:100%"><br><br>
+
     <label for="ontology-base-iri-input">Base IRI:</label><br>
     <input type="text" id="ontology-base-iri-input" style="width:100%"><br><br>
 
@@ -59,14 +68,48 @@
       <label><input type="radio" name="base-iri-delimiter" value="#"> # </label></p>
     </div>
 
-    <label for="ontology-label-input">Ontology Label (rdfs:label):</label><br>
-    <input type="text" id="ontology-label-input" style="width:100%"><br><br>
+    <!-- IRI Generation -->
+    <hr>
+    <h3>IRI Generation</h3>
 
-    <label for="ontology-creator-input">Ontology Creator (dcterms:creator)</label><br>
-    <input type="text" id="ontology-creator-input" style="width:100%"><br><br>
+    <div style="margin-bottom:0.75em;">
+      <label><input type="radio" name="iri-mode" value="opaque" checked> Opaque (sequential)</label>
+      &nbsp;&nbsp;
+      <label><input type="radio" name="iri-mode" value="readable"> Human-readable (from label)</label>
+    </div>
 
-    <label for="ontology-description-input">Ontology Description (dcterms:description)</label><br>
-    <input type="text" id="ontology-description-input" style="width:100%"><br><br>
+    <!-- Opaque options -->
+    <div id="opaque-opts" style="display:block; margin-bottom:1em;">
+      <label>Leading text: <input id="opaque-leading" type="text" value="ont" style="width:10em;"></label>
+      &nbsp;&nbsp;
+      <label>Digits: <input id="opaque-digits" type="number" min="1" max="12" value="6" style="width:6em;"></label>
+      &nbsp;&nbsp;
+      <label>Starting #: <input id="opaque-start" type="number" min="1" value="1" style="width:8em;"></label>
+      <div style="color:#666; font-size:12px; margin-top:4px;">
+        Example: <code>http://example.org#ont000042</code>
+      </div>
+    </div>
+
+    <!-- Human-readable options -->
+    <div id="readable-opts" style="display:none; margin-bottom:1em;">
+      <label>Label case:
+        <select id="readable-case" style="width:12em;">
+          <option value="PascalCase" selected>PascalCase</option>
+          <option value="camelCase">camelCase</option>
+          <option value="snake_case">snake_case</option>
+        </select>
+      </label>
+      <div style="color:#666; font-size:12px; margin-top:4px;">
+        IRI updates when the label changes (for blank/new IRIs).
+      </div>
+    </div>
+    <!-- Backfill -->
+    <div style="margin: 0.75em 0 1em 0;">
+      <button id="backfillIRIsBtn" type="button">Backfill IRIs</button>
+      <span id="backfill-iris-note" style="font-size:12px; color:#666; margin-left:8px;">
+        Fills only blank IRIs using current settings.
+      </span>
+    </div>
 
     <!-- Preview -->
     <div style="margin-bottom:1em;">
