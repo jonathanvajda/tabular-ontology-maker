@@ -178,6 +178,28 @@ function getEffectiveOntologySettings() {
   return stored;
 }
 
+function getSelectedIriMode() {
+  return document.querySelector('input[name="iri-mode"]:checked')?.value || 'opaque';
+}
+
+function toggleIriModeOptions() {
+  const mode = getSelectedIriMode();
+  const opaque = document.getElementById('opaque-opts');
+  const readable = document.getElementById('readable-opts');
+  if (opaque && readable) {
+    opaque.style.display   = (mode === 'opaque')   ? 'block' : 'none';
+    readable.style.display = (mode === 'readable') ? 'block' : 'none';
+  }
+}
+
+function initializeIriModeToggles() {
+  const radios = document.querySelectorAll('input[name="iri-mode"]');
+  radios.forEach(r => r.addEventListener('change', toggleIriModeOptions));
+  // set correct section visibility on first open/first load
+  toggleIriModeOptions();
+}
+
+
 function loadOntologySettings() {
   const stored = localStorage.getItem('ontologySettings');
   return stored ? JSON.parse(stored) : generateOntologySettings();
@@ -192,6 +214,9 @@ function openOntologySettingsModal() {
   document.getElementById("ontology-label-input").value = s["rdfs:label"] || "";
   document.getElementById("ontology-creator-input").value = s["dcterms:creator"] || "";
   document.getElementById("ontology-description-input").value = s["dcterms:description"] || "";
+  toggleIriModeOptions();   // <- ensure sections reflect the currently checked mode
+  document.getElementById("ontology-settings-modal").style.display = "block";
+  updateOntologyPreview();
 
   // delimiter
   const delim = s.delimiter || getSelectedDelimiter();
@@ -1860,6 +1885,7 @@ document.getElementById("ontology-creator-input").addEventListener("input", upda
 document.getElementById("ontology-description-input").addEventListener("input", updateOntologyPreview);
 document.querySelectorAll('input[name="base-iri-delimiter"]').forEach(radio => {
   radio.addEventListener("change", updateOntologyPreview);
+  initializeIriModeToggles()
 });
 
   // Event Listeners for Prefix Management
