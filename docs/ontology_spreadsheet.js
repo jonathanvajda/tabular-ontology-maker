@@ -372,7 +372,7 @@ const getColumnDefinitions = () => {
           else if (elType === 'DatatypeProperty') typeHint = 'DatatypeProperty';
 
           const results = searchVocab(query, { typeHint, max: 50 });
-          callback(results.map(displayFor));
+          callback(results.map(displayLabelAndCurie));
         } catch (e) {
           console.error('[IsA] source failed', e);
           callback([]);
@@ -383,7 +383,7 @@ const getColumnDefinitions = () => {
         let text = value || '';
         // If the cell stores an IRI, show a friendly label
         const rec = vocabByIri.get(String(value).trim());
-        if (rec) text = displayFor(rec);
+        if (rec) text = displayLabelAndCurie(rec);
         Handsontable.renderers.TextRenderer.apply(this, [instance, td, row, col, prop, text, cellProperties]);
       }
     },
@@ -395,10 +395,10 @@ const getColumnDefinitions = () => {
 const getInitialData = () => {
   console.info('getInitialData happened');
   return [
-    ["http://example.org/ont000001", "Person", "Class", "A human person.", "ex:Agent", "http://example.org/ExampleOntology"],
-    ["http://example.org/ont000002", "Bob", "NamedIndividual", "An instance of a Person.", "ex:Person", "http://example.org/ExampleOntology"],
+    ["http://example.org/ont000001", "Person", "Class", "A human person.", "https://www.commoncoreontologies.org/ont00001017", "http://example.org/ExampleOntology"],
+    ["http://example.org/ont000002", "Bob", "NamedIndividual", "An instance of a Person.", "https://www.commoncoreontologies.org/ont00001262", "http://example.org/ExampleOntology"],
     ["http://example.org/ont000003", "has vehicle", "ObjectProperty", "x hasVehicle y iff x possesses y and y is a Vehicle.", "ex:Owns", "http://example.org/ExampleOntology"],
-    ["http://example.org/ont000004", "Automobile", "Class", "A ground vehicle that is designed to transport passengers.", "ex:GroundVehicle", "http://example.org/ExampleOntology"],
+    ["http://example.org/ont000004", "Automobile", "Class", "A ground vehicle that is designed to transport passengers.", "https://www.commoncoreontologies.org/ont00000618", "http://example.org/ExampleOntology"],
     ["", "", "", "", "", ""]
 ];
 };
@@ -969,7 +969,8 @@ function searchVocab(q, { max = 50, typeHint = null } = {}) {
   return hits.slice(0, max).map(([,r]) => r);
 }
 
-function displayFor(rec) {
+function displayLabelAndCurie(rec) {
+  console.log('[displayLabelAndCurie] called with rec:', rec.label);
   return `${rec.label || rec.curie || rec.iri} — ${(rec.curie || rec.iri)}`;
 }
 
