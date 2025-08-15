@@ -395,10 +395,10 @@ const getColumnDefinitions = () => {
 const getInitialData = () => {
   console.info('getInitialData happened');
   return [
-    ["http://example.org/ont000001", "Person", "Class", "A human person.", "https://www.commoncoreontologies.org/ont00001017", "http://example.org/ExampleOntology"],
-    ["http://example.org/ont000002", "Bob", "NamedIndividual", "An instance of a Person.", "https://www.commoncoreontologies.org/ont00001262", "http://example.org/ExampleOntology"],
+    ["http://example.org/ont000001", "Person", "Class", "A human person.", "cco2:ont00001017", "http://example.org/ExampleOntology"],
+    ["http://example.org/ont000002", "Bob", "NamedIndividual", "An instance of a Person.", "cco2:ont00001262", "http://example.org/ExampleOntology"],
     ["http://example.org/ont000003", "has vehicle", "ObjectProperty", "x hasVehicle y iff x possesses y and y is a Vehicle.", "ex:Owns", "http://example.org/ExampleOntology"],
-    ["http://example.org/ont000004", "Automobile", "Class", "A ground vehicle that is designed to transport passengers.", "https://www.commoncoreontologies.org/ont00000618", "http://example.org/ExampleOntology"],
+    ["http://example.org/ont000004", "Automobile", "Class", "A ground vehicle that is designed to transport passengers.", "cco2:ont00000618", "http://example.org/ExampleOntology"],
     ["", "", "", "", "", ""]
 ];
 };
