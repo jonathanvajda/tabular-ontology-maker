@@ -1,10 +1,14 @@
 // Copyright 2025 Jonathan Vajda
 
+
 let customPredicates = [];
 let hotInstance = null;
 let currentImportFile = null;
 const container = document.getElementById('hot');
 const output = document.getElementById('rdfOutput');
+// Base spreadsheet columns (in order):
+// 0: iri, 1: label, 2: element type, 3: definition, 4: is a, 5: is curated in ontology
+const BASE_COLS = 6;
 
 function showToast(message, type = "success", duration = 3000) {
   try {
@@ -674,14 +678,17 @@ const generateRdfString = (rows, format = 'ttl') => {
         N3.DataFactory.literal(isCuratedInOntology));
     }
 
-    customPredicates.forEach((predicate, index) => {
-      const cellValue = row[5 + index]; // Adjust index based on original 5-column setup
-      if (cellValue) {
-        writer.addQuad(N3.DataFactory.namedNode(subject),
-          N3.DataFactory.namedNode(predicate),
-          N3.DataFactory.literal(cellValue));
-      }
-    });
+    customPredicates.forEach((predicate, idx) => {
+    const colIndex = BASE_COLS + idx;  // start right after the 6 base columns
+    const cellValue = row[colIndex];
+    if (cellValue) {
+      writer.addQuad(
+        N3.DataFactory.namedNode(subject),
+        N3.DataFactory.namedNode(predicate),
+        N3.DataFactory.literal(cellValue)
+      );
+    }
+}); 
 
   });
 
@@ -1322,23 +1329,24 @@ function confirmAddPredicate() {
         customPredicates.push(finalIRI);
 
         // Rebuild table with new predicate column appended
-        const newHeaders = getColumnHeaders();
+        const newHeaders = getColumnHeaders(); // base + customs
         const newColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
         const oldData = hotInstance.getData();
-        const elementTypes = getElementTypes();
+        const validTypes = getElementTypes();
 
         const cleanedRows = oldData.map(row => {
-          const fixedRow = [...row];
-          if (!elementTypes.includes(fixedRow[2])) fixedRow[2] = '';
-          const baseCols = getColumnHeaders().length; // count base headers
-          const existingCustomCount = Math.max(0, fixedRow.length - baseCols);
-          const missing = customPredicates.length - existingCustomCount;
-          return fixedRow.concat(Array(missing).fill(''));
+          const fixed = Array.from({ length: BASE_COLS + customPredicates.length }, (_, i) => row[i] ?? '');
+
+          // sanitize element type
+          if (!validTypes.includes(fixed[2])) fixed[2] = '';
+
+          return fixed;
         });
 
         hotInstance.destroy();
         hotInstance = createTable(container, cleanedRows, newHeaders, newColumns);
         attachHotHooks();
+        applyHiddenColumnsToHot();
         harvestRowsIntoVocab(cleanedRows);
       }
     }
@@ -1660,7 +1668,10 @@ async function handleInsertDataSave() {
     // Get file extension and parse
     const extension = parseFileExtension(currentImportFile.name);
     const parsed = await parseSpreadsheetData(currentImportFile, extension, hasHeader);
-    const knownPredicates = getColumnHeaders().concat(customPredicates);
+    const allHeaders = getColumnHeaders(); // already includes customs
+    const allColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
+
+    const knownPredicates = allHeaders; // use as the canonical expected headers
 
     const result = validateTableData(parsed.rows, parsed.header, knownPredicates, hasHeader);
 
@@ -1679,15 +1690,10 @@ async function handleInsertDataSave() {
 
     // Rebuild table with merged data
     hotInstance.destroy();
-    hotInstance = createTable(
-      container,
-      mergedRows,
-      getColumnHeaders().concat(customPredicates),
-      getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' }))),
-      applyHiddenColumnsToHot(),
-      harvestRowsIntoVocab(mergedRows),
-      attachHotHooks()
-    );
+    hotInstance = createTable(container, mergedRows, allHeaders, allColumns);
+    attachHotHooks();
+    applyHiddenColumnsToHot();
+    harvestRowsIntoVocab(mergedRows);
 
     
     // Toast feedback
@@ -1787,7 +1793,7 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
       return { valid: false, errors: ['File could not be parsed or is empty'] };
     }
 
-    const expectedCols = knownPredicates.length;
+    const expectedCols = BASE_COLS + customPredicates.length;
 
     rows.forEach((row, i) => {
       const cleanedRow = row.slice(0, expectedCols); // Trim excess columns
