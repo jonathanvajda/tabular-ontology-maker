@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tabular Ontology Maker</title>
+  <link rel="shortcut icon" href="favicon.ico">
+  <link rel="stylesheet" href="ontology_spreadsheet_styles.css" />
+  <link rel="stylesheet" href="lib/handsontable.full.css" />
+</head>
+<body>
+  <h1>Tabular Ontology Maker</h1>
+
+  <div id="toolbar">
+    <button id="ontologySettingsBtn">Ontology Settings</button>
+    <button id="managePrefixesBtn">Manage Prefixes</button>
+    <button id="ontologyImportsBtn">Ontology Imports</button>
+    <button id="managePredicatesBtn">Manage Predicates</button>
+    <!-- Add curation status options later
+    <button id="curationSettingsBtn">Curation Settings</button>
+         Add curation status options later -->
+    <button id="importBtn">Insert Data</button>
+    <button id="previewRdfBtn">Preview RDF</button>
+    <select id="exportFormat">
+      <option value="ttl">Turtle (.ttl)</option>
+      <!-- Not Supported Yet <option value="rdf">RDF/XML (.rdf)</option> -->
+      <!-- Not Supported Yet <option value="jsonld">JSON-LD (.jsonld)</option> -->
+      <option value="nt">N-Triples (.nt)</option>
+      <option value="trig">TriG (.trig)</option>
+    </select>
+    <button id="exportBtn">Export RDF</button>
+  </div>
+
+  <div id="hot"></div>
+
+  <!-- Change Number of Rows -->
+  <div id="row-controls" style="margin: 1em 0; display:flex; align-items:center; gap:10px;">
+    <label for="row-count" style="margin-right:.5em;">Rows:</label>
+    <input type="number" id="row-count" min="1" value="1" style="width:70px;" />
+    <button id="add-rows-btn">Add</button>
+    <button id="remove-rows-btn">Remove</button>
+  </div>
+
+
+  <h3>Generated RDF</h3>
+  <textarea id="rdfOutput" readonly></textarea>
+
+  <!-- Ontology Settings Modal -->
+  <div id="ontology-settings-modal" style="display:none; position:fixed; background:white; border:1px solid gray; padding:20px; z-index:1000; top:20%; left:30%; width:40%;">
+    <h2>Ontology Settings</h2>
+    <label for="ontology-label-input">Ontology Label (rdfs:label):</label><br>
+    <input type="text" id="ontology-label-input" style="width:100%"><br><br>
+
+    <label for="ontology-creator-input">Ontology Creator (dcterms:creator)</label><br>
+    <input type="text" id="ontology-creator-input" style="width:100%"><br><br>
+
+    <label for="ontology-description-input">Ontology Description (dcterms:description)</label><br>
+    <input type="text" id="ontology-description-input" style="width:100%"><br><br>
+
+    <label for="ontology-base-iri-input">Base IRI:</label><br>
+    <input type="text" id="ontology-base-iri-input" style="width:100%"><br><br>
+
+    <!-- base IRI delimiter -->
+    <div style="margin-bottom:1em;">
+      <p>Base IRI Delimiter:
+      <label><input type="radio" name="base-iri-delimiter" value="/" checked> / </label>
+      <label><input type="radio" name="base-iri-delimiter" value="#"> # </label></p>
+    </div>
+
+    <!-- IRI Generation -->
+    <hr>
+    <h3>IRI Generation</h3>
+
+    <div style="margin-bottom:0.75em;">
+      <label><input type="radio" name="iri-mode" value="opaque" checked> Opaque (sequential)</label>
+      &nbsp;&nbsp;
+      <label><input type="radio" name="iri-mode" value="readable"> Human-readable (from label)</label>
+    </div>
+
+    <!-- Opaque options -->
+    <div id="opaque-opts" style="display:block; margin-bottom:1em;">
+      <label>Leading text: <input id="opaque-leading" type="text" value="ont" style="width:10em;"></label>
+      &nbsp;&nbsp;
+      <label>Digits: <input id="opaque-digits" type="number" min="1" max="12" value="6" style="width:6em;"></label>
+      &nbsp;&nbsp;
+      <label>Starting #: <input id="opaque-start" type="number" min="1" value="1" style="width:8em;"></label>
+      <div style="color:#666; font-size:12px; margin-top:4px;">
+        Example: <code>http://example.org#ont000042</code>
+      </div>
+    </div>
+
+    <!-- Human-readable options -->
+    <div id="readable-opts" style="display:none; margin-bottom:1em;">
+      <label>Label case:
+        <select id="readable-case" style="width:12em;">
+          <option value="PascalCase" selected>PascalCase</option>
+          <option value="camelCase">camelCase</option>
+          <option value="snake_case">snake_case</option>
+        </select>
+      </label>
+      <div style="color:#666; font-size:12px; margin-top:4px;">
+        IRI updates when the label changes (for blank/new IRIs).
+      </div>
+    </div>
+    <!-- Backfill -->
+    <div style="margin: 0.75em 0 1em 0;">
+      <button id="backfillIRIsBtn" type="button">Backfill IRIs</button>
+      <span id="backfill-iris-note" style="font-size:12px; color:#666; margin-left:8px;">
+        Fills only blank IRIs using current settings.
+      </span>
+    </div>
+
+    <!-- Preview -->
+    <div style="margin-bottom:1em;">
+      <strong>Version IRI:</strong> <span id="version-iri-preview">[auto-generated]</span><br>
+      <strong>Version Info:</strong> <span id="version-info-preview">[auto-generated]</span>
+    </div>
+
+    <button onclick="saveOntologySettingsFromModal()">Save & Close</button>
+    <button onclick="document.getElementById('ontology-settings-modal').style.display='none'">Close</button>
+    <button id="resetSession" style="float:right" onclick="localStorage.clear(); console.log('localStorage has been cleared!'); document.getElementById('ontology-settings-modal').style.display='none'">Reset Session</button>
+  </div>
+
+  <!-- Ontology Imports Modal -->
+  <div id="ontology-imports-modal" style="display:none; position:fixed; background:white; border:1px solid gray; padding:20px; z-index:1000; top:20%; left:30%; width:40%;">
+    <h2>Ontology Imports</h2>
+    <div id="import-list" style="max-height:200px; overflow:auto; border:1px solid #ccc; padding:10px;"></div>
+
+    <label for="new-import-iri">Add new import IRI:</label><br>
+    <input type="text" id="new-import-iri" style="width:100%" placeholder="http://example.org/ontology"><br>
+    <button onclick="addImportIRI()">Add Ontology</button><br><br>
+
+    <button onclick="saveImportsAndClose()">Save Imports</button>
+    <button onclick="document.getElementById('ontology-imports-modal').style.display='none'">Cancel</button>
+  </div>
+
+  <!-- Prefix Manager Modal -->
+  <div id="prefix-manager-modal" style="display:none; position:fixed; top:10%; left:25%; width:50%; z-index:1000; background:white; border:1px solid #ccc; padding:20px; box-shadow: 0 0 10px rgba(0,0,0,0.3);">
+
+    <h2>Manage IRI Prefixes</h2>
+
+    <!-- Existing Prefix Table -->
+    <table id="prefix-table" style="width:100%; margin-bottom:1em; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; border-bottom:1px solid #ccc;">Prefix</th>
+          <th style="text-align:left; border-bottom:1px solid #ccc;">IRI</th>
+          <th style="border-bottom:1px solid #ccc;"></th>
+        </tr>
+      </thead>
+      <tbody id="prefix-table-body">
+        <!-- JS will populate this -->
+      </tbody>
+    </table>
+
+    <!-- Add New Prefix -->
+    <div style="margin-bottom:1.5em;">
+      <input type="text" id="new-prefix" placeholder="Prefix" style="width:30%; margin-right:10px;" />
+      <input type="text" id="new-prefix-iri" placeholder="IRI" style="width:50%; margin-right:10px;" />
+      <button id="add-prefix-btn" disabled>Add Prefix</button>
+    </div>
+
+    <!-- Action Buttons -->
+    <div style="text-align:right;">
+      <button id="save-prefixes-btn">Save</button>
+      <button id="cancel-prefixes-btn">Close</button>
+    </div>
+  </div>
+
+
+  <!-- Manage Predicate Modal -->
+  <div id="manage-predicates-modal" style="display:none; position:fixed; background:white; border:1px solid gray; padding:20px; z-index:1000; top:25%; left:30%; width:40%;">
+    <h2>Add Predicate Column</h2>
+
+    <label for="predicate-select">Select a common predicate:</label><br>
+    <select id="predicate-select" style="width:100%">
+      <option value="rdfs:comment">comment (rdfs:comment)</option>
+      <option value="rdfs:seeAlso">see also (rdfs:seeAlso)</option>
+      <option value="rdfs:isDefinedBy">is defined by (rdfs:isDefinedBy)</option>
+      <option value="skos:altLabel">alternative label (skos:altLabel)</option>
+      <option value="skos:prefLabel">preferred label (skos:prefLabel)</option>
+      <option value="skos:example">example (skos:example)</option>
+      <option value="skos:scopeNote">scope note (skos:scopeNote)</option>
+      <option value="skos:editorialNote">editorial note (skos:editorialNote)</option>
+      <option value="dcterms:bibliographicCitation">citation (dcterms:bibliographicCitation)</option>
+      <option value="dcterms:source">source (dcterms:source)</option>
+      <option value="dcterms:creator">creator (dcterms:creator)</option>
+      <option value="dcterms:created">created (dcterms:created)</option>
+      <option value="dcterms:description">description (dcterms:description)</option>
+      <option value="cco2:ont00001753">acronym (cco2:ont00001753)</option>
+      <option value="oboInOwl:hasDbXref">has database cross reference (oboInOwl:hasDbXref)</option>
+    </select><br><br>
+
+    <label for="predicate-iri">Or enter a custom IRI:</label><br>
+    <input type="text" id="predicate-iri" style="width:100%" placeholder="e.g. http://example.org/myPredicate"><br><br>
+
+    <button onclick="confirmAddPredicate()">Add</button>
+
+
+    <hr style="margin:12px 0">
+
+    <h3 style="margin:6px 0;">Show / Hide Columns</h3>
+    <!-- Optional quick actions -->
+    <div style="margin-top:8px;">
+      <button id="columns-select-all-btn" type="button">Select All</button>
+      <button id="columns-select-none-btn" type="button">Select None</button>
+    </div>
+    <div id="columns-toggle-list" style="max-height:220px; overflow:auto; border:1px solid #eee; padding:8px; font-size:.95em;">
+      <!-- JS populates checkboxes here -->
+    </div>
+
+    <div style="margin-top:12px; text-align:right;">
+      <button id="manage-predicates-save-btn">Save & Close</button>
+      <button id="manage-predicates-cancel-btn">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Insert Data Modal -->
+  <div id="insert-data-modal" style="display:none; position:fixed; top:10%; left:25%; width:50%; z-index:1000; background:white; border:1px solid #ccc; padding:20px; box-shadow: 0 0 10px rgba(0,0,0,0.3);">
+
+    <h2>Insert Data</h2>
+
+    <p>Download Starter Template: <a href="template.csv">CSV</a> or <a href="template.xlsx">XLSX</a></p>
+
+    <!-- Drag & Drop -->
+    <div id="drop-area" style="border:2px dashed #ccc; padding:20px; text-align:center; margin-bottom:1em;">
+      <p>Drag & drop a file here</p>
+      <p>— or —</p>
+      <input type="file" id="file-input" accept=".csv,.tsv,.xls,.xlsx,.ttl,.rdf,.jsonld,.nt" />
+    </div>
+
+    <!-- Filename display -->
+    <div id="filename-display" style="margin-bottom:1em; display:none;">
+      <span id="filename-text" style="font-weight:bold;"></span>
+      <button id="remove-file-btn" style="margin-left:10px;">❌</button>
+    </div>
+
+    <!-- File type radio -->
+    <div style="margin-bottom:1em;">
+      <label><input type="radio" name="file-type" value="spreadsheet" checked> Spreadsheet</label>
+      <label><input type="radio" name="file-type" value="ontology"> Ontology (coming soon)</label>
+    </div>
+
+    <!-- Header checkbox (spreadsheet only) -->
+    <div id="header-checkbox-container" style="margin-bottom:1em;">
+      <label><input type="checkbox" id="first-row-header" checked> First row is header</label>
+    </div>
+
+    <!-- Insert behavior -->
+    <div style="margin-bottom:1.5em;">
+      <label><input type="radio" name="insert-mode" value="append" checked> Append Data</label>
+      <label><input type="radio" name="insert-mode" value="replace"> Replace Data</label>
+    </div>
+
+    <!-- Action buttons -->
+    <div style="text-align:right;">
+      <button id="insert-data-save-btn">Save</button>
+      <button id="insert-data-cancel-btn">Close</button>
+    </div>
+  </div>
+
+
+  <!-- Toast container -->
+  <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <footer align="right"><small>Copyright 2025, Jonathan Vajda</small></footer>
+
+  <script src="lib/handsontable.full.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="lib/n3.min.js"></script>
+  <script src="ontology_spreadsheet-dev.js"></script>
+</body>
+</html>
