@@ -399,5 +399,52 @@
   <script src="lib/xlsx.full.min.js"></script>
   <script src="lib/n3.min.js"></script>
   <script src="lib/ontology_spreadsheet-dev.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', async () => {
+        try {
+          const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+
+          // Detect updates and prompt user
+          function offerRefresh(sw) {
+            // your UI: toast/dialog; when user confirms:
+            sw.postMessage('SKIP_WAITING');
+          }
+
+          // A new SW is waiting to activate
+          if (reg.waiting) offerRefresh(reg.waiting);
+
+          // A new SW is installed but not yet waiting (it’s in installing state)
+          reg.addEventListener('updatefound', () => {
+            const newSW = reg.installing;
+            if (!newSW) return;
+            newSW.addEventListener('statechange', () => {
+              if (newSW.state === 'installed' && reg.waiting) {
+                offerRefresh(reg.waiting);
+              }
+            });
+          });
+
+          // Page reload when the new SW takes control
+          let refreshing = false;
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (refreshing) return;
+            refreshing = true;
+            window.location.reload();
+          });
+
+          // Example: react to JSON updates pushed from the SW
+          navigator.serviceWorker.addEventListener('message', (e) => {
+            if (e.data?.type === 'json-updated') {
+              console.info('[PWA] JSON updated:', e.data.url);
+              // Option: hot-reload specific panels, or show a toast “Data updated”
+            }
+          });
+        } catch (err) {
+          console.error('SW registration failed', err);
+        }
+      });
+    }
+    </script>
 </body>
 </html>
