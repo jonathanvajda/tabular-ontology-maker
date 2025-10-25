@@ -858,18 +858,31 @@ function ensureDb() {
 
 // Show/hide + enable/disable the button
 function setReloadBtnVisible(isVisible) {
-  const btn = document.getElementById('reloadSavedSessionBtn');
-  if (!btn) return;
+  try {
+    console.info('setReloadBtnVisible happened', isVisible);
+    const btn = document.getElementById('reloadSavedSessionBtn');
+  if (!btn) {
+    console.info('setReloadBtnVisible: no button found');
+    return;}
   if (!isVisible) {
+    console.info('setReloadBtnVisible: hiding button');
     // if (btn.hidden) btn.visible;
     if (btn.disabled) btn.disabled = false;
+    }
   }
+  catch (e) {
+    console.warn('setReloadBtnVisible failed', e);}
 }
 
 // Check and update the button (call on load and after saves)
 async function updateReloadSessionButton() {
-  const visible = await hasPriorSession();
-  setReloadBtnVisible(visible);
+  try {
+    console.info('updateReloadSessionButton happened');
+    const visible = await hasPriorSession();
+    setReloadBtnVisible(visible);
+  }
+    catch (e) {
+    console.warn('updateReloadSessionButton failed', e);}
 }
 
 // On first paint, decide whether to show the button
