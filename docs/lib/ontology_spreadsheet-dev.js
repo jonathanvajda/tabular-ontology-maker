@@ -734,7 +734,7 @@ const extensions = {
 const handleExport = async (shouldDownload = false) => {
   console.info('handleExport happened');
   const rows = hotInstance.getData();
-  const format = document.getElementById('exportFormat').value;
+  const format = document.getElementById('exportFormat')?.value || 'ttl';
 
   try {
     const rdfString = await generateRdfString(rows, format);
@@ -773,16 +773,21 @@ function idbTransactionDone(tx) {
 
 async function openDb(name, version, { upgrade } = {}) {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(name, version);
-    req.onupgradeneeded = (e) => {
-      try {
-        if (typeof upgrade === 'function') {
-          upgrade(req.result, e.oldVersion, e.newVersion, req.transaction);
-        }
-      } catch (err) { reject(err); }
+    const request = indexedDB.open(name, version);
+    request.onupgradeneeded = (event) => {
+      const db = request.result;
+      if (typeof upgrade === 'function') {
+        upgrade(db, event.oldVersion, event.newVersion, request.transaction);
+      }
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+
+    request.onsuccess = () => {
+      resolve(request.result); // <-- this is the actual IDBDatabase
+    };
+
+    request.onerror = () => {
+      reject(request.error);
+    };
   });
 }
 
@@ -826,22 +831,28 @@ async function hasPriorSession() {
   const tx = db.transaction(STORE_NAME, 'readonly');
   const store = tx.objectStore(STORE_NAME);
   const count = await idbRequest(store.count());
-  // (readonly) no need to await tx completion, but harmless if you do:
-  // await idbTransactionDone(tx);
+  await idbTransactionDone(tx);
   return count > 0;
 }
+
 /**
  * Ensures DB + object store exist; returns an IDBPDatabase instance
  * @params none
  * @returns {Promise<IDBPDatabase>}
  */
-async function ensureDb() {
-  return indexedDB.open(DB_NAME, DB_VERSION, {
-    upgrade(db) {
+function ensureDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onupgradeneeded = (event) => {
+      const db = request.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
       }
-    },
+    };
+
+    request.onsuccess = () => resolve(request.result); // <- IDBDatabase
+    request.onerror = () => reject(request.error);
   });
 }
 
