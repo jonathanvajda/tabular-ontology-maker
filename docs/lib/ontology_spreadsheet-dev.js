@@ -816,7 +816,7 @@ const saveRDFtoIndexedDB = async () => {
     console.info('RDF data saved to IndexedDB successfully.');
     showToast('RDF data saved to database successfully.', 'success');
 
-    updateReloadButton(); // reflect availability immediately
+    updateReloadSessionButton(); // reflect availability immediately
   } catch (e) {
     console.error('saveRDFtoIndexedDB failed:', e);
     showToast('Failed to save RDF data to database.', 'error');
@@ -860,18 +860,20 @@ function ensureDb() {
 function setReloadBtnVisible(isVisible) {
   const btn = document.getElementById('reloadSavedSessionBtn');
   if (!btn) return;
- // if (btn.hidden) btn.visible;
-  if (btn.disabled) btn.enabled;
+  if (!isVisible) {
+    // if (btn.hidden) btn.visible;
+    if (btn.disabled) btn.enabled;
+  }
 }
 
 // Check and update the button (call on load and after saves)
-async function updateReloadButton() {
+async function updateReloadSessionButton() {
   const visible = await hasPriorSession();
   setReloadBtnVisible(visible);
 }
 
 // On first paint, decide whether to show the button
-document.addEventListener('DOMContentLoaded', updateReloadButton);
+document.addEventListener('DOMContentLoaded', updateReloadSessionButton);
 
 /**
  * Maps saved format strings to N3.Parser formats.
