@@ -862,7 +862,7 @@ function setReloadBtnVisible(isVisible) {
   if (!btn) return;
   if (!isVisible) {
     // if (btn.hidden) btn.visible;
-    if (btn.disabled) btn.enabled;
+    if (btn.disabled) btn.disabled = false;
   }
 }
 
