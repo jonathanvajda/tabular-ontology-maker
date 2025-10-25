@@ -756,6 +756,36 @@ const handleExport = async (shouldDownload = false) => {
   }
 };
 
+function idbRequest(req) {
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function idbTransactionDone(tx) {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('Transaction failed'));
+    tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
+  });
+}
+
+async function openDb(name, version, { upgrade } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(name, version);
+    req.onupgradeneeded = (e) => {
+      try {
+        if (typeof upgrade === 'function') {
+          upgrade(req.result, e.oldVersion, e.newVersion, req.transaction);
+        }
+      } catch (err) { reject(err); }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
 /**
  * Saves the current RDF data to IndexedDB.
  * Uses the idb library for IndexedDB operations.
@@ -765,22 +795,23 @@ const handleExport = async (shouldDownload = false) => {
 const saveRDFtoIndexedDB = async () => {
   console.info('saveRDFtoIndexedDB happened');
   const rows = hotInstance.getData();
-  const format = document.getElementById('exportFormat').value;
+  // A <button> has no useful .value — read from the format <select>
+  const format = document.getElementById('exportFormat')?.value || 'ttl';
+
   try {
     const rdfString = await generateRdfString(rows, format);
     output.value = rdfString;
 
-    const db = await ensureDb(); // use the helper shown above
+    const db = await ensureDb();
     const tx = db.transaction(STORE_NAME, 'readwrite');
-    await tx.store.add({ rdfData: rdfString, format, timestamp: new Date().toISOString() });
-    await tx.done;
+    const store = tx.objectStore(STORE_NAME);
+    store.add({ rdfData: rdfString, format, timestamp: new Date().toISOString() });
+    await idbTransactionDone(tx);
 
     console.info('RDF data saved to IndexedDB successfully.');
     showToast('RDF data saved to database successfully.', 'success');
 
-    // reveal button
-    updateReloadButton();
-
+    updateReloadButton(); // reflect availability immediately
   } catch (e) {
     console.error('saveRDFtoIndexedDB failed:', e);
     showToast('Failed to save RDF data to database.', 'error');
@@ -789,6 +820,19 @@ const saveRDFtoIndexedDB = async () => {
 
 // Attach event listener to the "Save to Database" button
 document.getElementById('saveToDatebaseBtn').addEventListener('click', saveRDFtoIndexedDB);
+
+async function hasPriorSession() {
+  const db = await ensureDb();
+  const tx = db.transaction(STORE_NAME, 'readonly');
+  const store = tx.objectStore(STORE_NAME);
+
+  // Most modern browsers support getAllKeys().length, but count() is standard:
+  const countReq = store.count();
+  const count = await idbRequest(countReq);
+  // no need to await tx complete for readonly count, but it's fine if you want:
+  // await idbTransactionDone(tx);
+  return count > 0;
+}
 
 /**
  * Ensures DB + object store exist; returns an IDBPDatabase instance
