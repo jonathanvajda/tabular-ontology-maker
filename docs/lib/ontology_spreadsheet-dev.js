@@ -765,7 +765,7 @@ const handleExport = async (shouldDownload = false) => {
 const saveRDFtoIndexedDB = async () => {
   console.info('saveRDFtoIndexedDB happened');
   const rows = hotInstance.getData();
-  const format = document.getElementById('saveToDatebaseBtn').value;
+  const format = document.getElementById('exportFormat').value;
   try {
     const rdfString = await generateRdfString(rows, format);
     output.value = rdfString;
