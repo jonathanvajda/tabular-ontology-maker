@@ -767,26 +767,25 @@ const saveRDFtoIndexedDB = async () => {
   const rows = hotInstance.getData();
   const format = document.getElementById('saveToDatebaseBtn').value;
   try {
-    const rdfString = await generateRdfString(rows, format); 
+    const rdfString = await generateRdfString(rows, format);
     output.value = rdfString;
-    const db = await openDB('TabularOntologyDB', 1, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains('rdfStore')) {
-          db.createObjectStore('rdfStore', { keyPath: 'id', autoIncrement: true });
-        }
-      },
-    });
-    const tx = db.transaction('rdfStore', 'readwrite');
-    const store = tx.objectStore('rdfStore');
-    await store.add({ rdfData: rdfString, format: format, timestamp: new Date() });
+
+    const db = await ensureDb(); // use the helper shown above
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    await tx.store.add({ rdfData: rdfString, format, timestamp: new Date().toISOString() });
     await tx.done;
+
     console.info('RDF data saved to IndexedDB successfully.');
     showToast('RDF data saved to database successfully.', 'success');
+
+    // reveal button
+    updateReloadButton();
+
   } catch (e) {
     console.error('saveRDFtoIndexedDB failed:', e);
     showToast('Failed to save RDF data to database.', 'error');
   }
-}
+};
 
 // Attach event listener to the "Save to Database" button
 document.getElementById('saveToDatebaseBtn').addEventListener('click', saveRDFtoIndexedDB);
