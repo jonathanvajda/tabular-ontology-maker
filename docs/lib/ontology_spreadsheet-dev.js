@@ -825,15 +825,11 @@ async function hasPriorSession() {
   const db = await ensureDb();
   const tx = db.transaction(STORE_NAME, 'readonly');
   const store = tx.objectStore(STORE_NAME);
-
-  // Most modern browsers support getAllKeys().length, but count() is standard:
-  const countReq = store.count();
-  const count = await idbRequest(countReq);
-  // no need to await tx complete for readonly count, but it's fine if you want:
+  const count = await idbRequest(store.count());
+  // (readonly) no need to await tx completion, but harmless if you do:
   // await idbTransactionDone(tx);
   return count > 0;
 }
-
 /**
  * Ensures DB + object store exist; returns an IDBPDatabase instance
  * @params none
@@ -847,14 +843,6 @@ async function ensureDb() {
       }
     },
   });
-}
-
-// Returns true if there's at least one saved row
-async function hasPriorSession() {
-  const db = await ensureDb();
-  // With idb you can call count directly on the db:
-  const count = await db.count(STORE_NAME);
-  return count > 0;
 }
 
 // Show/hide + enable/disable the button
@@ -907,41 +895,52 @@ function iriFromObjects(objs) {
   return '';
 }
 
+async function storeGetAll(store) {
+  if ('getAll' in store) return idbRequest(store.getAll());
+  const out = [];
+  await new Promise((resolve, reject) => {
+    const req = store.openCursor();
+    req.onsuccess = (e) => {
+      const c = e.target.result;
+      if (c) { out.push(c.value); c.continue(); } else resolve();
+    };
+    req.onerror = () => reject(req.error);
+  });
+  return out;
+}
 
 // Reloads the most recent saved session from IndexedDB
 async function reloadSavedSession() {
   try {
     const db = await ensureDb();
     const tx = db.transaction(STORE_NAME, 'readonly');
-    const all = await tx.store.getAll();
-    await tx.done;
+    const store = tx.objectStore(STORE_NAME);
 
-    if (!all.length) {
+    // getAll is widely supported; cursor fallback shown below if you need it
+    let all = await storeGetAll(store);
+    await idbTransactionDone(tx);
+
+    if (!all || !all.length) {
       console.warn('No prior session found in IndexedDB.');
       showToast('No prior session found.', 'info');
       return;
     }
 
-    // Use the most recent save (last item)
+    // Use the latest record
     const { rdfData, format } = all[all.length - 1];
 
-    // Parse to quads using N3
+    // Parse RDF → quads
     const parser = new N3.Parser({ format: n3FormatForSaved(format) });
-    const quads = parser.parse(rdfData); // throws on invalid syntax
+    const quads = parser.parse(rdfData);
 
-    // Build subject -> predicate -> [objects] map, collect unique predicates
-    const subjMap = new Map(); // s -> Map(p -> Set(objs as strings))
-    const allPreds = new Set();
+    // Build subject → predicate→values map + set of all predicates
+    const subjMap = new Map();
+    const extraPreds = new Set();
 
     for (const q of quads) {
-      // subject (IRI or blank)
       const s = q.subject.termType === 'BlankNode' ? `_:${q.subject.value}` : q.subject.value;
-
-      // predicate IRI
       const p = q.predicate.value;
-      allPreds.add(p);
 
-      // object string (keep a simple normalized string)
       let o;
       if (q.object.termType === 'Literal') {
         const lang = q.object.language ? `@${q.object.language}` : '';
@@ -960,52 +959,50 @@ async function reloadSavedSession() {
       pMap.get(p).add(o);
     }
 
-    // Map RDF → your 6 base columns
-    // base headers: ["iri","label","element type","definition","is a","is curated in ontology"]
-    const baseHeaders = getColumnHeaders().slice(0, BASE_COLS);
-
-    // Known IRIs we’ll map into base columns
+    // Map to your 6 base columns
     const P = {
-      label: 'http://www.w3.org/2000/01/rdf-schema#label',
-      definition: 'http://www.w3.org/2004/02/skos/core#definition',
-      rdfType: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
-      subClassOf: 'http://www.w3.org/2000/01/rdf-schema#subClassOf',
-      subPropertyOf: 'http://www.w3.org/2000/01/rdf-schema#subPropertyOf',
-      curatedIn: 'https://www.commoncoreontologies.org/ont00001760', // cco2:ont00001760
-      owlClass: 'http://www.w3.org/2002/07/owl#Class',
-      owlObjProp: 'http://www.w3.org/2002/07/owl#ObjectProperty',
-      owlDataProp: 'http://www.w3.org/2002/07/owl#DatatypeProperty',
-      owlAnnProp: 'http://www.w3.org/2002/07/owl#AnnotationProperty'
+      label:        'http://www.w3.org/2000/01/rdf-schema#label',
+      definition:   'http://www.w3.org/2004/02/skos/core#definition',
+      rdfType:      'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
+      subClassOf:   'http://www.w3.org/2000/01/rdf-schema#subClassOf',
+      subPropertyOf:'http://www.w3.org/2000/01/rdf-schema#subPropertyOf',
+      curatedIn:    'https://www.commoncoreontologies.org/ont00001760',
+      owlClass:     'http://www.w3.org/2002/07/owl#Class',
+      owlObjProp:   'http://www.w3.org/2002/07/owl#ObjectProperty',
+      owlDataProp:  'http://www.w3.org/2002/07/owl#DatatypeProperty',
+      owlAnnProp:   'http://www.w3.org/2002/07/owl#AnnotationProperty'
     };
 
-    const rows = [];
-    const extraPreds = new Set();
+    const firstLiteral = (arr) =>
+      (arr || []).find(v => v.startsWith('"'))?.replace(/^"(.*)"(?:@[\w-]+|\^\^<[^>]+>)?$/, '$1') || '';
 
+    const iriFromObjects = (arr) => {
+      for (const o of arr || []) {
+        const m = /^<([^>]+)>$/.exec(o);
+        if (m) return m[1];
+      }
+      return '';
+    };
+
+    const rowsTmp = [];
     for (const [s, pMap] of subjMap.entries()) {
-      // determine element type from rdf:type objects
       const rdfTypes = Array.from(pMap.get(P.rdfType)?.values() || []);
       let elementType = '';
       if (rdfTypes.includes(`<${P.owlClass}>`)) elementType = 'Class';
       else if (rdfTypes.includes(`<${P.owlObjProp}>`)) elementType = 'ObjectProperty';
       else if (rdfTypes.includes(`<${P.owlDataProp}>`)) elementType = 'DatatypeProperty';
       else if (rdfTypes.includes(`<${P.owlAnnProp}>`)) elementType = 'AnnotationProperty';
-      else if (rdfTypes.length) elementType = 'NamedIndividual'; // has a type but not an OWL property/class type
-      else elementType = ''; // unknown
+      else if (rdfTypes.length) elementType = 'NamedIndividual';
 
       const label = firstLiteral(Array.from(pMap.get(P.label)?.values() || []));
       const definition = firstLiteral(Array.from(pMap.get(P.definition)?.values() || []));
 
-      // compute "is a" column:
-      //  - Class: rdfs:subClassOf
-      //  - Properties: rdfs:subPropertyOf
-      //  - Individuals: one of rdf:type values that is an IRI (prefer non-OWL meta class)
       let isA = '';
       if (elementType === 'Class') {
         isA = iriFromObjects(Array.from(pMap.get(P.subClassOf)?.values() || []));
       } else if (elementType === 'ObjectProperty' || elementType === 'DatatypeProperty' || elementType === 'AnnotationProperty') {
         isA = iriFromObjects(Array.from(pMap.get(P.subPropertyOf)?.values() || []));
       } else if (elementType === 'NamedIndividual') {
-        // prefer a class-looking IRI among rdf:type objects (skip the OWL property/class kinds)
         const classish = rdfTypes
           .map(v => /^<([^>]+)>$/.exec(v)?.[1])
           .filter(u => u && u !== P.owlClass && u !== P.owlObjProp && u !== P.owlDataProp && u !== P.owlAnnProp);
@@ -1014,41 +1011,32 @@ async function reloadSavedSession() {
 
       const curatedIn = firstLiteral(Array.from(pMap.get(P.curatedIn)?.values() || []));
 
-      // Prepare base row of expected width; fill base columns
+      // base row
       const row = Array.from({ length: BASE_COLS }, () => '');
-      row[0] = s;                 // iri
-      row[1] = label;             // label
-      row[2] = elementType;       // element type
-      row[3] = definition;        // definition
-      row[4] = isA;               // is a (IRI)
-      row[5] = curatedIn;         // is curated in ontology (literal or IRI text)
+      row[0] = s;
+      row[1] = label;
+      row[2] = elementType;
+      row[3] = definition;
+      row[4] = isA;
+      row[5] = curatedIn;
 
-      // Any other predicates become custom predicate columns
-      for (const [p, valsSet] of pMap.entries()) {
+      // gather extra predicates (not mapped to base columns)
+      for (const p of pMap.keys()) {
         if (
-          p === P.label ||
-          p === P.definition ||
-          p === P.rdfType ||
-          p === P.subClassOf ||
-          p === P.subPropertyOf ||
-          p === P.curatedIn
-        ) {
-          continue; // already mapped to base columns
-        }
+          p === P.label || p === P.definition || p === P.rdfType ||
+          p === P.subClassOf || p === P.subPropertyOf || p === P.curatedIn
+        ) continue;
         extraPreds.add(p);
       }
 
-      rows.push({ row, pMap }); // keep pMap for second pass to fill extras
+      rowsTmp.push({ row, pMap });
     }
 
-    // Update global customPredicates from discovered extras (stable order)
+    // adopt discovered extra predicates as your custom columns (sorted for stability)
     const extraList = Array.from(extraPreds).sort();
-
-    // Replace the runtime customPredicates with the newly discovered set
     customPredicates.splice(0, customPredicates.length, ...extraList);
 
-    // Build final 2D array: base cols + extras in the discovered order
-    const finalRows = rows.map(({ row, pMap }) => {
+    const finalRows = rowsTmp.map(({ row, pMap }) => {
       const extended = row.concat(extraList.map(() => ''));
       extraList.forEach((predIri, i) => {
         const vals = Array.from(pMap.get(predIri)?.values() || []);
@@ -1057,12 +1045,11 @@ async function reloadSavedSession() {
       return extended;
     });
 
-    // Rebuild HOT
+    // Rebuild Handsontable
     const newHeaders = getColumnHeaders(); // base + customPredicates
     const newColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
 
-    if (hotInstance) try { hotInstance.destroy(); } catch(_) {}
-
+    if (hotInstance) { try { hotInstance.destroy(); } catch(_) {} }
     hotInstance = createTable(container, finalRows, newHeaders, newColumns);
     attachHotHooks();
     applyHiddenColumnsToHot();
