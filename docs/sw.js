@@ -29,6 +29,16 @@ const PRECACHE_MANIFEST = [
   { url: './json/bfo-lookup.json',        revision: 'v0.1.1' },
 ];
 
+/**
+ * Helper: is HTTP(S) request to avoid caching a non-HTTP(S) request. This is usually something injected by a browser extension (e.g., React DevTools) with a chrome-extension:// URL.
+ * @param {*} reqOrUrl 
+ * @returns 
+ */
+const isHttpRequest = (reqOrUrl) => {
+  const u = reqOrUrl instanceof Request ? new URL(reqOrUrl.url) : new URL(reqOrUrl);
+  return u.protocol === 'http:' || u.protocol === 'https:';
+};
+
 // Helper: fetch with cache-bust using the revision (precache-only)
 async function cacheWithRevision(cache, entry) {
   const { url } = entry;
@@ -85,8 +95,11 @@ self.addEventListener('fetch', (event) => {
       try {
         const network = await fetch(req);
         // Optionally, update the precache copy of index.html
-        const cache = await caches.open(PRECACHE_NAME);
-        cache.put('/index.html', network.clone());
+        if (isHttpRequest(req)) {
+          const cache = await caches.open(PRECACHE_NAME);
+          // be explicit about which URL you cache; ensure it's http(s)
+          await cache.put('index.html', network.clone());
+        }
         return network;
       } catch {
         const cache = await caches.open(PRECACHE_NAME);
@@ -105,8 +118,11 @@ self.addEventListener('fetch', (event) => {
       const cached = await cache.match(req);
       if (cached) return cached;
       const res = await fetch(req);
-      // only cache successful, safe responses
-      if (res.ok) cache.put(req, res.clone());
+      // only cache successful http(s) GETs
+      if (res.ok && req.method === 'GET' && isHttpRequest(req)) {
+        const cache = await caches.open(PRECACHE_NAME);
+        await cache.put(req, res.clone());
+      }
       return res;
     })());
     return;
@@ -118,7 +134,8 @@ self.addEventListener('fetch', (event) => {
       const cache = await caches.open(JSON_CACHE);
       const cached = await cache.match(req);
       const fetchPromise = fetch(req).then(async (res) => {
-        if (res.ok) {
+        if (res.ok && isHttpRequest(req)) {
+          const cache = await caches.open(JSON_CACHE);
           const old = cached ? await cached.clone().text() : null;
           const fresh = await res.clone().text();
           await cache.put(req, res.clone());
@@ -142,10 +159,14 @@ self.addEventListener('fetch', (event) => {
     const cache = await caches.open(RUNTIME_NAME);
     try {
       const res = await fetch(req);
-      if (res.ok && req.method === 'GET') cache.put(req, res.clone());
+      if (res.ok && req.method === 'GET' && isHttpRequest(req)) {
+        const cache = await caches.open(RUNTIME_NAME);
+        await cache.put(req, res.clone());
+      }
       return res;
     } catch {
-      const cached = await cache.match(req);
+      const cache = await caches.open(RUNTIME_NAME);
+      const cached = isHttpRequest(req) ? await cache.match(req) : null;
       return cached || new Response('Offline', { status: 503 });
     }
   })());
