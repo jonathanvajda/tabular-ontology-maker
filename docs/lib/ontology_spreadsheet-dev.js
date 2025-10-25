@@ -864,7 +864,7 @@ function setReloadBtnVisible(isVisible) {
   if (!btn) {
     console.info('setReloadBtnVisible: no button found');
     return;}
-  if (!isVisible) {
+  if (isVisible) {
     console.info('setReloadBtnVisible: hiding button');
     // if (btn.hidden) btn.visible;
     if (btn.disabled) btn.disabled = false;
