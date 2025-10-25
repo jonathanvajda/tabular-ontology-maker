@@ -860,8 +860,8 @@ function ensureDb() {
 function setReloadBtnVisible(isVisible) {
   const btn = document.getElementById('reloadSavedSessionBtn');
   if (!btn) return;
-  btn.hidden = !isVisible;
-  btn.disabled = !isVisible;
+  if (btn.hidden) !isVisible;
+  if (btn.disabled) !isVisible;
 }
 
 // Check and update the button (call on load and after saves)

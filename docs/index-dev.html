@@ -247,7 +247,7 @@
 
     <button onclick="saveOntologySettingsFromModal()">Save & Close</button>
     <button onclick="document.getElementById('ontology-settings-modal').style.display='none'">Close</button>
-    <button id="resetSession" style="float:right" onclick="localStorage.clear(); console.log('localStorage has been cleared!'); document.getElementById('ontology-settings-modal').style.display='none'">Reset Session</button>
+    <button id="resetSession" style="float:right" onclick="localStorage.clear(); console.log('localStorage has been cleared!'); document.getElementById('ontology-settings-modal').style.display='none'; indexedDB.deleteDatabase('TabularOntologyDB');">Reset Session</button>
   </div>
 
   <!-- Ontology Imports Modal -->
