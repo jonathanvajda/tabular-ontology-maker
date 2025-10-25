@@ -796,7 +796,7 @@ document.getElementById('saveToDatebaseBtn').addEventListener('click', saveRDFto
  * @returns {Promise<IDBPDatabase>}
  */
 async function ensureDb() {
-  return openDB(DB_NAME, DB_VERSION, {
+  return indexedDB.open(DB_NAME, DB_VERSION, {
     upgrade(db) {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
@@ -815,7 +815,7 @@ async function hasPriorSession() {
 
 // Show/hide + enable/disable the button
 function setReloadBtnVisible(isVisible) {
-  const btn = document.getElementById('reloadSessionBtn');
+  const btn = document.getElementById('reloadSavedSessionBtn');
   if (!btn) return;
   btn.hidden = !isVisible;
   btn.disabled = !isVisible;
@@ -830,24 +830,207 @@ async function updateReloadButton() {
 // On first paint, decide whether to show the button
 document.addEventListener('DOMContentLoaded', updateReloadButton);
 
+/**
+ * Maps saved format strings to N3.Parser formats.
+ * @param {string} format
+ * @returns 
+ */
+function n3FormatForSaved(format) {
+  // Map your saved "format" (ttl|rdf|jsonld|nt|trig) to N3.Parser formats
+  const f = String(format || '').toLowerCase();
+  if (f === 'ttl' || f.includes('turtle')) return 'Turtle';
+  if (f === 'nt'  || f.includes('n-triple')) return 'N-Triples';
+  if (f === 'trig') return 'TriG';
+  // N3.Parser does not parse RDF/XML or JSON-LD. If you need those, convert before parse.
+  // For now, treat others as Turtle; you can extend later with rdfxml/jsonld conversions.
+  return 'Turtle';
+}
+
+function firstLiteral(objs) {
+  // pick the first literal string from an array of objects (already stringified below)
+  for (const o of objs) {
+    if (o.startsWith('"')) return o.replace(/^"(.*)"(?:@[\w-]+|\^\^<[^>]+>)?$/, '$1');
+  }
+  return '';
+}
+
+function iriFromObjects(objs) {
+  // pick the first IRI-looking object like <http://...>
+  for (const o of objs) {
+    const m = /^<([^>]+)>$/.exec(o);
+    if (m) return m[1];
+  }
+  return '';
+}
+
+
 // Reloads the most recent saved session from IndexedDB
 async function reloadSavedSession() {
-  const db = await ensureDb();
-  // Example: load the most recent entry (simple approach)
-  const tx = db.transaction(STORE_NAME, 'readonly');
-  const all = await tx.store.getAll(); // okay for small data; index/cursor for large
-  await tx.done;
-  if (all.length) {
-    const last = all[all.length - 1];
-    // Do whatever “reload” means in your app (e.g., populate a textarea/grid)
-    output.value = last.rdfData;
-    console.info('Reloaded prior session from IndexedDB:', last);
-    showToast('Loaded prior session.', 'success');
-  } else {
-    console.warn('No prior session found in IndexedDB.');
-    showToast('No prior session found.', 'info');
+  try {
+    const db = await ensureDb();
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const all = await tx.store.getAll();
+    await tx.done;
+
+    if (!all.length) {
+      console.warn('No prior session found in IndexedDB.');
+      showToast('No prior session found.', 'info');
+      return;
+    }
+
+    // Use the most recent save (last item)
+    const { rdfData, format } = all[all.length - 1];
+
+    // Parse to quads using N3
+    const parser = new N3.Parser({ format: n3FormatForSaved(format) });
+    const quads = parser.parse(rdfData); // throws on invalid syntax
+
+    // Build subject -> predicate -> [objects] map, collect unique predicates
+    const subjMap = new Map(); // s -> Map(p -> Set(objs as strings))
+    const allPreds = new Set();
+
+    for (const q of quads) {
+      // subject (IRI or blank)
+      const s = q.subject.termType === 'BlankNode' ? `_:${q.subject.value}` : q.subject.value;
+
+      // predicate IRI
+      const p = q.predicate.value;
+      allPreds.add(p);
+
+      // object string (keep a simple normalized string)
+      let o;
+      if (q.object.termType === 'Literal') {
+        const lang = q.object.language ? `@${q.object.language}` : '';
+        const dt = q.object.datatype && q.object.datatype.value !== 'http://www.w3.org/2001/XMLSchema#string'
+          ? `^^<${q.object.datatype.value}>` : '';
+        o = `"${q.object.value}"${lang}${dt}`;
+      } else if (q.object.termType === 'BlankNode') {
+        o = `_:${q.object.value}`;
+      } else {
+        o = `<${q.object.value}>`;
+      }
+
+      if (!subjMap.has(s)) subjMap.set(s, new Map());
+      const pMap = subjMap.get(s);
+      if (!pMap.has(p)) pMap.set(p, new Set());
+      pMap.get(p).add(o);
+    }
+
+    // Map RDF → your 6 base columns
+    // base headers: ["iri","label","element type","definition","is a","is curated in ontology"]
+    const baseHeaders = getColumnHeaders().slice(0, BASE_COLS);
+
+    // Known IRIs we’ll map into base columns
+    const P = {
+      label: 'http://www.w3.org/2000/01/rdf-schema#label',
+      definition: 'http://www.w3.org/2004/02/skos/core#definition',
+      rdfType: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
+      subClassOf: 'http://www.w3.org/2000/01/rdf-schema#subClassOf',
+      subPropertyOf: 'http://www.w3.org/2000/01/rdf-schema#subPropertyOf',
+      curatedIn: 'https://www.commoncoreontologies.org/ont00001760', // cco2:ont00001760
+      owlClass: 'http://www.w3.org/2002/07/owl#Class',
+      owlObjProp: 'http://www.w3.org/2002/07/owl#ObjectProperty',
+      owlDataProp: 'http://www.w3.org/2002/07/owl#DatatypeProperty',
+      owlAnnProp: 'http://www.w3.org/2002/07/owl#AnnotationProperty'
+    };
+
+    const rows = [];
+    const extraPreds = new Set();
+
+    for (const [s, pMap] of subjMap.entries()) {
+      // determine element type from rdf:type objects
+      const rdfTypes = Array.from(pMap.get(P.rdfType)?.values() || []);
+      let elementType = '';
+      if (rdfTypes.includes(`<${P.owlClass}>`)) elementType = 'Class';
+      else if (rdfTypes.includes(`<${P.owlObjProp}>`)) elementType = 'ObjectProperty';
+      else if (rdfTypes.includes(`<${P.owlDataProp}>`)) elementType = 'DatatypeProperty';
+      else if (rdfTypes.includes(`<${P.owlAnnProp}>`)) elementType = 'AnnotationProperty';
+      else if (rdfTypes.length) elementType = 'NamedIndividual'; // has a type but not an OWL property/class type
+      else elementType = ''; // unknown
+
+      const label = firstLiteral(Array.from(pMap.get(P.label)?.values() || []));
+      const definition = firstLiteral(Array.from(pMap.get(P.definition)?.values() || []));
+
+      // compute "is a" column:
+      //  - Class: rdfs:subClassOf
+      //  - Properties: rdfs:subPropertyOf
+      //  - Individuals: one of rdf:type values that is an IRI (prefer non-OWL meta class)
+      let isA = '';
+      if (elementType === 'Class') {
+        isA = iriFromObjects(Array.from(pMap.get(P.subClassOf)?.values() || []));
+      } else if (elementType === 'ObjectProperty' || elementType === 'DatatypeProperty' || elementType === 'AnnotationProperty') {
+        isA = iriFromObjects(Array.from(pMap.get(P.subPropertyOf)?.values() || []));
+      } else if (elementType === 'NamedIndividual') {
+        // prefer a class-looking IRI among rdf:type objects (skip the OWL property/class kinds)
+        const classish = rdfTypes
+          .map(v => /^<([^>]+)>$/.exec(v)?.[1])
+          .filter(u => u && u !== P.owlClass && u !== P.owlObjProp && u !== P.owlDataProp && u !== P.owlAnnProp);
+        if (classish.length) isA = classish[0];
+      }
+
+      const curatedIn = firstLiteral(Array.from(pMap.get(P.curatedIn)?.values() || []));
+
+      // Prepare base row of expected width; fill base columns
+      const row = Array.from({ length: BASE_COLS }, () => '');
+      row[0] = s;                 // iri
+      row[1] = label;             // label
+      row[2] = elementType;       // element type
+      row[3] = definition;        // definition
+      row[4] = isA;               // is a (IRI)
+      row[5] = curatedIn;         // is curated in ontology (literal or IRI text)
+
+      // Any other predicates become custom predicate columns
+      for (const [p, valsSet] of pMap.entries()) {
+        if (
+          p === P.label ||
+          p === P.definition ||
+          p === P.rdfType ||
+          p === P.subClassOf ||
+          p === P.subPropertyOf ||
+          p === P.curatedIn
+        ) {
+          continue; // already mapped to base columns
+        }
+        extraPreds.add(p);
+      }
+
+      rows.push({ row, pMap }); // keep pMap for second pass to fill extras
+    }
+
+    // Update global customPredicates from discovered extras (stable order)
+    const extraList = Array.from(extraPreds).sort();
+
+    // Replace the runtime customPredicates with the newly discovered set
+    customPredicates.splice(0, customPredicates.length, ...extraList);
+
+    // Build final 2D array: base cols + extras in the discovered order
+    const finalRows = rows.map(({ row, pMap }) => {
+      const extended = row.concat(extraList.map(() => ''));
+      extraList.forEach((predIri, i) => {
+        const vals = Array.from(pMap.get(predIri)?.values() || []);
+        extended[BASE_COLS + i] = vals.join(' ; ');
+      });
+      return extended;
+    });
+
+    // Rebuild HOT
+    const newHeaders = getColumnHeaders(); // base + customPredicates
+    const newColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
+
+    if (hotInstance) try { hotInstance.destroy(); } catch(_) {}
+
+    hotInstance = createTable(container, finalRows, newHeaders, newColumns);
+    attachHotHooks();
+    applyHiddenColumnsToHot();
+    harvestRowsIntoVocab(finalRows);
+
+    showToast(`✅ Reloaded ${subjMap.size} subject${subjMap.size!==1?'s':''} from latest saved RDF`, 'success');
+  } catch (e) {
+    console.error('[reloadSavedSession] failed:', e);
+    showToast('❌ Failed to reload prior session — see console', 'error');
   }
-};
+}
+
 
 // Optional: what happens when the user clicks "Reload Prior Session"
 document.getElementById('reloadSavedSessionBtn')?.addEventListener('click', reloadSavedSession);
