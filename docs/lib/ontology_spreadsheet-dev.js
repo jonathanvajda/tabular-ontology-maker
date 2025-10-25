@@ -10,6 +10,11 @@ const output = document.getElementById('rdfOutput');
 // 0: iri, 1: label, 2: element type, 3: definition, 4: is a, 5: is curated in ontology
 const BASE_COLS = 6;
 
+// --- Constants so you can rename easily ---
+const DB_NAME = 'TabularOntologyDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'rdfStore';
+
 function showToast(message, type = "success", duration = 3000) {
   try {
     const container = document.getElementById("toast-container");
@@ -596,6 +601,12 @@ function getOntologyIRI() {
   return settings.iri || "http://example.org/ExampleOntology";
 }
 
+/**
+ * Generates an RDF string from the given rows in the specified format.
+ * @param {*} rows
+ * @param {*} format 
+ * @returns 
+ */
 const generateRdfString = (rows, format = 'ttl') => {
   console.info('generateRdfString happened');
   const formatMap = {
@@ -745,7 +756,107 @@ const handleExport = async (shouldDownload = false) => {
   }
 };
 
-// This is called by generateOntologySettings to get the current date parts
+/**
+ * Saves the current RDF data to IndexedDB.
+ * Uses the idb library for IndexedDB operations.
+ * @params none
+ * @returns {Promise<void>}
+ */
+const saveRDFtoIndexedDB = async () => {
+  console.info('saveRDFtoIndexedDB happened');
+  const rows = hotInstance.getData();
+  const format = document.getElementById('saveToDatebaseBtn').value;
+  try {
+    const rdfString = await generateRdfString(rows, format); 
+    output.value = rdfString;
+    const db = await openDB('TabularOntologyDB', 1, {
+      upgrade(db) {
+        if (!db.objectStoreNames.contains('rdfStore')) {
+          db.createObjectStore('rdfStore', { keyPath: 'id', autoIncrement: true });
+        }
+      },
+    });
+    const tx = db.transaction('rdfStore', 'readwrite');
+    const store = tx.objectStore('rdfStore');
+    await store.add({ rdfData: rdfString, format: format, timestamp: new Date() });
+    await tx.done;
+    console.info('RDF data saved to IndexedDB successfully.');
+    showToast('RDF data saved to database successfully.', 'success');
+  } catch (e) {
+    console.error('saveRDFtoIndexedDB failed:', e);
+    showToast('Failed to save RDF data to database.', 'error');
+  }
+}
+
+// Attach event listener to the "Save to Database" button
+document.getElementById('saveToDatebaseBtn').addEventListener('click', saveRDFtoIndexedDB);
+
+/**
+ * Ensures DB + object store exist; returns an IDBPDatabase instance
+ * @params none
+ * @returns {Promise<IDBPDatabase>}
+ */
+async function ensureDb() {
+  return openDB(DB_NAME, DB_VERSION, {
+    upgrade(db) {
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+      }
+    },
+  });
+}
+
+// Returns true if there's at least one saved row
+async function hasPriorSession() {
+  const db = await ensureDb();
+  // With idb you can call count directly on the db:
+  const count = await db.count(STORE_NAME);
+  return count > 0;
+}
+
+// Show/hide + enable/disable the button
+function setReloadBtnVisible(isVisible) {
+  const btn = document.getElementById('reloadSessionBtn');
+  if (!btn) return;
+  btn.hidden = !isVisible;
+  btn.disabled = !isVisible;
+}
+
+// Check and update the button (call on load and after saves)
+async function updateReloadButton() {
+  const visible = await hasPriorSession();
+  setReloadBtnVisible(visible);
+}
+
+// On first paint, decide whether to show the button
+document.addEventListener('DOMContentLoaded', updateReloadButton);
+
+// Reloads the most recent saved session from IndexedDB
+async function reloadSavedSession() {
+  const db = await ensureDb();
+  // Example: load the most recent entry (simple approach)
+  const tx = db.transaction(STORE_NAME, 'readonly');
+  const all = await tx.store.getAll(); // okay for small data; index/cursor for large
+  await tx.done;
+  if (all.length) {
+    const last = all[all.length - 1];
+    // Do whatever “reload” means in your app (e.g., populate a textarea/grid)
+    output.value = last.rdfData;
+    console.info('Reloaded prior session from IndexedDB:', last);
+    showToast('Loaded prior session.', 'success');
+  } else {
+    console.warn('No prior session found in IndexedDB.');
+    showToast('No prior session found.', 'info');
+  }
+};
+
+// Optional: what happens when the user clicks "Reload Prior Session"
+document.getElementById('reloadSavedSessionBtn')?.addEventListener('click', reloadSavedSession);
+
+/**
+ * Gets the current date parts (year, month, day) as zero-padded strings.
+ * @returns 
+ */
 function getCurrentDateParts() {
   const now = new Date();
   const year = now.getFullYear();
