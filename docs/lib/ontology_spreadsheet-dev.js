@@ -14,6 +14,8 @@ const BASE_COLS = 6;
 const DB_NAME = 'TabularOntologyDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'rdfStore';
+const SETTINGS_STORE = 'ontologySettingsStore';
+let SETTINGS_CACHE = null;
 
 function showToast(message, type = "success", duration = 3000) {
   try {
@@ -86,16 +88,54 @@ let vocabByLabelLC = new Map();
 
 /*
   These functions are used to manage ontology settings:
-    generateOntologySettings creates a default ontology settings object and saves it to localStorage.
-    loadOntologySettings retrieves the ontology settings from localStorage or generates default settings if none exist.
+    generateOntologySettings creates a default ontology settings object and saves it.
+    loadOntologySettings retrieves the ontology settings or generates default settings if none exist.
     openOntologySettingsModal opens a modal to edit the ontology settings.
-    saveOntologySettingsFromModal saves the edited ontology settings back to localStorage.
+    saveOntologySettingsFromModal saves the edited ontology settings back.
     openImportsModal opens a modal to manage ontology imports.
     handleImportFileUpload handles the upload of ontology import files and validates them.
     addImportIRI adds a new import IRI to the ontology settings.
     saveImportsAndClose saves the current imports and closes the modal.
     
 */
+
+// Read from IDB (or create defaults) and cache
+async function settingsLoad() {
+  const db = await ensureDb();
+  const tx = db.transaction(SETTINGS_STORE, 'readonly');
+  const rec = await idbRequest(tx.objectStore(SETTINGS_STORE).get('ontologySettings'));
+  await idbTxDone(tx);
+
+  if (rec && rec.value) {
+    SETTINGS_CACHE = rec.value;
+    return SETTINGS_CACHE;
+  }
+
+  // create defaults once if nothing is stored yet
+  SETTINGS_CACHE = generateOntologySettings();
+  await saveOntologySettings(SETTINGS_CACHE);
+  return SETTINGS_CACHE;
+}
+
+// Save to IDB and cache
+async function saveOntologySettings(next) {
+  SETTINGS_CACHE = next;
+  const db = await ensureDb();
+  const tx = db.transaction(SETTINGS_STORE, 'readwrite');
+  tx.objectStore(SETTINGS_STORE).put({ key: 'ontologySettings', value: SETTINGS_CACHE, updatedAt: new Date().toISOString() });
+  await idbTxDone(tx);
+  showToast('Ontology settings saved to database.', 'success');
+}
+
+// Synchronous accessor *after* settingsLoad() has run
+function getOntologySettings() {
+  if (!SETTINGS_CACHE) {
+    console.warn('[getOntologySettings] Settings cache is empty; call settingsLoad() during init.');
+    return generateOntologySettings(); // very last resort to avoid crashes
+  }
+  return SETTINGS_CACHE;
+}
+
 
 function getSelectedDelimiter() {
   const selected = document.querySelector('input[name="base-iri-delimiter"]:checked');
@@ -110,7 +150,6 @@ function updateOntologyPreview() {
     const { year, month, day } = getCurrentDateParts();
     const normalizedLabel = toPascalCase(label);
 
-    // Only update the preview text — do NOT write to localStorage here.
     document.getElementById("version-iri-preview").textContent =
       `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`;
     document.getElementById("version-info-preview").textContent = `${year}-${month}-${day}`;
@@ -151,13 +190,11 @@ function generateOntologySettings(
     delimiter,     // keep delimiter explicitly too
     base           // store base, handy later
   };
-
-  localStorage.setItem("ontologySettings", JSON.stringify(settings));
   return settings;
 }
 
 function getEffectiveOntologySettings() {
-  const stored = loadOntologySettings() || {};
+  const stored = getOntologySettings() || {};
   const modal = document.getElementById("ontology-settings-modal");
 
   // If modal is open, prefer the values the user currently sees
@@ -208,15 +245,9 @@ function initializeIriModeToggles() {
   toggleIriModeOptions();
 }
 
-
-function loadOntologySettings() {
-  const stored = localStorage.getItem('ontologySettings');
-  return stored ? JSON.parse(stored) : generateOntologySettings();
-}
-
 function openOntologySettingsModal() {
   const modal = document.getElementById("ontology-settings-modal");
-  const s = loadOntologySettings();
+  const s = getOntologySettings();
 
   // existing fields
   document.getElementById("ontology-base-iri-input").value = (s.base || s.iri.split("/").slice(0, -1).join("/"));
@@ -251,27 +282,63 @@ function openOntologySettingsModal() {
   updateOntologyPreview();
 }
 
-function saveOntologySettingsFromModal() {
+async function saveOntologySettingsFromModal() {
   const base = document.getElementById("ontology-base-iri-input").value.trim();
   const label = document.getElementById("ontology-label-input").value.trim();
   const creator = document.getElementById("ontology-creator-input").value.trim();
   const description = document.getElementById("ontology-description-input").value.trim();
-  const delimiter = getSelectedDelimiter();
+  const delimiter = document.querySelector('input[name="base-iri-delimiter"]:checked').value;
+  const iriMode = document.querySelector('input[name="iri-mode"]:checked').value;
+  const opaqueLeading = document.getElementById('opaque-leading').value;
+  const opaqueDigits  = +document.getElementById('opaque-digits').value;
+  const opaqueStart   = +document.getElementById('opaque-start').value;
+  const readableCase  = document.getElementById('readable-case').value;
 
-  // NEW:
-  const iriMode = document.querySelector('input[name="iri-mode"]:checked')?.value || "opaque";
-  const opaqueLeading = document.getElementById("opaque-leading").value.trim() || "ont";
-  const opaqueDigits  = Math.max(1, parseInt(document.getElementById("opaque-digits").value, 10) || 6);
-  const opaqueStart   = Math.max(1, parseInt(document.getElementById("opaque-start").value, 10) || 1);
-  const readableCase  = document.getElementById("readable-case").value || "PascalCase";
-
-  generateOntologySettings(
+  const next = generateOntologySettings(
     base, label, creator, description, delimiter,
     iriMode, opaqueLeading, opaqueDigits, opaqueStart, readableCase
   );
 
-  document.getElementById("ontology-settings-modal").style.display = "none";
+  await saveOntologySettings(next);
+  document.getElementById('ontology-settings-modal').style.display = 'none';
 }
+
+/**
+ * Loads ontology settings from IndexedDB strictly, without falling back to defaults.
+ * @return {Promise<Object|null>} The ontology settings object, or null if not found.
+ */
+async function getOntologySettings() {
+  const defaults = generateOntologySettings(/* your defaults */);
+  const fromDb = await getOntologySettings();
+  return fromDb || defaults;
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  // 1) Ensure DB stores exist (ensureDb is fine where it is)
+  await settingsLoad(); // fills SETTINGS_CACHE
+
+  // 2) Now you can safely read settings synchronously to populate the modal fields if needed
+  const s = getOntologySettings();
+  document.getElementById('ontology-label-input').value = s["rdfs:label"] || '';
+  document.getElementById('ontology-creator-input').value = s["dcterms:creator"] || '';
+  document.getElementById('ontology-description-input').value = s["dcterms:description"] || '';
+  document.getElementById('ontology-base-iri-input').value = s.base || '';
+  document.querySelector(`input[name="base-iri-delimiter"][value="${s.delimiter || '/'}"]`).checked = true;
+  document.querySelector(`input[name="iri-mode"][value="${s.iriMode || 'opaque'}"]`).checked = true;
+  document.getElementById('opaque-leading').value = s.opaqueLeading || 'ont';
+  document.getElementById('opaque-digits').value = s.opaqueDigits || 6;
+  document.getElementById('opaque-start').value = s.opaqueStart || 1;
+  document.getElementById('readable-case').value = s.readableCase || 'PascalCase';
+
+  // 3) Now build the table
+  hotInstance = createTable(container, getInitialData(), getColumnHeaders(), getColumnDefinitions());
+  attachHotHooks();
+  applyHiddenColumnsToHot();
+  harvestRowsIntoVocab(getInitialData());
+
+  // 4) Any other startup (buttons, etc.)
+  updateReloadSessionButton();
+});
 
 
 function zeroPad(n, width) {
@@ -431,7 +498,6 @@ const createTable = (container, data, colHeaders, columns) => {
   });
 };
 
-//
 function saveHiddenColumns(indices) {
   try {
     localStorage.setItem('hiddenColumns', JSON.stringify(indices || []));
@@ -552,7 +618,7 @@ harvestRowsIntoVocab(getInitialData());
  * using the ontology's IRI from ontology settings.
  */
 function setIsCuratedInForAllRows() {
-  const settings = JSON.parse(localStorage.getItem("ontologySettings") || "{}");
+  const settings = getOntologySettings();
   const ontologyIRI = settings["iri"];
 
   if (!ontologyIRI) {
@@ -582,7 +648,7 @@ function setIsCuratedInForAllRows() {
   console.info(`[setIsCuratedInForAllRows] Set for ${updatedCount} of ${totalRows} rows (only empty cells updated)`);
 }
 
-setIsCuratedInForAllRows(); // This uses the ontology IRI from localStorage
+setIsCuratedInForAllRows(); // This uses the ontology IRI from settings
 
 // This function checks if the element type is a predicate
 window.getIsAPredicateForRow = (rowIndex) => {
@@ -592,12 +658,12 @@ window.getIsAPredicateForRow = (rowIndex) => {
 };
 
 // This set of functions are used for outputting RDF.
-// getOntologyIRI retrieves the ontology IRI from localStorage or returns a default value.
+// getOntologyIRI retrieves the ontology IRI or returns a default value.
 // generateRdfString takes the rows of the Handsontable instance and converts them into an RDF string in the specified format.
 // handleExport generates the file
 
 function getOntologyIRI() {
-  const settings = JSON.parse(localStorage.getItem('ontologySettings') || '{}');
+  const settings = getOntologySettings();
   return settings.iri || "http://example.org/ExampleOntology";
 }
 
@@ -607,7 +673,7 @@ function getOntologyIRI() {
  * @param {*} format 
  * @returns 
  */
-const generateRdfString = (rows, format = 'ttl') => {
+async function generateRdfString (rows, format = 'ttl') {
   console.info('generateRdfString happened');
   const formatMap = {
     ttl: 'Turtle',
@@ -618,7 +684,7 @@ const generateRdfString = (rows, format = 'ttl') => {
   };
   const writer = new N3.Writer({ prefixes: iriPrefixes, format: formatMap[format] || 'Turtle' });
 
-  const settings = loadOntologySettings();
+  const settings = await getOntologySettings();
   const ontologyIRI = settings["iri"];
 
   writer.addQuad(
@@ -699,8 +765,7 @@ const generateRdfString = (rows, format = 'ttl') => {
         N3.DataFactory.literal(cellValue)
       );
     }
-}); 
-
+  }); 
   });
 
   return new Promise((resolve, reject) => {
@@ -730,6 +795,46 @@ const extensions = {
   nt: 'nt',
   trig: 'trig'
 };
+
+
+function idbRequest(req) {
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function idbTxDone(tx) {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('tx error'));
+    tx.onabort  = () => reject(tx.error || new Error('tx abort'));
+  });
+}
+
+async function saveOntologySettings(settings) {
+  const db = await ensureDb();
+  const tx = db.transaction(SETTINGS_STORE, 'readwrite');
+  tx.objectStore(SETTINGS_STORE).put({ key: 'ontologySettings', value: settings, updatedAt: new Date().toISOString() });
+  await idbTxDone(tx);
+  showToast('Ontology settings saved to database.', 'success');
+}
+
+// Load (read)
+async function getOntologySettings() {
+  const db = await ensureDb();
+  const tx = db.transaction(SETTINGS_STORE, 'readonly');
+  const rec = await idbRequest(tx.objectStore(SETTINGS_STORE).get('ontologySettings'));
+  return rec ? rec.value : null;
+}
+
+// Delete (optional)
+async function clearOntologySettings() {
+  const db = await ensureDb();
+  const tx = db.transaction(SETTINGS_STORE, 'readwrite');
+  tx.objectStore(SETTINGS_STORE).delete('ontologySettings');
+  await idbTxDone(tx);
+  showToast('Ontology settings cleared from database.', 'info');
+}
 
 const handleExport = async (shouldDownload = false) => {
   console.info('handleExport happened');
@@ -848,6 +953,9 @@ function ensureDb() {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
+        db.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
       }
     };
 
@@ -1403,7 +1511,7 @@ function attachHotHooks() {
   // NEW: when rows are created, auto-assign IRIs
   hotInstance.addHook('afterCreateRow', (index, amount, source) => {
     try {
-      const s = loadOntologySettings();
+      const s = getOntologySettings();
       const mode = s.iriMode || 'opaque';
 
       if (mode === 'opaque') {
@@ -1431,7 +1539,7 @@ function attachHotHooks() {
   hotInstance.addHook('afterChange', (changes, source) => {
     if (!Array.isArray(changes) || source === 'LoadData') return;
     try {
-      const s = loadOntologySettings();
+      const s = getOntologySettings();
       if ((s.iriMode || 'opaque') !== 'readable') return;
 
       // gather existing iris for uniqueness checks
@@ -1535,17 +1643,17 @@ document.getElementById('backfillIRIsBtn')
 
 // This function opens the ontology imports modal and populates it with current imports.
 // It retrieves the imports from the ontology settings and displays them with their status.
-function openImportsModal() {
+async function openImportsModal() {
   const modal = document.getElementById("ontology-imports-modal");
   const listContainer = document.getElementById("import-list");
   listContainer.innerHTML = "";
 
-  const settings = loadOntologySettings();
+  const settings = await getOntologySettings();
   const imports = settings["owl:imports"] || [];
 
   imports.forEach((iri) => {
     const localKey = `import:${iri}`;
-    const isLoaded = !!localStorage.getItem(localKey);
+    const isLoaded = !!getOntologySettings().getItem(localKey);
     const statusIcon = isLoaded ? "✅" : "❌";
 
     const div = document.createElement("div");
@@ -1579,7 +1687,7 @@ function handleImportFileUpload(event, iri) {
       return;
     }
 
-    localStorage.setItem(`import:${iri}`, content);
+    getOntologySettings().setItem(`import:${iri}`, content);
     validationMsg.style.display = "none";
     console.info(`Loaded valid ontology for ${iri}`);
     openImportsModal();
@@ -1588,16 +1696,15 @@ function handleImportFileUpload(event, iri) {
 }
 
 // This function adds a new import IRI to the ontology settings.
-function addImportIRI() {
+async function addImportIRI() {
   const iriInput = document.getElementById("new-import-iri");
   const iri = iriInput.value.trim();
   if (!iri) return;
 
-  const settings = loadOntologySettings();
+  const settings = await getOntologySettings();
   settings["owl:imports"] = settings["owl:imports"] || [];
   if (!settings["owl:imports"].includes(iri)) {
     settings["owl:imports"].push(iri);
-    localStorage.setItem('ontologySettings', JSON.stringify(settings));
   }
 
   iriInput.value = "";
