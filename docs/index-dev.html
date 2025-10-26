@@ -245,9 +245,9 @@
       <strong>Version Info:</strong> <span id="version-info-preview">[auto-generated]</span>
     </div>
 
-    <button onclick="saveOntologySettingsFromModal()">Save & Close</button>
-    <button onclick="document.getElementById('ontology-settings-modal').style.display='none'">Close</button>
-    <button id="resetSession" style="float:right" onclick="localStorage.clear(); indexedDB.deleteDatabase('TabularOntologyDB'); console.log('localStorage and IndexedDB have been cleared!'); document.getElementById('ontology-settings-modal').style.display='none';">Reset Session</button>
+    <button id="ontologySettingsModalSaveSettingsBtn">Save & Close</button>
+    <button id="ontologySettingsModalCancelSettingsBtn">Close</button>
+    <button id="ontologySettingsModalResetSessionBtn" style="float:right">Reset Session</button>
   </div>
 
   <!-- Ontology Imports Modal -->
@@ -257,10 +257,9 @@
 
     <label for="new-import-iri">Add new import IRI:</label><br>
     <input type="text" id="new-import-iri" style="width:100%" placeholder="http://example.org/ontology"><br>
-    <button onclick="addImportIRI()">Add Ontology</button><br><br>
-
-    <button onclick="saveImportsAndClose()">Save Imports</button>
-    <button onclick="document.getElementById('ontology-imports-modal').style.display='none'">Cancel</button>
+    <button id="importSettingsModalAddOntologyBtn">Add Ontology</button><br><br>
+    <button id="importSettingsModalSaveSettingsBtn">Save Imports</button>
+    <button id="importSettingsModalCancelSettingsBtn">Cancel</button>
   </div>
 
   <!-- Prefix Manager Modal -->
@@ -323,8 +322,7 @@
     <label for="predicate-iri">Or enter a custom IRI:</label><br>
     <input type="text" id="predicate-iri" style="width:100%" placeholder="e.g. http://example.org/myPredicate"><br><br>
 
-    <button onclick="confirmAddPredicate()">Add</button>
-
+    <button id="predicateSettingsModalAddPredicateBtn">Add</button>
 
     <hr style="margin:12px 0">
 
