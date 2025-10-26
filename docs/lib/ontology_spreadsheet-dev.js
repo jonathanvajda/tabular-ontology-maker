@@ -931,6 +931,30 @@ const saveRDFtoIndexedDB = async () => {
 // Attach event listener to the "Save to Database" button
 document.getElementById('saveToDatebaseBtn').addEventListener('click', saveRDFtoIndexedDB);
 
+// Ontology settings modal open/close/save
+document.getElementById('ontologySettingsModalSaveSettingsBtn').addEventListener('click', saveOntologySettingsFromModal);
+document.getElementById('ontologySettingsModalCancelSettingsBtn').addEventListener('click', () => {
+  document.getElementById('ontology-settings-modal').style.display='none'});
+document.getElementById('ontologySettingsModalResetSessionBtn').addEventListener('click', () => {
+  console.log('IndexedDB have been cleared!');
+  document.getElementById('ontology-settings-modal').style.display='none';
+});
+
+// Ontology imports modal open/close/save
+document.getElementById('importSettingsModalAddOntologyBtn').addEventListener('click', addImportIRI);
+document.getElementById('importSettingsModalSaveSettingsBtn').addEventListener('click', saveImportsAndClose);
+document.getElementById('importSettingsModalCancelSettingsBtn').addEventListener('click', () => {
+  document.getElementById('ontology-imports-modal').style.display='none'});
+
+// Predicate settings modal open/close/add
+document.getElementById('predicateSettingsModalAddPredicateBtn').addEventListener('click', confirmAddPredicate);
+
+
+/**
+ * Checks if there is a prior saved session in IndexedDB.
+ * @params none
+ * @returns {Promise<boolean>} 
+ */
 async function hasPriorSession() {
   const db = await ensureDb();
   const tx = db.transaction(STORE_NAME, 'readonly');
