@@ -880,7 +880,7 @@ async function openDb(name, version, { upgrade } = {}) {
  * @params none
  * @returns {Promise<void>}
  */
-const saveRDFtoIndexedDB = async () => {
+async function saveRDFtoIndexedDB() {
   console.info('saveRDFtoIndexedDB happened');
   const rows = hotInstance.getData();
   // A <button> has no useful .value — read from the format <select>

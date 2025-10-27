@@ -1,6 +1,7 @@
 
-const container = document.getElementById('hot');
-const output = document.getElementById('rdfOutput');
+document.addEventListener('DOMContentLoaded', () => {
+  const container = document.getElementById('hot');
+  const output = document.getElementById('rdfOutput');});
 
 function showToast(message, type = "success", duration = 3000) {
   try {
