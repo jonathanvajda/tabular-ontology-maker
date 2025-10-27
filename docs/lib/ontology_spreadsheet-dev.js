@@ -15,8 +15,8 @@ const output = document.getElementById('rdfOutput');
 const DB_NAME = 'TabularOntologyDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'rdfStore';
-const SETTINGS_STORE = 'ontologySettingsStore';
 let SETTINGS_CACHE = null;
+const SETTINGS_STORE = 'ontologySettingsStore';
 
 // Global prefix store (prepopulated)
 const iriPrefixes = {
@@ -85,16 +85,17 @@ async function settingsLoad() {
   const db = await ensureDb();
   const tx = db.transaction(SETTINGS_STORE, 'readonly');
   const rec = await idbRequest(tx.objectStore(SETTINGS_STORE).get('ontologySettings'));
-  await idbTxDone(tx);
 
   if (rec && rec.value) {
     SETTINGS_CACHE = rec.value;
     return SETTINGS_CACHE;
   }
 
-  // create defaults once if nothing is stored yet
+  // No record: create defaults and persist once
   SETTINGS_CACHE = generateOntologySettings();
-  await saveOntologySettings(SETTINGS_CACHE);
+  const wtx = db.transaction(SETTINGS_STORE, 'readwrite');
+  wtx.objectStore(SETTINGS_STORE).put({ key: 'ontologySettings', value: SETTINGS_CACHE, updatedAt: new Date().toISOString() });
+  await idbTxDone(wtx);
   return SETTINGS_CACHE;
 }
 
@@ -111,12 +112,18 @@ async function saveOntologySettings(next) {
 // Synchronous accessor *after* settingsLoad() has run
 function getOntologySettings() {
   if (!SETTINGS_CACHE) {
-    console.warn('[getOntologySettings] Settings cache is empty; call settingsLoad() during init.');
-    return generateOntologySettings(); // very last resort to avoid crashes
+    console.warn('[getOntologySettings] Cache empty — did you await settingsLoad() during init?');
+    // Last-resort fallback to keep UI from crashing:
+    return generateOntologySettings();
   }
   return SETTINGS_CACHE;
 }
 
+// Async accessor
+async function getOntologySettingsAsync() {
+  if (!SETTINGS_CACHE) await settingsLoad();
+  return SETTINGS_CACHE;
+}
 
 function getSelectedDelimiter() {
   const selected = document.querySelector('input[name="base-iri-delimiter"]:checked');
@@ -284,16 +291,7 @@ async function saveOntologySettingsFromModal() {
   document.getElementById('ontology-settings-modal').style.display = 'none';
 }
 
-/**
- * Loads ontology settings from IndexedDB strictly, without falling back to defaults.
- * @return {Promise<Object|null>} The ontology settings object, or null if not found.
- */
-async function getOntologySettings() {
-  const defaults = generateOntologySettings(/* your defaults */);
-  const fromDb = await getOntologySettings();
-  return fromDb || defaults;
-}
-
+// On DOM ready
 document.addEventListener('DOMContentLoaded', async () => {
   // 1) Ensure DB stores exist (ensureDb is fine where it is)
   await settingsLoad(); // fills SETTINGS_CACHE
@@ -588,12 +586,6 @@ function populateColumnsToggleUI() {
   }
 }
 
-// Initialize the Handsontable instance with initial data and column definitions
-hotInstance = createTable(container, getInitialData(), getColumnHeaders(), getColumnDefinitions());
-attachHotHooks();
-applyHiddenColumnsToHot();
-harvestRowsIntoVocab(getInitialData());
-
 /**
  * Sets cco2:ont00001760 ('is curated in ontology') value for rows with empty cells in that column,
  * using the ontology's IRI from ontology settings.
@@ -792,20 +784,13 @@ function idbTxDone(tx) {
   });
 }
 
-async function saveOntologySettings(settings) {
+async function saveOntologySettings(next) {
+  SETTINGS_CACHE = next;
   const db = await ensureDb();
   const tx = db.transaction(SETTINGS_STORE, 'readwrite');
-  tx.objectStore(SETTINGS_STORE).put({ key: 'ontologySettings', value: settings, updatedAt: new Date().toISOString() });
+  tx.objectStore(SETTINGS_STORE).put({ key: 'ontologySettings', value: SETTINGS_CACHE, updatedAt: new Date().toISOString() });
   await idbTxDone(tx);
   showToast('Ontology settings saved to database.', 'success');
-}
-
-// Load (read)
-async function getOntologySettings() {
-  const db = await ensureDb();
-  const tx = db.transaction(SETTINGS_STORE, 'readonly');
-  const rec = await idbRequest(tx.objectStore(SETTINGS_STORE).get('ontologySettings'));
-  return rec ? rec.value : null;
 }
 
 // Delete (optional)
@@ -2292,10 +2277,12 @@ async function addImportIRI() {
   const iri = iriInput.value.trim();
   if (!iri) return;
 
-  const settings = await getOntologySettings();
+  // ✅ use cached settings already in memory
+  const settings = getOntologySettings();
   settings["owl:imports"] = settings["owl:imports"] || [];
   if (!settings["owl:imports"].includes(iri)) {
     settings["owl:imports"].push(iri);
+    await saveOntologySettings(settings);
   }
 
   iriInput.value = "";
@@ -2347,23 +2334,14 @@ function saveManagePredicates() {
   }
 }
 
-document.getElementById('manage-predicates-save-btn')
-  .addEventListener('click', () => {
+document.getElementById('manage-predicates-save-btn').addEventListener('click', () => {
   saveManagePredicates(); // 👈 save visibility settings
-  document.getElementById('manage-predicates-modal').style.display = 'none';})
+  document.getElementById('manage-predicates-modal').style.display = 'none';
+  })
 
-document.getElementById('manage-predicates-cancel-btn')
-  .addEventListener('click', () => {
+document.getElementById('manage-predicates-cancel-btn').addEventListener('click', () => {
     document.getElementById('manage-predicates-modal').style.display = 'none';
   });
-
-// When opening the modal, remember to rebuild the checkboxes:
-document.getElementById('managePredicatesBtn').addEventListener('click', () => {
-  document.getElementById('predicate-iri').value = '';
-  populateColumnsToggleUI(); // 👈 ensures the checkboxes reflect current table
-  document.getElementById('manage-predicates-modal').style.display = 'block';
-});
-
 
 /**
  * Registers all modal UI event listeners
@@ -2400,7 +2378,7 @@ document.getElementById('managePredicatesBtn').addEventListener('click', () => {
   populateColumnsToggleUI();
   document.getElementById('manage-predicates-modal').style.display = 'block';
   });
-document.getElementById("managePrefixesBtn").addEventListener("click", function () {
+document.getElementById('managePrefixesBtn').addEventListener("click", function () {
   openPrefixManagerModal();
 });
 
