@@ -2,6 +2,7 @@
 
 let customPredicates = [];
 let hotInstance = null;
+let hotInitDone = false;
 let currentImportFile = null;
 
 // Base spreadsheet columns (in order):
@@ -293,10 +294,13 @@ async function saveOntologySettingsFromModal() {
 
 // On DOM ready
 document.addEventListener('DOMContentLoaded', async () => {
-  // 1) Ensure DB stores exist (ensureDb is fine where it is)
+  // 1) Ensure DB stores exist + load settings into cache
   await settingsLoad(); // fills SETTINGS_CACHE
 
-  // 2) Now you can safely read settings synchronously to populate the modal fields if needed
+  // 2) Build the table once
+  initHandsontable();
+
+  // 3) Populate settings UI
   const s = getOntologySettings();
   document.getElementById('ontology-label-input').value = s["rdfs:label"] || '';
   document.getElementById('ontology-creator-input').value = s["dcterms:creator"] || '';
@@ -309,13 +313,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('opaque-start').value = s.opaqueStart || 1;
   document.getElementById('readable-case').value = s.readableCase || 'PascalCase';
 
-  // 3) Now build the table
-  hotInstance = createTable(container, getInitialData(), getColumnHeaders(), getColumnDefinitions());
-  attachHotHooks();
-  applyHiddenColumnsToHot();
-  harvestRowsIntoVocab(getInitialData());
+  // 4) HOT-dependent post-init
+  setIsCuratedInForAllRows();
 
-  // 4) Any other startup (buttons, etc.)
+  // 5) Any other startup (buttons, etc.)
   updateReloadSessionButton();
 });
 
@@ -508,8 +509,6 @@ function applyHiddenColumnsToHot() {
   }
 }
 
-
-
 // Applies hidden columns to the current Handsontable instance
 function loadHiddenColumnNames() {
   try {
@@ -621,7 +620,18 @@ function setIsCuratedInForAllRows() {
   console.info(`[setIsCuratedInForAllRows] Set for ${updatedCount} of ${totalRows} rows (only empty cells updated)`);
 }
 
-setIsCuratedInForAllRows(); // This uses the ontology IRI from settings
+// Initializes the Handsontable instance if not already done.
+function initHandsontable() {
+  if (hotInitDone) return;
+  if (hotInstance) { try { hotInstance.destroy(); } catch(_) {} }
+
+  hotInstance = createTable(container, getInitialData(), getColumnHeaders(), getColumnDefinitions());
+  attachHotHooks();
+  applyHiddenColumnsToHot();
+  harvestRowsIntoVocab(getInitialData());
+
+  hotInitDone = true;
+}
 
 // This function checks if the element type is a predicate
 window.getIsAPredicateForRow = (rowIndex) => {
@@ -960,9 +970,6 @@ async function updateReloadSessionButton() {
     catch (e) {
     console.warn('updateReloadSessionButton failed', e);}
 }
-
-// On first paint, decide whether to show the button
-document.addEventListener('DOMContentLoaded', updateReloadSessionButton);
 
 /**
  * Maps saved format strings to N3.Parser formats.
