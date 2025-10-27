@@ -1072,7 +1072,8 @@ async function reloadSavedSession() {
       owlClass:     'http://www.w3.org/2002/07/owl#Class',
       owlObjProp:   'http://www.w3.org/2002/07/owl#ObjectProperty',
       owlDataProp:  'http://www.w3.org/2002/07/owl#DatatypeProperty',
-      owlAnnProp:   'http://www.w3.org/2002/07/owl#AnnotationProperty'
+      owlAnnProp:   'http://www.w3.org/2002/07/owl#AnnotationProperty',
+      owlOntology:  'http://www.w3.org/2002/07/owl#Ontology'
     };
 
     const firstLiteral = (arr) =>
@@ -1086,15 +1087,22 @@ async function reloadSavedSession() {
       return '';
     };
 
+    const ontologyIriFromSettings = getOntologyIRI();
+
     const rowsTmp = [];
     for (const [s, pMap] of subjMap.entries()) {
+
+      if (s === ontologyIriFromSettings) continue;
       const rdfTypes = Array.from(pMap.get(P.rdfType)?.values() || []);
+      const hasType = iri => rdfTypes.includes(`<${iri}>`);
+      if (hasType(P.owlOntology)) continue; //
+
       let elementType = '';
-      if (rdfTypes.includes(`<${P.owlClass}>`)) elementType = 'Class';
-      else if (rdfTypes.includes(`<${P.owlObjProp}>`)) elementType = 'ObjectProperty';
-      else if (rdfTypes.includes(`<${P.owlDataProp}>`)) elementType = 'DatatypeProperty';
-      else if (rdfTypes.includes(`<${P.owlAnnProp}>`)) elementType = 'AnnotationProperty';
-      else if (rdfTypes.length) elementType = 'NamedIndividual';
+      if (hasType(P.owlClass))      elementType = 'Class';
+      else if (hasType(P.owlObjProp))  elementType = 'ObjectProperty';
+      else if (hasType(P.owlDataProp)) elementType = 'DatatypeProperty';
+      else if (hasType(P.owlAnnProp))  elementType = 'AnnotationProperty';
+      else if (rdfTypes.length)        elementType = 'NamedIndividual';
 
       const label = firstLiteral(Array.from(pMap.get(P.label)?.values() || []));
       const definition = firstLiteral(Array.from(pMap.get(P.definition)?.values() || []));
