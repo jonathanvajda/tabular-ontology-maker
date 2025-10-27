@@ -623,12 +623,16 @@ function setIsCuratedInForAllRows() {
 // Initializes the Handsontable instance if not already done.
 function initHandsontable() {
   if (hotInitDone) return;
-  if (hotInstance) { try { hotInstance.destroy(); } catch(_) {} }
+  if (hotInstance) { try { hotInstance.destroy(); } catch (_) {} }
 
-  hotInstance = createTable(container, getInitialData(), getColumnHeaders(), getColumnDefinitions());
+  const rows = getInitialData();
+  const headers = getColumnHeaders();
+  const cols = getColumnDefinitions();
+
+  hotInstance = createTable(container, rows, headers, cols);
   attachHotHooks();
   applyHiddenColumnsToHot();
-  harvestRowsIntoVocab(getInitialData());
+  harvestRowsIntoVocab(rows);
 
   hotInitDone = true;
 }
@@ -944,22 +948,11 @@ function ensureDb() {
 
 // Show/hide + enable/disable the button
 function setReloadBtnVisible(isVisible) {
-  try {
-    console.info('setReloadBtnVisible happened', isVisible);
-    const btn = document.getElementById('reloadSavedSessionBtn');
-  if (!btn) {
-    console.info('setReloadBtnVisible: no button found');
-    return;}
-  if (isVisible) {
-    console.info('setReloadBtnVisible: hiding button');
-    // if (btn.hidden) btn.visible;
-    if (btn.disabled) btn.disabled = false;
-    }
-  }
-  catch (e) {
-    console.warn('setReloadBtnVisible failed', e);}
+  const btn = document.getElementById('reloadSavedSessionBtn');
+  if (!btn) return;
+  btn.hidden = !isVisible;
+  btn.disabled = !isVisible;
 }
-
 // Check and update the button (call on load and after saves)
 async function updateReloadSessionButton() {
   try {
