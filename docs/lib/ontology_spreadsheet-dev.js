@@ -471,8 +471,11 @@ const createTable = (container, data, colHeaders, columns) => {
     data: data,
     colHeaders: colHeaders,
     columns: columns,
+    colWidth: 150,
+    wordWrap: true,
     rowHeaders: true,
     contextMenu: true,
+    manualColumnResize: true,
     hiddenColumns: { columns: loadHiddenColumns(), indicators: true }, // little triangle indicator
     licenseKey: 'non-commercial-and-evaluation'
   });
@@ -1073,6 +1076,7 @@ async function reloadSavedSession() {
       owlObjProp:   'http://www.w3.org/2002/07/owl#ObjectProperty',
       owlDataProp:  'http://www.w3.org/2002/07/owl#DatatypeProperty',
       owlAnnProp:   'http://www.w3.org/2002/07/owl#AnnotationProperty',
+      owlNamedInd:  'http://www.w3.org/2002/07/owl#NamedIndividual',
       owlOntology:  'http://www.w3.org/2002/07/owl#Ontology'
     };
 
@@ -1095,13 +1099,15 @@ async function reloadSavedSession() {
       if (s === ontologyIriFromSettings) continue;
       const rdfTypes = Array.from(pMap.get(P.rdfType)?.values() || []);
       const hasType = iri => rdfTypes.includes(`<${iri}>`);
-      if (hasType(P.owlOntology)) continue; //
+      if (hasType(P.owlOntology)) continue;
 
       let elementType = '';
-      if (hasType(P.owlClass))      elementType = 'Class';
+      if (hasType(P.owlClass))         elementType = 'Class';
       else if (hasType(P.owlObjProp))  elementType = 'ObjectProperty';
       else if (hasType(P.owlDataProp)) elementType = 'DatatypeProperty';
       else if (hasType(P.owlAnnProp))  elementType = 'AnnotationProperty';
+      else if (hasType(P.owlNamedInd)) elementType = 'NamedIndividual';
+      else if (hasType(P.owlOntology)) elementType = 'Ontology'; // This is an outlier case, mostly for error handling
       else if (rdfTypes.length)        elementType = 'NamedIndividual';
 
       const label = firstLiteral(Array.from(pMap.get(P.label)?.values() || []));
