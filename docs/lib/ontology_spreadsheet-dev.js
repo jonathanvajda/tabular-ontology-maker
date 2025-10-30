@@ -473,6 +473,7 @@ const createTable = (container, data, colHeaders, columns) => {
     columns: columns,
     colWidth: 150,
     wordWrap: true,
+    stretchH: 'none',
     rowHeaders: true,
     contextMenu: true,
     manualColumnResize: true,
