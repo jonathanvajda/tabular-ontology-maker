@@ -459,6 +459,7 @@ const getInitialData = () => {
 ];
 };
 
+// Gets the column headers for the Handsontable instance.  
 const getColumnHeaders = () => {
   console.info('getColumnHeaders happened');
   return ["iri", "label", "element type", "definition", "is a", "is curated in ontology"].concat(customPredicates);
@@ -1570,7 +1571,6 @@ function removeRowsFromBottom(n = 1) {
   These functions are used to manage predicates:
     confirmAddPredicate adds a new predicate to the ontology spreadsheet.
 */
-
 function confirmAddPredicate() {
   try {
     // 1) Handle add predicate (existing flow)
@@ -1627,6 +1627,338 @@ function confirmAddPredicate() {
     showToast('❌ Failed to update predicates/columns', 'error');
   }
 }
+
+/**
+ * This set of functions are designed for checking curation status
+ * according to either the default or the user's defined requirements.
+ * The default is defined in the 'normativeCurationSettings' object,
+ * which can be modified by the user. Predicates are categorized as
+ * 'required', 'recommended', or 'optional'. Predicates can be added
+ * or reassigned by the user. 
+ */
+
+// Normative curation settings for metadata fields
+const normativeCurationSettings = {
+  'http://www.w3.org/2000/01/rdf-schema#label': 'required',
+  'http://www.w3.org/2004/02/skos/core#definition': 'required',
+  'http://www.w3.org/1999/02/22-rdf-syntax-ns#type': 'required',
+  'http://www.w3.org/2004/02/skos/core#example': 'recommended',
+  'http://www.w3.org/2004/02/skos/core#scopeNote': 'recommended',
+  'http://purl.org/dc/terms/bibliographicCitation': 'recommended',
+  'https://www.commoncoreontologies.org/cco2/ont00001760': 'recommended', // 'is curated in ontology'
+  'http://purl.org/dc/terms/creator': 'optional',
+  'http://purl.org/dc/terms/created': 'optional',
+};
+
+// Extract required and recommended metadata fields
+const requiredCurationMetaData = Object.entries(normativeCurationSettings)
+  .filter(([key, value]) => value === 'required')
+  .map(([key]) => key);
+
+const recommendedCurationMetaData = Object.entries(normativeCurationSettings)
+  .filter(([key, value]) => value === 'recommended')
+  .map(([key]) => key);
+
+
+  // ===============================
+// Curation status core (UI-agnostic)
+// ===============================
+
+// Public shape stored in memory per row
+// curationStatusByRow.get(rowIndex) -> { status, missingRequired, missingRecommended, presentPredicates }
+const curationStatusByRow = new Map();
+
+// Canonical status labels
+const CURATION_STATUS = {
+  UNCURATED: 'uncurated',
+  INCOMPLETE: 'metadata incomplete',
+  COMPLETE: 'metadata complete'
+};
+
+// Resolve "pfx:local" to full IRI using iriPrefixes; pass through full IRIs
+function curieToIri(maybeCurieOrIri) {
+  if (!maybeCurieOrIri) return null;
+  const v = String(maybeCurieOrIri).trim();
+  if (/^https?:\/\//i.test(v)) return v;
+  if (v.includes(':')) {
+    const [pfx, local] = v.split(':');
+    const base = iriPrefixes?.[pfx];
+    if (base) return base + local;
+  }
+  return null; // unknown / unsupported header-as-predicate name
+}
+
+// Base-header → predicate map (independent of row)
+const BASE_HEADER_TO_PRED = new Map([
+  ['label',        'http://www.w3.org/2000/01/rdf-schema#label'],
+  ['definition',   'http://www.w3.org/2004/02/skos/core#definition'],
+  ['element type', 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'],
+  // 'is a' depends on element type; handled dynamically below.
+  ['is curated in ontology', 'https://www.commoncoreontologies.org/ont00001760'],
+]);
+
+// Is a value present (non-empty string after trim)?
+function hasValue(v) {
+  return v !== undefined && v !== null && String(v).trim().length > 0;
+}
+
+// Given a header name and a row, return the *predicate IRI* that header contributes to.
+// Special-case: "is a" column predicate depends on element type in that row.
+function predicateIriForHeader(header, row) {
+  const h = String(header || '').trim();
+
+  // 1) Direct base mappings
+  const base = BASE_HEADER_TO_PRED.get(h.toLowerCase());
+  if (base) return base;
+
+  // 2) Dynamic "is a"
+  if (h.toLowerCase() === 'is a') {
+    const elementType = row?.[2] || '';
+    // Use your existing logic for the *predicate* to use
+    const predCurie = getIsAPredicate(elementType); // returns rdfs:subClassOf | rdfs:subPropertyOf | rdf:type | null
+    if (!predCurie) return null;
+    return curieToIri(predCurie);
+  }
+
+  // 3) If the header itself is a full IRI or curie, use it
+  const iri = curieToIri(h);
+  if (iri) return iri;
+
+  // 4) Not a recognized predicate-bearing column
+  return null;
+}
+
+// Build a set of predicate IRIs that are "present" for this row (i.e., non-empty cells)
+function presentPredicatesForRow(row, headers) {
+  const present = new Set();
+
+  for (let col = 0; col < headers.length; col++) {
+    const header = headers[col];
+    const predIri = predicateIriForHeader(header, row);
+    if (!predIri) continue;
+
+    const cellVal = row[col];
+    if (hasValue(cellVal)) {
+      present.add(predIri);
+    }
+  }
+
+  // Note: For element type we store presence if column "element type" has a value.
+  // That column maps to rdf:type (as in your normative settings).
+  return present;
+}
+
+// Evaluate one row against the normative settings
+function evaluateRowCuration(rowIndex, {
+  requiredSet = new Set(requiredCurationMetaData),
+  recommendedSet = new Set(recommendedCurationMetaData)
+} = {}) {
+  if (!hotInstance) return;
+
+  const headers = hotInstance.getColHeader();
+  const row = hotInstance.getSourceDataAtRow(rowIndex);
+
+  // If the row is effectively empty (no IRI, type, label, def, is a), mark uncurated and skip details.
+  const coarseNonEmpty = [0,1,2,3,4].some(c => hasValue(row?.[c]));
+  if (!coarseNonEmpty) {
+    const result = {
+      status: CURATION_STATUS.UNCURATED,
+      missingRequired: Array.from(requiredSet),
+      missingRecommended: Array.from(recommendedSet),
+      presentPredicates: new Set()
+    };
+    curationStatusByRow.set(rowIndex, result);
+    return result;
+  }
+
+  const present = presentPredicatesForRow(row, headers);
+
+  // Compute gaps
+  const missingRequired = Array.from(requiredSet).filter(p => !present.has(p));
+  const missingRecommended = Array.from(recommendedSet).filter(p => !present.has(p));
+
+  let status;
+  if (missingRequired.length > 0) {
+    status = CURATION_STATUS.UNCURATED;
+  } else if (missingRecommended.length > 0) {
+    status = CURATION_STATUS.INCOMPLETE;
+  } else {
+    status = CURATION_STATUS.COMPLETE;
+  }
+
+  const result = { status, missingRequired, missingRecommended, presentPredicates: present };
+  curationStatusByRow.set(rowIndex, result);
+  return result;
+}
+
+// Evaluate all rows; returns an array of {row, ...result}
+function evaluateAllRowsCuration() {
+  if (!hotInstance) return [];
+  const total = hotInstance.countRows();
+  const out = [];
+  for (let r = 0; r < total; r++) {
+    out.push({ row: r, ...evaluateRowCuration(r) });
+  }
+  return out;
+}
+
+// Helper to get a simple status snapshot (array aligned to table order)
+function getCurationStatusSnapshot() {
+  if (!hotInstance) return [];
+  const total = hotInstance.countRows();
+  const arr = new Array(total);
+  for (let r = 0; r < total; r++) {
+    const entry = curationStatusByRow.get(r) || evaluateRowCuration(r);
+    arr[r] = entry?.status || CURATION_STATUS.UNCURATED;
+  }
+  return arr;
+}
+
+// ===============================
+// Optional: lightweight HOT wiring
+// (safe to leave out if you prefer manual calls)
+// ===============================
+function attachCurationHooks() {
+  if (!hotInstance) return;
+
+  // Initial sweep
+  evaluateAllRowsCuration();
+
+  // Re-evaluate changed rows only
+  hotInstance.addHook('afterChange', (changes, source) => {
+    if (!Array.isArray(changes) || source === 'LoadData') return;
+    const touched = new Set(changes.map(ch => ch[0]).filter(i => Number.isInteger(i)));
+    for (const r of touched) evaluateRowCuration(r);
+  });
+
+  // When rows are created/removed, re-check the table
+  hotInstance.addHook('afterCreateRow', () => evaluateAllRowsCuration());
+  hotInstance.addHook('afterRemoveRow', () => evaluateAllRowsCuration());
+}
+
+/**
+ * This function repaints a curation status bulb icon for a given IRI.
+ * @description Used for updating the UI to reflect the curation status of a term. 
+ * @param {*} iri 
+ * @param {*} status 
+ * @returns 
+ */
+function repaintCurationBulbByIri(iri, status) {
+  if (!iri) return;
+  const el = getBulbElForIri(iri) || ensureBulbElForIri(iri);
+  if (!el) return;
+
+  const { char, color, title } = statusToGlyph(status || CURATION_STATUS.UNCURATED);
+  // Use text + color (no images)
+  el.textContent = char;
+  el.style.color = color;
+  el.title = title;
+  el.setAttribute('aria-label', title);
+}
+
+
+/**
+ * This function refreshes a bulb icon for each row based on its curation status.
+ */
+function repaintCurationBulb(rowIndex, status) {
+  const iri = iriForRow(rowIndex);
+  repaintCurationBulbByIri(iri, status);
+}
+
+
+/**
+ * This function retrieves the IRI for a given row index.
+ * @description Used for identifying which term's bulb to refresh.
+ * @param {*} rowIndex 
+ * @returns 
+ */
+function iriForRow(rowIndex) {
+  const iri = hotInstance?.getSourceDataAtRow(rowIndex)?.[0];
+  return (typeof iri === 'string' && iri.trim()) ? iri.trim() : null;
+}
+
+/**
+ * Returns the glyph character and color for a given curation status.
+ * @description Used for rendering status indicators in the UI.
+ * @param {*} status 
+ * @returns 
+ */
+function statusToGlyph(status) {
+  switch (status) {
+    case CURATION_STATUS.COMPLETE:   return { char: '●', color: '#22c55e', title: 'Metadata Complete' };   // green
+    case CURATION_STATUS.INCOMPLETE: return { char: '●', color: '#eab308', title: 'Metadata Incomplete' }; // amber
+    case CURATION_STATUS.UNCURATED:
+    default:                         return { char: '●', color: '#9ca3af', title: 'Uncurated' };           // gray
+  }
+}
+
+// Replace this with your own retrieval strategy
+function getBulbElForIri(iri) {
+  return document.querySelector(`[data-curation-bulb][data-iri="${CSS.escape(iri)}"]`);
+}
+
+// Optional creator (only if you want this module to create bulbs)
+function ensureBulbElForIri(iri) {
+  let el = getBulbElForIri(iri);
+  if (el) return el;
+  // If you want this to auto-create, uncomment and define your container:
+  // const wrap = document.getElementById('curation-bulb-strip');
+  // if (!wrap) return null;
+  // el = document.createElement('span');
+  // el.setAttribute('data-curation-bulb', '');
+  // el.setAttribute('data-iri', iri);
+  // el.style.display = 'inline-block';
+  // el.style.width = '1em';
+  // el.style.textAlign = 'center';
+  // el.style.userSelect = 'none';
+  // wrap.appendChild(el);
+  return el;
+}
+
+
+/**
+ * This function recursively refreshes all curation status bulbs for the table.
+ * It retrieves the current curation status for each row and repaints the corresponding bulb icon.
+ */
+function refreshAllBulbs() {
+  if (!hotInstance) return;
+  const total = hotInstance.countRows();
+  for (let r = 0; r < total; r++) {
+    const iri = iriForRow(r);
+    const status = curationStatusByRow.get(r)?.status || CURATION_STATUS.UNCURATED;
+    repaintCurationBulbByIri(iri, status);
+  }
+}
+
+
+// Call this once right after your existing attachHotHooks()
+function initCurationStatusEngine() {
+  attachCurationHooks();          // keeps curationStatusByRow up-to-date
+  evaluateAllRowsCuration();      // initial sweep
+  refreshAllBulbs();              // initial paint
+
+  // Repaint touched rows after edits
+  hotInstance.addHook('afterChange', (changes, source) => {
+    if (!Array.isArray(changes) || source === 'LoadData') return;
+    const touched = new Set(changes.map(c => c[0]).filter(Number.isInteger));
+    for (const r of touched) {
+      const iri = iriForRow(r);
+      const status = curationStatusByRow.get(r)?.status || CURATION_STATUS.UNCURATED;
+      repaintCurationBulbByIri(iri, status);
+    }
+  });
+
+  // Re-sync on structure/ordering changes
+  const reSync = () => { evaluateAllRowsCuration(); refreshAllBulbs(); };
+  hotInstance.addHook('afterCreateRow', reSync);
+  hotInstance.addHook('afterRemoveRow', reSync);
+  hotInstance.addHook('afterColumnSort', reSync);
+  // If you use Filters plugin:
+  if (typeof hotInstance.addHook === 'function') {
+    hotInstance.addHook?.('afterFilter', reSync);
+  }
+}
+
 
 /*
   These functions are used for inserting data:
