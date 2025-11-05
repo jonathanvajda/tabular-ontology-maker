@@ -89,6 +89,10 @@ async function settingsLoad() {
 
   if (rec && rec.value) {
     SETTINGS_CACHE = rec.value;
+    if (SETTINGS_CACHE.curationRules && typeof SETTINGS_CACHE.curationRules === 'object') {
+     Object.assign(normativeCurationSettings, SETTINGS_CACHE.curationRules);
+     recomputeCurationSetsFromNormative();
+   }
     return SETTINGS_CACHE;
   }
 
@@ -472,47 +476,24 @@ const createTable = (container, data, colHeaders, columns) => {
     data: data,
     colHeaders: colHeaders,
     columns: columns,
-    colWidths: 150,
     wordWrap: true,
     stretchH: 'none',
     rowHeaders: true,
     rowHeaderWidth: 28,
     contextMenu: true,
     manualColumnResize: true,
-    hiddenColumns: { columns: loadHiddenColumns(), indicators: true }, // little triangle indicator
+    hiddenColumns: { columns: [], indicators: true }, // little triangle indicator
     licenseKey: 'non-commercial-and-evaluation'
   });
 };
 
-function saveHiddenColumns(indices) {
-  try {
-    localStorage.setItem('hiddenColumns', JSON.stringify(indices || []));
-    console.info('[ManageColumns] Saved hidden columns:', indices);
-  } catch (e) {
-    console.error('[ManageColumns] Failed saving hidden columns', e);
-  }
-}
-
-function loadHiddenColumns() {
-  try {
-    var raw = localStorage.getItem('hiddenColumns');
-    var arr = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(arr)) return [];
-    return arr;
-  } catch (e) {
-    console.error('[ManageColumns] Failed loading hidden columns', e);
-    return [];
-  }
-}
-
 function applyHiddenColumnsToHot() {
-  try {
-    var indices = loadHiddenColumns();
-    hotInstance.updateSettings({ hiddenColumns: { columns: indices, indicators: true } });
-    console.info('[ManageColumns] Applied hidden columns to table:', indices);
-  } catch (e) {
-    console.error('[ManageColumns] Failed applying hidden columns', e);
-  }
+  if (!hotInstance) return;
+  const headers = hotInstance.getColHeader();
+  const hiddenNames = new Set(loadHiddenColumnNames());
+  const indices = [];
+  headers.forEach((h, i) => { if (hiddenNames.has(String(h))) indices.push(i); });
+  hotInstance.updateSettings({ hiddenColumns: { columns: indices, indicators: true }});
 }
 
 // Applies hidden columns to the current Handsontable instance
@@ -678,7 +659,7 @@ async function generateRdfString (rows, format = 'ttl') {
   };
   const writer = new N3.Writer({ prefixes: iriPrefixes, format: formatMap[format] || 'Turtle' });
 
-  const settings = await getOntologySettings();
+  const settings = getOntologySettings();
   const ontologyIRI = settings["iri"];
 
   writer.addQuad(
@@ -1866,8 +1847,8 @@ function attachCurationHooks() {
   });
 
   // When rows are created/removed, re-check the table
-  hotInstance.addHook('afterCreateRow', () => evaluateAllRowsCuration());
-  hotInstance.addHook('afterRemoveRow', () => evaluateAllRowsCuration());
+  hotInstance.addHook('afterCreateRow', () => evaluateAllRowsCuration()); refreshAllBulbs();
+  hotInstance.addHook('afterRemoveRow', () => evaluateAllRowsCuration()); refreshAllBulbs();
 }
 
 /**
@@ -2854,13 +2835,16 @@ function populateCurationSettingsToggleUI() {
         radio.checked = (current === value);
 
         // On change, write back + re-evaluate statuses + repaint bulbs
-        radio.addEventListener('change', () => {
+        radio.addEventListener('change', async () => {
           setCurrentCategory(predIri, value);
           // Recompute convenience caches used by evaluator
           recomputeCurationSetsFromNormative();
           // Re-evaluate and repaint (cheap)
           evaluateAllRowsCuration();
           refreshAllBulbs();
+          const s = getOntologySettings();
+          s.curationRules = { ...normativeCurationSettings };
+          await saveOntologySettings(s);
         });
 
         const txt = document.createElement('span');
@@ -2912,6 +2896,11 @@ function saveCurationSettings() {
     showToast('❌ Failed to save curation-status settings', 'error');
   }
 }
+
+document.getElementById('curationSettingsBtn').addEventListener('click', () => {
+  populateCurationSettingsToggleUI();
+  document.getElementById('curation-settings-modal').style.display = 'block';
+});
 
 document.getElementById('curation-settings-save-btn').addEventListener('click', () => {
   saveCurationSettings(); // 👈 save curation status settings
