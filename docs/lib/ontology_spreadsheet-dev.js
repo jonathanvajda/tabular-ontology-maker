@@ -50,13 +50,13 @@ const getIsAPredicate = (elementType) => {
   console.info('getIsAPredicate happened');
   switch (elementType) {
     case 'Class':
-      return 'rdfs:subClassOf';
+      return 'http://www.w3.org/2000/01/rdf-schema#subClassOf';
     case 'ObjectProperty':
     case 'DatatypeProperty':
     case 'AnnotationProperty':
-      return 'rdfs:subPropertyOf';
+      return 'http://www.w3.org/2000/01/rdf-schema#subPropertyOf';
     case 'NamedIndividual':
-      return 'rdf:type';
+      return 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
     default:
       return null;
   }
@@ -164,11 +164,11 @@ function generateOntologySettings(
 
   const settings = {
     iri: `${base}${delimiter}${normalizedLabel}`,
-    "owl:versionIRI": `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`,
-    "owl:versionInfo": `${year}-${month}-${day}`,
-    "rdfs:label": label,
-    "dcterms:creator": creator,
-    "dcterms:description": description,
+    "http://www.w3.org/2002/07/owl#versionIRI": `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`,
+    "http://www.w3.org/2002/07/owl#versionInfo": `${year}-${month}-${day}`,
+    "http://www.w3.org/2000/01/rdf-schema#label": label,
+    "http://purl.org/dc/terms/creator": creator,
+    "http://purl.org/dc/terms/description": description,
 
     // NEW:
     iriMode,
@@ -240,7 +240,7 @@ function openOntologySettingsModal() {
 
   // existing fields
   document.getElementById("ontology-base-iri-input").value = (s.base || s.iri.split("/").slice(0, -1).join("/"));
-  document.getElementById("ontology-label-input").value = s["rdfs:label"] || "";
+  document.getElementById("ontology-label-input").value = s["http://www.w3.org/2000/01/rdf-schema#label"] || "";
   document.getElementById("ontology-creator-input").value = s["dcterms:creator"] || "";
   document.getElementById("ontology-description-input").value = s["dcterms:description"] || "";
   toggleIriModeOptions();   // <- ensure sections reflect the currently checked mode
@@ -302,7 +302,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 3) Populate settings UI
   const s = getOntologySettings();
-  document.getElementById('ontology-label-input').value = s["rdfs:label"] || '';
+  document.getElementById('ontology-label-input').value = s["http://www.w3.org/2000/01/rdf-schema#label"] || '';
   document.getElementById('ontology-creator-input').value = s["dcterms:creator"] || '';
   document.getElementById('ontology-description-input').value = s["dcterms:description"] || '';
   document.getElementById('ontology-base-iri-input').value = s.base || '';
@@ -683,17 +683,17 @@ async function generateRdfString (rows, format = 'ttl') {
 
   writer.addQuad(
     N3.DataFactory.namedNode(ontologyIRI),
-    N3.DataFactory.namedNode('rdf:type'),
-    N3.DataFactory.namedNode('owl:Ontology')
+    N3.DataFactory.namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'),
+    N3.DataFactory.namedNode('http://www.w3.org/2002/07/owl#Ontology')
   );
 
   Object.entries(settings).forEach(([key, value]) => {
     if (key === "iri") return; // already handled
-    if (key === "owl:imports" && Array.isArray(value)) {
+    if (key === "http://www.w3.org/2002/07/owl#imports" && Array.isArray(value)) {
       value.forEach(importIRI => {
         writer.addQuad(
           N3.DataFactory.namedNode(ontologyIRI),
-          N3.DataFactory.namedNode('owl:imports'),
+          N3.DataFactory.namedNode('http://www.w3.org/2002/07/owl#imports'),
           N3.DataFactory.namedNode(importIRI)
         );
       });
@@ -712,18 +712,19 @@ async function generateRdfString (rows, format = 'ttl') {
     if (!subject || !type) return;
 
     writer.addQuad(N3.DataFactory.namedNode(subject),
-      N3.DataFactory.namedNode('rdf:type'),
-      N3.DataFactory.namedNode(`owl:${type}`));
+      N3.DataFactory.namedNode(`http://www.w3.org/1999/02/22-rdf-syntax-ns#type`),
+      N3.DataFactory.namedNode(`http://www.w3.org/2002/07/owl#${type}`)
+    );
 
     if (label) {
       writer.addQuad(N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode('rdfs:label'),
+        N3.DataFactory.namedNode('http://www.w3.org/2000/01/rdf-schema#label'),
         N3.DataFactory.literal(label));
     }
 
     if (definition) {
       writer.addQuad(N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode('skos:definition'),
+        N3.DataFactory.namedNode('http://www.w3.org/2004/02/skos/core#definition'),
         N3.DataFactory.literal(definition));
     }
 
@@ -1107,7 +1108,8 @@ async function reloadSavedSession() {
         if (classish.length) isA = classish[0];
       }
 
-      const curatedIn = firstLiteral(Array.from(pMap.get(P.curatedIn)?.values() || []));
+      const curatedVals = Array.from(pMap.get(P.curatedIn)?.values() || []);
+      const curatedIn = iriFromObjects(curatedVals) || firstLiteral(curatedVals);
 
       // base row
       const row = Array.from({ length: BASE_COLS }, () => '');
@@ -1696,9 +1698,9 @@ function headerToPredicateIrisForRules(header) {
   // Special: "is a" expands
   if (h === 'is a') {
     return [
-      curieToIri('rdf:type'),
-      curieToIri('rdfs:subClassOf'),
-      curieToIri('rdfs:subPropertyOf'),
+      'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
+      'http://www.w3.org/2000/01/rdf-schema#subClassOf',
+      'http://www.w3.org/2000/01/rdf-schema#subPropertyOf',
     ].filter(Boolean);
   }
 
@@ -2324,16 +2326,25 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
   // Alias mapping to support variations in common headers
   const headerAliases = {
     "iri": "iri",
+    "IRI": "iri",
     "id": "iri",
     "label": "label",
     "rdfs:label": "label",
+    "http://www.w3.org/2000/01/rdf-schema#label": "label",
     "element type": "element type",
     "type": "element type",
     "rdf:type": "element type",
+    "http://www.w3.org/1999/02/22-rdf-syntax-ns#type": "element type",
     "definition": "definition",
+    "skos:definition": "definition",
+    "http://www.w3.org/2004/02/skos/core#definition": "definition",
     "is a": "is a",
     "subclass of": "is a",
-    "rdfs:subclassof": "is a",
+    "rdfs:subClassOf": "is a",
+    "http://www.w3.org/2000/01/rdf-schema#subClassOf": "is a",
+    "subproperty of": "is a",
+    "rdfs:subPropertyOf": "is a",
+    "http://www.w3.org/2000/01/rdf-schema#subPropertyOf": "is a",
     "is curated in": "is curated in",
     "is defined by": "is curated in",
     "is curated in ontology": "is curated in",
@@ -2635,7 +2646,7 @@ async function openImportsModal() {
 
   // ensure cache is loaded
   const settings = await getOntologySettingsAsync();
-  const imports = settings["owl:imports"] || [];
+  const imports = settings["http://www.w3.org/2002/07/owl#imports"] || [];
   const importsMap = getImportsMap();
 
   imports.forEach((iri) => {
@@ -2721,9 +2732,9 @@ async function addImportIRI() {
 
   // ✅ use cached settings already in memory
   const settings = getOntologySettings();
-  settings["owl:imports"] = settings["owl:imports"] || [];
-  if (!settings["owl:imports"].includes(iri)) {
-    settings["owl:imports"].push(iri);
+  settings["http://www.w3.org/2002/07/owl#imports"] = settings["http://www.w3.org/2002/07/owl#imports"] || [];
+  if (!settings["http://www.w3.org/2002/07/owl#imports"].includes(iri)) {
+    settings["http://www.w3.org/2002/07/owl#imports"].push(iri);
     await saveOntologySettings(settings);
   }
 
