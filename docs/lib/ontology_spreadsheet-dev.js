@@ -2820,48 +2820,30 @@ function populateCurationSettingsToggleUI() {
     }
 
     // --- now build table rows
-    for (const predIri of ordered) {
-      const row = document.createElement('tr');
+    predicateIris.forEach((predIri, predIri) => {
+      const tr = document.createElement('tr');
       const labelCell = document.createElement('td');
       labelCell.textContent = iriToNiceLabel(predIri);
       labelCell.title = predIri;
+      tr.appendChild(labelCell);
 
-      // group "is a" header visually
       if (predIri.endsWith('subClassOf')) labelCell.textContent = 'is a (subClassOf)';
       if (predIri.endsWith('subPropertyOf')) labelCell.textContent = 'is a (subPropertyOf)';
-
-      const makeRadioCell = (category) => {
+      ['required', 'recommended', 'optional'].forEach((value) => {
         const td = document.createElement('td');
-        td.style.textAlign = 'center';
         const input = document.createElement('input');
         input.type = 'radio';
-        input.name = `curate-${predIri}`;
-        input.value = category;
+        input.name = `curate-group-${predIri}`;
+        input.value = value;
         input.dataset.predicateIri = predIri;
-        if (getCurrentCategory(predIri) === category) input.checked = true;
-
-        // highlight row on change
-        input.addEventListener('change', async () => {
-          row.classList.add('changed');
-          setCurrentCategory(predIri, category);
-          recomputeCurationSetsFromNormative();
-          evaluateAllRowsCuration();
-          refreshAllBulbs();
-          const s = getOntologySettings();
-          s.curationRules = { ...normativeCurationSettings };
-          await saveOntologySettings(s);
-        });
-
+        input.checked = (current === value);
         td.appendChild(input);
-        return td;
-      };
+        tr.appendChild(td);
+      });
 
-      row.appendChild(labelCell);
-      row.appendChild(makeRadioCell('required'));
-      row.appendChild(makeRadioCell('recommended'));
-      row.appendChild(makeRadioCell('optional'));
-      tbody.appendChild(row);
-    }
+      tbody.appendChild(tr);
+    });
+
   } catch (e) {
     console.error('[curation] populateCurationSettingsToggleUI failed', e);
   }
