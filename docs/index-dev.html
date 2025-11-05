@@ -225,10 +225,33 @@
 
 
 <!-- Manage Curation Settings Modal -->
-  <div id="curation-settings-modal" style="display:none; position:fixed; background:white; border:1px solid gray; padding:20px; z-index:1000; top:25%; left:30%; width:40%;">
-    <h2>Manage Curation Settings</h2>
-    <div id="toggle-curation-settings" style="max-height:220px; overflow:auto; border:1px solid #eee; padding:8px; font-size:.95em;">
-      <!-- JS populates checkboxes here -->
+  <div id="curation-settings-modal"
+      style="display:none; position:fixed; background:white; border:1px solid gray;
+              padding:20px; z-index:1000; top:25%; left:30%; width:40%;">
+
+    <h2 style="margin-top:0;">Manage Curation Settings</h2>
+    <p style="color:#555; font-size:0.9em; margin-top:0;">
+      Choose which metadata fields are <b>Required</b>, <b>Recommended</b>, or <b>Optional</b>.
+    </p>
+
+    <!-- Table-like layout -->
+    <div id="curation-settings-grid"
+        style="display:grid;
+                grid-template-columns: 1fr repeat(3, auto);
+                align-items:center;
+                gap:6px 12px;
+                border:1px solid #ddd;
+                padding:8px;
+                font-size:0.95em;">
+
+      <!-- Header row -->
+      <div style="font-weight:bold;">Property</div>
+      <div style="text-align:center; font-weight:bold;">Required</div>
+      <div style="text-align:center; font-weight:bold;">Recommended</div>
+      <div style="text-align:center; font-weight:bold;">Optional</div>
+
+      <!-- JS populates rows BELOW here -->
+      <div id="toggle-curation-settings" style="display:contents;"></div>
     </div>
 
     <div style="margin-top:12px; text-align:right;">

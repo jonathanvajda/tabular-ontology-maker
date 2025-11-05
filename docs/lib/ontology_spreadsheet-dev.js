@@ -2788,58 +2788,63 @@ recomputeCurationSetsFromNormative();
  */
 function populateCurationSettingsToggleUI() {
   try {
-    const container = document.getElementById('toggle-curation-settings');
-    if (!container) return;
+    const tbody = document.getElementById('toggle-curation-settings');
+    if (!tbody) return;
+    tbody.innerHTML = '';
 
-    const predicateIris = collectPredicateIrisFromHeaders()
-      // Optional: ensure rdf:type appears first, then rdfs:subClassOf, rdfs:subPropertyOf, then alpha
-      .sort((a, b) => {
-        const order = {
-          'http://www.w3.org/1999/02/22-rdf-syntax-ns#type': -3,
-          'http://www.w3.org/2000/01/rdf-schema#subClassOf': -2,
-          'http://www.w3.org/2000/01/rdf-schema#subPropertyOf': -1
-        };
-        const ra = order[a] ?? 0, rb = order[b] ?? 0;
-        return (ra - rb) || iriToNiceLabel(a).localeCompare(iriToNiceLabel(b));
-      });
+    // build list of predicates, grouped and ordered
+    const order = [
+      'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',      // type first
+      'http://www.w3.org/2000/01/rdf-schema#label',           // label second
+      'http://www.w3.org/2004/02/skos/core#definition',       // definition third
+      'isAGroup',                                             // subClassOf + subPropertyOf group
+    ];
 
-    container.innerHTML = '';
+    const allPreds = collectPredicateIrisFromHeaders()
+      .filter(p => !['http://www.w3.org/2000/01/rdf-schema#subClassOf',
+                     'http://www.w3.org/2000/01/rdf-schema#subPropertyOf'].includes(p))
+      .sort((a, b) => iriToNiceLabel(a).localeCompare(iriToNiceLabel(b)));
 
-    predicateIris.forEach((predIri, i) => {
-      const groupName = `curate-group-${i}`; // radio group name
-      const nice = iriToNiceLabel(predIri);
-      const current = getCurrentCategory(predIri); // 'required'|'recommended'|'optional'
+    // --- "rdf:type", "label", "definition" first, then "is a" group, then others
+    const ordered = [];
+    for (const o of order) {
+      if (o === 'isAGroup') {
+        ordered.push('http://www.w3.org/2000/01/rdf-schema#subClassOf');
+        ordered.push('http://www.w3.org/2000/01/rdf-schema#subPropertyOf');
+      } else if (allPreds.includes(o)) {
+        ordered.push(o);
+      }
+    }
+    for (const p of allPreds) {
+      if (!ordered.includes(p)) ordered.push(p);
+    }
 
-      const row = document.createElement('div');
-      row.style.display = 'grid';
-      row.style.gridTemplateColumns = 'auto auto auto 1fr';
-      row.style.alignItems = 'center';
-      row.style.gap = '8px';
-      row.style.margin = '6px 0';
+    // --- now build table rows
+    for (const predIri of ordered) {
+      const row = document.createElement('tr');
+      const labelCell = document.createElement('td');
+      labelCell.textContent = iriToNiceLabel(predIri);
+      labelCell.title = predIri;
 
-      // Helper to add one radio
-      const addRadio = (value, labelText) => {
-        const id = `curate-${value}-${i}`;
-        const wrap = document.createElement('label');
-        wrap.setAttribute('for', id);
-        wrap.style.display = 'inline-flex';
-        wrap.style.alignItems = 'center';
-        wrap.style.gap = '6px';
+      // group "is a" header visually
+      if (predIri.endsWith('subClassOf')) labelCell.textContent = 'is a (subClassOf)';
+      if (predIri.endsWith('subPropertyOf')) labelCell.textContent = 'is a (subPropertyOf)';
 
-        const radio = document.createElement('input');
-        radio.type = 'radio';
-        radio.id = id;
-        radio.name = groupName;
-        radio.value = value;
-        radio.dataset.predicateIri = predIri;
-        radio.checked = (current === value);
+      const makeRadioCell = (category) => {
+        const td = document.createElement('td');
+        td.style.textAlign = 'center';
+        const input = document.createElement('input');
+        input.type = 'radio';
+        input.name = `curate-${predIri}`;
+        input.value = category;
+        input.dataset.predicateIri = predIri;
+        if (getCurrentCategory(predIri) === category) input.checked = true;
 
-        // On change, write back + re-evaluate statuses + repaint bulbs
-        radio.addEventListener('change', async () => {
-          setCurrentCategory(predIri, value);
-          // Recompute convenience caches used by evaluator
+        // highlight row on change
+        input.addEventListener('change', async () => {
+          row.classList.add('changed');
+          setCurrentCategory(predIri, category);
           recomputeCurationSetsFromNormative();
-          // Re-evaluate and repaint (cheap)
           evaluateAllRowsCuration();
           refreshAllBulbs();
           const s = getOntologySettings();
@@ -2847,29 +2852,18 @@ function populateCurationSettingsToggleUI() {
           await saveOntologySettings(s);
         });
 
-        const txt = document.createElement('span');
-        txt.textContent = labelText;
-
-        wrap.appendChild(radio);
-        wrap.appendChild(txt);
-        return wrap;
+        td.appendChild(input);
+        return td;
       };
 
-      // three radios
-      row.appendChild(addRadio('required', 'Required'));
-      row.appendChild(addRadio('recommended', 'Recommended'));
-      row.appendChild(addRadio('optional', 'Optional'));
-
-      // predicate label (CURIE/IRI)
-      const predLabel = document.createElement('div');
-      predLabel.textContent = nice;
-      predLabel.title = predIri; // show full IRI on hover
-      row.appendChild(predLabel);
-
-      container.appendChild(row);
-    });
+      row.appendChild(labelCell);
+      row.appendChild(makeRadioCell('required'));
+      row.appendChild(makeRadioCell('recommended'));
+      row.appendChild(makeRadioCell('optional'));
+      tbody.appendChild(row);
+    }
   } catch (e) {
-    console.error('[openCurationSettings] populateCurationSettingsToggleUI failed', e);
+    console.error('[curation] populateCurationSettingsToggleUI failed', e);
   }
 }
 

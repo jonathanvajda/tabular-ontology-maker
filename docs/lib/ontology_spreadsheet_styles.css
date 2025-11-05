@@ -73,6 +73,11 @@ input.htFocusCatcher {
   left: -9999px !important;
 }
 
+#curation-settings-grid .changed > * {
+  background-color: #fff8d5;
+  transition: background-color 0.3s ease;
+}
+
 #toast-container {
   position: fixed;
   bottom: 20px;
