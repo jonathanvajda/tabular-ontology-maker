@@ -73,9 +73,11 @@ input.htFocusCatcher {
   left: -9999px !important;
 }
 
-#curation-settings-grid .changed > * {
-  background-color: #fff8d5;
-  transition: background-color 0.3s ease;
+/* put this in your stylesheet */
+.curation-table tr.changed-row {
+  background: #fff7d6;         /* soft yellow */
+  outline: 1px solid #f7d08a;  /* subtle edge so it pops on white UIs */
+  transition: background .15s ease-in-out, outline-color .15s ease-in-out;
 }
 
 #toast-container {
