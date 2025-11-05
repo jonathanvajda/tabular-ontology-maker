@@ -235,24 +235,19 @@
     </p>
 
     <!-- Table-like layout -->
-    <div id="curation-settings-grid"
-        style="display:grid;
-                grid-template-columns: 1fr repeat(3, auto);
-                align-items:center;
-                gap:6px 12px;
-                border:1px solid #ddd;
-                padding:8px;
-                font-size:0.95em;">
-
-      <!-- Header row -->
-      <div style="font-weight:bold;">Property</div>
-      <div style="text-align:center; font-weight:bold;">Required</div>
-      <div style="text-align:center; font-weight:bold;">Recommended</div>
-      <div style="text-align:center; font-weight:bold;">Optional</div>
-
-      <!-- JS populates rows BELOW here -->
-      <div id="toggle-curation-settings" style="display:contents;"></div>
-    </div>
+    <table id="curation-settings-table" class="curation-table">
+      <thead>
+        <tr>
+          <th>Predicate</th>
+          <th>Required</th>
+          <th>Recommended</th>
+          <th>Optional</th>
+        </tr>
+      </thead>
+      <tbody id="toggle-curation-settings">
+        <!-- JS will inject <tr> rows here -->
+      </tbody>
+    </table>
 
     <div style="margin-top:12px; text-align:right;">
       <button id="curation-settings-save-btn">Save & Close</button>
