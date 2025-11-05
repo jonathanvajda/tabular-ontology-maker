@@ -96,7 +96,7 @@ async function settingsLoad() {
   SETTINGS_CACHE = generateOntologySettings();
   const wtx = db.transaction(SETTINGS_STORE, 'readwrite');
   wtx.objectStore(SETTINGS_STORE).put({ key: 'ontologySettings', value: SETTINGS_CACHE, updatedAt: new Date().toISOString() });
-  await idbTxDone(wtx);
+  await idbTransactionDone(wtx);
   return SETTINGS_CACHE;
 }
 
@@ -106,7 +106,7 @@ async function saveOntologySettings(next) {
   const db = await ensureDb();
   const tx = db.transaction(SETTINGS_STORE, 'readwrite');
   tx.objectStore(SETTINGS_STORE).put({ key: 'ontologySettings', value: SETTINGS_CACHE, updatedAt: new Date().toISOString() });
-  await idbTxDone(tx);
+  await idbTransactionDone(tx);
   showToast('Ontology settings saved to database.', 'success');
 }
 
@@ -472,10 +472,11 @@ const createTable = (container, data, colHeaders, columns) => {
     data: data,
     colHeaders: colHeaders,
     columns: columns,
-    colWidth: 150,
+    colWidths: 150,
     wordWrap: true,
     stretchH: 'none',
     rowHeaders: true,
+    rowHeaderWidth: 28,
     contextMenu: true,
     manualColumnResize: true,
     hiddenColumns: { columns: loadHiddenColumns(), indicators: true }, // little triangle indicator
@@ -638,6 +639,7 @@ function initHandsontable() {
   attachHotHooks();
   applyHiddenColumnsToHot();
   harvestRowsIntoVocab(rows);
+  initCurationStatusEngine();
 
   hotInitDone = true;
 }
@@ -740,11 +742,13 @@ async function generateRdfString (rows, format = 'ttl') {
       }
     }
 
-
+    // writer
     if (isCuratedInOntology) {
-      writer.addQuad(N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode('cco2:ont00001760'), // 'cco2:ont00001760' is curated in ontology
-        N3.DataFactory.literal(isCuratedInOntology));
+      writer.addQuad(
+        N3.DataFactory.namedNode(subject),
+        N3.DataFactory.namedNode('https://www.commoncoreontologies.org/ont00001760'),
+        N3.DataFactory.literal(isCuratedInOntology)
+      );
     }
 
     customPredicates.forEach((predicate, idx) => {
@@ -788,28 +792,19 @@ const extensions = {
   trig: 'trig'
 };
 
-
 function idbRequest(req) {
   return new Promise((resolve, reject) => {
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
-function idbTxDone(tx) {
+
+function idbTransactionDone(tx) {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error || new Error('tx error'));
-    tx.onabort  = () => reject(tx.error || new Error('tx abort'));
+    tx.onerror = () => reject(tx.error || new Error('Transaction failed'));
+    tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
   });
-}
-
-async function saveOntologySettings(next) {
-  SETTINGS_CACHE = next;
-  const db = await ensureDb();
-  const tx = db.transaction(SETTINGS_STORE, 'readwrite');
-  tx.objectStore(SETTINGS_STORE).put({ key: 'ontologySettings', value: SETTINGS_CACHE, updatedAt: new Date().toISOString() });
-  await idbTxDone(tx);
-  showToast('Ontology settings saved to database.', 'success');
 }
 
 // Delete (optional)
@@ -817,7 +812,7 @@ async function clearOntologySettings() {
   const db = await ensureDb();
   const tx = db.transaction(SETTINGS_STORE, 'readwrite');
   tx.objectStore(SETTINGS_STORE).delete('ontologySettings');
-  await idbTxDone(tx);
+  await idbTransactionDone(tx);
   showToast('Ontology settings cleared from database.', 'info');
 }
 
@@ -845,21 +840,6 @@ const handleExport = async (shouldDownload = false) => {
     console.error('handleExport failed:', e);
   }
 };
-
-function idbRequest(req) {
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function idbTransactionDone(tx) {
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error || new Error('Transaction failed'));
-    tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
-  });
-}
 
 async function openDb(name, version, { upgrade } = {}) {
   return new Promise((resolve, reject) => {
@@ -1637,6 +1617,20 @@ function confirmAddPredicate() {
  * or reassigned by the user. 
  */
 
+// Keep required/recommended sets in sync with normativeCurationSettings
+let requiredCurationMetaData = [];
+let recommendedCurationMetaData = [];
+
+function recomputeCurationSetsFromNormative() {
+  requiredCurationMetaData = Object.entries(normativeCurationSettings)
+    .filter(([key, value]) => value === 'required')
+    .map(([key]) => key);
+
+  recommendedCurationMetaData = Object.entries(normativeCurationSettings)
+    .filter(([key, value]) => value === 'recommended')
+    .map(([key]) => key);
+}
+
 // Normative curation settings for metadata fields
 const normativeCurationSettings = {
   'http://www.w3.org/2000/01/rdf-schema#label': 'required',
@@ -1645,22 +1639,13 @@ const normativeCurationSettings = {
   'http://www.w3.org/2004/02/skos/core#example': 'recommended',
   'http://www.w3.org/2004/02/skos/core#scopeNote': 'recommended',
   'http://purl.org/dc/terms/bibliographicCitation': 'recommended',
-  'https://www.commoncoreontologies.org/cco2/ont00001760': 'recommended', // 'is curated in ontology'
+  'https://www.commoncoreontologies.org/ont00001760': 'recommended', // 'is curated in ontology'
   'http://purl.org/dc/terms/creator': 'optional',
   'http://purl.org/dc/terms/created': 'optional',
 };
 
-// Extract required and recommended metadata fields
-const requiredCurationMetaData = Object.entries(normativeCurationSettings)
-  .filter(([key, value]) => value === 'required')
-  .map(([key]) => key);
 
-const recommendedCurationMetaData = Object.entries(normativeCurationSettings)
-  .filter(([key, value]) => value === 'recommended')
-  .map(([key]) => key);
-
-
-  // ===============================
+// ===============================
 // Curation status core (UI-agnostic)
 // ===============================
 
@@ -1675,27 +1660,74 @@ const CURATION_STATUS = {
   COMPLETE: 'metadata complete'
 };
 
-// Resolve "pfx:local" to full IRI using iriPrefixes; pass through full IRIs
-function curieToIri(maybeCurieOrIri) {
-  if (!maybeCurieOrIri) return null;
-  const v = String(maybeCurieOrIri).trim();
+// Try to resolve CURIE-like strings to IRIs; pass full IRIs through
+function curieToIri(maybe) {
+  if (!maybe) return null;
+  const v = String(maybe).trim();
   if (/^https?:\/\//i.test(v)) return v;
   if (v.includes(':')) {
     const [pfx, local] = v.split(':');
     const base = iriPrefixes?.[pfx];
     if (base) return base + local;
   }
-  return null; // unknown / unsupported header-as-predicate name
+  return null;
 }
 
-// Base-header → predicate map (independent of row)
+// For UI labels: prefer CURIE if we can build one
+function iriToNiceLabel(iri) {
+  return iriToCurie?.(iri) || iri;
+}
+
+// base header map
 const BASE_HEADER_TO_PRED = new Map([
   ['label',        'http://www.w3.org/2000/01/rdf-schema#label'],
   ['definition',   'http://www.w3.org/2004/02/skos/core#definition'],
   ['element type', 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'],
-  // 'is a' depends on element type; handled dynamically below.
   ['is curated in ontology', 'https://www.commoncoreontologies.org/ont00001760'],
 ]);
+
+// Expand a single header to one or more concrete predicate IRIs for curation rules
+// - Most headers map 1:1
+// - "is a" maps to three IRIs so users can choose requiredness per element-type case
+function headerToPredicateIrisForRules(header) {
+  const h = String(header || '').trim().toLowerCase();
+  if (BASE_HEADER_TO_PRED.has(h)) return [BASE_HEADER_TO_PRED.get(h)];
+
+  // Special: "is a" expands
+  if (h === 'is a') {
+    return [
+      curieToIri('rdf:type'),
+      curieToIri('rdfs:subClassOf'),
+      curieToIri('rdfs:subPropertyOf'),
+    ].filter(Boolean);
+  }
+
+  // If header itself is an IRI or CURIE, include it
+  const iri = curieToIri(header);
+  return iri ? [iri] : [];
+}
+
+// Build the predicate set from HOT headers (visible or hidden)
+function collectPredicateIrisFromHeaders() {
+  if (!hotInstance) return [];
+  const headers = hotInstance.getColHeader(); // includes hidden
+  const set = new Set();
+  for (const h of headers) {
+    for (const p of headerToPredicateIrisForRules(h)) set.add(p);
+  }
+  return Array.from(set);
+}
+
+// Read current category for a predicate from normativeCurationSettings (default: optional)
+function getCurrentCategory(predIri) {
+  return normativeCurationSettings[predIri] || 'optional';
+}
+
+// Persist a change back into normativeCurationSettings
+function setCurrentCategory(predIri, category) {
+  normativeCurationSettings[predIri] = category;
+}
+
 
 // Is a value present (non-empty string after trim)?
 function hasValue(v) {
@@ -2457,7 +2489,7 @@ function showToast(message, type = "success", duration = 3000) {
 }
 
 // Attach event listener to the "Save to Database" button
-document.getElementById('saveToDatebaseBtn').addEventListener('click', saveRDFtoIndexedDB);
+document.getElementById('saveToDatabaseBtn').addEventListener('click', saveRDFtoIndexedDB);
 
 // Ontology settings modal open/close/save
 document.getElementById('ontologySettingsModalSaveSettingsBtn').addEventListener('click', saveOntologySettingsFromModal);
@@ -2564,6 +2596,36 @@ function cancelPrefixesModal() {
   hidePrefixManagerModal();
 }
 
+
+function getImportsMap() {
+  const s = getOntologySettings();
+  if (!s._imports) s._imports = {};
+  return s._imports;
+}
+function hasLocalImport(iri) {
+  const m = getImportsMap();
+  return !!m[iri]?.content;
+}
+async function setLocalImport(iri, { content, mediaType }) {
+  const s = getOntologySettings();
+  s._imports = s._imports || {};
+  s._imports[iri] = {
+    content,
+    mediaType: mediaType || guessMediaType(content),
+    updatedAt: new Date().toISOString()
+  };
+  await saveOntologySettings(s);
+}
+function guessMediaType(text) {
+  // super-lightweight; expand if you like
+  if (/^\s*@prefix\b|@base\b|:\s/.test(text)) return "text/turtle";
+  if (/<rdf:RDF\b/.test(text)) return "application/rdf+xml";
+  if (/"@context"\s*:/.test(text)) return "application/ld+json";
+  if (/^\s*<[^>]+>\s+<[^>]+>\s+/.test(text)) return "application/n-triples";
+  return "text/plain";
+}
+
+
 // This function opens the ontology imports modal and populates it with current imports.
 // It retrieves the imports from the ontology settings and displays them with their status.
 async function openImportsModal() {
@@ -2571,22 +2633,37 @@ async function openImportsModal() {
   const listContainer = document.getElementById("import-list");
   listContainer.innerHTML = "";
 
-  const settings = await getOntologySettings();
+  // ensure cache is loaded
+  const settings = await getOntologySettingsAsync();
   const imports = settings["owl:imports"] || [];
+  const importsMap = getImportsMap();
 
   imports.forEach((iri) => {
-    const localKey = `import:${iri}`;
-    const isLoaded = !!getOntologySettings().getItem(localKey);
-    const statusIcon = isLoaded ? "✅" : "❌";
+    const loaded = !!importsMap[iri]?.content;
+    const statusIcon = loaded ? "✅" : "❌";
+    const row = document.createElement("div");
+    row.style.marginBottom = "10px";
 
-    const div = document.createElement("div");
-    div.innerHTML = `
-      <div style="margin-bottom:10px">
-        <strong>${iri}</strong> ${statusIcon}<br>
-        <input type="file" onchange="handleImportFileUpload(event, '${iri}')">
-        <span id="validation-${btoa(iri)}" style="color:red; display:none;"></span>
-      </div>`;
-    listContainer.appendChild(div);
+    const safeKey = btoa(iri).replace(/=/g, "");
+    row.innerHTML = `
+      <div>
+        <strong>${iri}</strong> ${statusIcon}
+        <div style="margin-top:6px">
+          <input type="file" id="file-${safeKey}">
+          <span id="validation-${safeKey}" style="color:red; display:none;"></span>
+        </div>
+        ${loaded ? `<div style="color:#666; font-size:12px; margin-top:4px">
+          Stored ${importsMap[iri].mediaType || ""} at ${importsMap[iri].updatedAt}
+        </div>` : ""}
+      </div>
+    `;
+
+    // wire up handler
+    row.querySelector(`#file-${safeKey}`).addEventListener("change", (ev) => {
+      handleImportFileUpload(ev, iri);
+    });
+
+    listContainer.appendChild(row);
   });
 
   modal.style.display = "block";
@@ -2594,28 +2671,46 @@ async function openImportsModal() {
 
 
 // This function handles the file upload for ontology imports.
-function handleImportFileUpload(event, iri) {
-  const file = event.target.files[0];
+async function handleImportFileUpload(event, iri) {
+  const file = event.target.files?.[0];
   if (!file) return;
 
+  const safeKey = btoa(iri).replace(/=/g, "");
+  const validationMsg = document.getElementById(`validation-${safeKey}`);
+
   const reader = new FileReader();
-  reader.onload = function(e) {
+  reader.onload = async (e) => {
     const content = e.target.result;
-    const validationMsg = document.getElementById(`validation-${btoa(iri)}`);
 
     if (!isValidOntology(content)) {
-      validationMsg.textContent = "⚠️ Not a valid RDF/OWL file";
+      validationMsg.textContent = "⚠️ Not a valid RDF/OWL text";
       validationMsg.style.display = "inline";
-      console.warn(`Rejected file for ${iri}`);
       return;
     }
-
-    getOntologySettings().setItem(`import:${iri}`, content);
     validationMsg.style.display = "none";
-    console.info(`Loaded valid ontology for ${iri}`);
-    openImportsModal();
+
+    const settings = getOntologySettings();
+    const ext = parseFileExtension(file.name);
+    const mediaType = mimeTypes[ext] || "text/plain";
+
+    settings._imports = settings._imports || {};
+    settings._imports[iri] = {
+      content,
+      ext,
+      mediaType,
+      updatedAt: new Date().toISOString()
+    };
+
+    await saveOntologySettings(settings);
+    showToast("✅ Ontology import saved", "success");
+    openImportsModal(); // refresh rows
   };
   reader.readAsText(file);
+}
+
+function getLocalImportContent(iri) {
+  const s = getOntologySettings();
+  return s?._imports?.[iri]?.content || null;
 }
 
 // This function adds a new import IRI to the ontology settings.
@@ -2689,6 +2784,133 @@ document.getElementById('manage-predicates-save-btn').addEventListener('click', 
 document.getElementById('manage-predicates-cancel-btn').addEventListener('click', () => {
     document.getElementById('manage-predicates-modal').style.display = 'none';
   });
+
+// Call this once on startup (so your evaluator has the arrays ready)
+recomputeCurationSetsFromNormative();
+
+/**
+ * Populates the 'toggle-curation-settings' container with one row per predicate:
+ * [ Required ()  Recommended ()  Optional () ]   <nice label>
+ *
+ * It reflects the existing normativeCurationSettings and writes back on change.
+ */
+function populateCurationSettingsToggleUI() {
+  try {
+    const container = document.getElementById('toggle-curation-settings');
+    if (!container) return;
+
+    const predicateIris = collectPredicateIrisFromHeaders()
+      // Optional: ensure rdf:type appears first, then rdfs:subClassOf, rdfs:subPropertyOf, then alpha
+      .sort((a, b) => {
+        const order = {
+          'http://www.w3.org/1999/02/22-rdf-syntax-ns#type': -3,
+          'http://www.w3.org/2000/01/rdf-schema#subClassOf': -2,
+          'http://www.w3.org/2000/01/rdf-schema#subPropertyOf': -1
+        };
+        const ra = order[a] ?? 0, rb = order[b] ?? 0;
+        return (ra - rb) || iriToNiceLabel(a).localeCompare(iriToNiceLabel(b));
+      });
+
+    container.innerHTML = '';
+
+    predicateIris.forEach((predIri, i) => {
+      const groupName = `curate-group-${i}`; // radio group name
+      const nice = iriToNiceLabel(predIri);
+      const current = getCurrentCategory(predIri); // 'required'|'recommended'|'optional'
+
+      const row = document.createElement('div');
+      row.style.display = 'grid';
+      row.style.gridTemplateColumns = 'auto auto auto 1fr';
+      row.style.alignItems = 'center';
+      row.style.gap = '8px';
+      row.style.margin = '6px 0';
+
+      // Helper to add one radio
+      const addRadio = (value, labelText) => {
+        const id = `curate-${value}-${i}`;
+        const wrap = document.createElement('label');
+        wrap.setAttribute('for', id);
+        wrap.style.display = 'inline-flex';
+        wrap.style.alignItems = 'center';
+        wrap.style.gap = '6px';
+
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.id = id;
+        radio.name = groupName;
+        radio.value = value;
+        radio.dataset.predicateIri = predIri;
+        radio.checked = (current === value);
+
+        // On change, write back + re-evaluate statuses + repaint bulbs
+        radio.addEventListener('change', () => {
+          setCurrentCategory(predIri, value);
+          // Recompute convenience caches used by evaluator
+          recomputeCurationSetsFromNormative();
+          // Re-evaluate and repaint (cheap)
+          evaluateAllRowsCuration();
+          refreshAllBulbs();
+        });
+
+        const txt = document.createElement('span');
+        txt.textContent = labelText;
+
+        wrap.appendChild(radio);
+        wrap.appendChild(txt);
+        return wrap;
+      };
+
+      // three radios
+      row.appendChild(addRadio('required', 'Required'));
+      row.appendChild(addRadio('recommended', 'Recommended'));
+      row.appendChild(addRadio('optional', 'Optional'));
+
+      // predicate label (CURIE/IRI)
+      const predLabel = document.createElement('div');
+      predLabel.textContent = nice;
+      predLabel.title = predIri; // show full IRI on hover
+      row.appendChild(predLabel);
+
+      container.appendChild(row);
+    });
+  } catch (e) {
+    console.error('[openCurationSettings] populateCurationSettingsToggleUI failed', e);
+  }
+}
+
+// This function saves the curation settings (what predicates are required or recommended) from the Curation Settings modal.
+function saveCurationSettings() {
+  try {
+    // Read visibility checkboxes and persist by name
+    const hiddenNames = [];
+    document
+      .querySelectorAll('#toggle-curation-settings input[name="curationReqRecOpt"]')
+      .forEach(cb => {
+        const name = cb.dataset.name;
+        if (!cb.checked) hiddenNames.push(name); // unchecked = hidden
+      });
+
+    saveHiddenColumnNames(hiddenNames);
+    applyHiddenColumnsByName();
+
+    // Close modal
+    document.getElementById('curation-settings-modal').style.display = 'none';
+    showToast('✅ Saved curation-status settings', 'success');
+  } catch (e) {
+    console.error('[CurationSettings] saveCurationSettings failed', e);
+    showToast('❌ Failed to save curation-status settings', 'error');
+  }
+}
+
+document.getElementById('curation-settings-save-btn').addEventListener('click', () => {
+  saveCurationSettings(); // 👈 save curation status settings
+  document.getElementById('curation-settings-modal').style.display = 'none';
+  })
+
+document.getElementById('curation-settings-cancel-btn').addEventListener('click', () => {
+    document.getElementById('curation-settings-modal').style.display = 'none';
+  });
+
 
 /**
  * Registers all modal UI event listeners
