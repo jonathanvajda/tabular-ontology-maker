@@ -2780,6 +2780,8 @@ document.getElementById('manage-predicates-cancel-btn').addEventListener('click'
 // Call this once on startup (so your evaluator has the arrays ready)
 recomputeCurationSetsFromNormative();
 
+let CURATION_SNAPSHOT = null;
+
 /**
  * Populates the 'toggle-curation-settings' container with one row per predicate:
  * [ Required ()  Recommended ()  Optional () ]   <nice label>
@@ -2788,60 +2790,139 @@ recomputeCurationSetsFromNormative();
  */
 function populateCurationSettingsToggleUI() {
   try {
-    const tbody = document.getElementById('toggle-curation-settings');
+    const tbody = document.getElementById('toggle-curation-settings'); // <tbody>
     if (!tbody) return;
+
+    // constants we care about
+    const P = {
+      type:        'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
+      label:       'http://www.w3.org/2000/01/rdf-schema#label',
+      definition:  'http://www.w3.org/2004/02/skos/core#definition',
+      subClassOf:  'http://www.w3.org/2000/01/rdf-schema#subClassOf',
+      subProperty: 'http://www.w3.org/2000/01/rdf-schema#subPropertyOf',
+    };
+
+    // 1) Build the exact order you want
+    const base = collectPredicateIrisFromHeaders();
+    const rest = base.filter(p =>
+      p !== P.type && p !== P.label && p !== P.definition &&
+      p !== P.subClassOf && p !== P.subProperty
+    ).sort((a,b) => iriToNiceLabel(a).localeCompare(iriToNiceLabel(b)));
+
+    const ordered = [
+      P.type,
+      P.label,
+      P.definition,
+      'isAGroup', // single row that maps to BOTH subClassOf & subPropertyOf
+      ...rest
+    ].filter(Boolean);
+
+    // 2) Snapshot current categories (to know what changed)
+    CURATION_SNAPSHOT = {
+      singles: new Map(),
+      isa: {
+        subClassOf:  getCurrentCategory(P.subClassOf)  || 'optional',
+        subProperty: getCurrentCategory(P.subProperty) || 'optional'
+      }
+    };
+    [P.type, P.label, P.definition, ...rest].forEach(iri => {
+      CURATION_SNAPSHOT.singles.set(iri, getCurrentCategory(iri) || 'optional');
+    });
+
+    // 3) Render rows
     tbody.innerHTML = '';
 
-    // build list of predicates, grouped and ordered
-    const order = [
-      'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',      // type first
-      'http://www.w3.org/2000/01/rdf-schema#label',           // label second
-      'http://www.w3.org/2004/02/skos/core#definition',       // definition third
-      'isAGroup',                                             // subClassOf + subPropertyOf group
-    ];
+    const makeRadioCell = (name, value, checked, onChange) => {
+      const td = document.createElement('td');
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = name;
+      input.value = value;
+      input.checked = !!checked;
+      input.addEventListener('change', onChange);
+      td.appendChild(input);
+      return td;
+    };
 
-    const allPreds = collectPredicateIrisFromHeaders()
-      .filter(p => !['http://www.w3.org/2000/01/rdf-schema#subClassOf',
-                     'http://www.w3.org/2000/01/rdf-schema#subPropertyOf'].includes(p))
-      .sort((a, b) => iriToNiceLabel(a).localeCompare(iriToNiceLabel(b)));
-
-    // --- "rdf:type", "label", "definition" first, then "is a" group, then others
-    const ordered = [];
-    for (const o of order) {
-      if (o === 'isAGroup') {
-        ordered.push('http://www.w3.org/2000/01/rdf-schema#subClassOf');
-        ordered.push('http://www.w3.org/2000/01/rdf-schema#subPropertyOf');
-      } else if (allPreds.includes(o)) {
-        ordered.push(o);
-      }
-    }
-    for (const p of allPreds) {
-      if (!ordered.includes(p)) ordered.push(p);
-    }
-
-    // --- now build table rows
-    predicateIris.forEach((predIri, predIri) => {
+    // — single predicate row
+    const renderSingle = (predIri) => {
       const tr = document.createElement('tr');
-      const labelCell = document.createElement('td');
-      labelCell.textContent = iriToNiceLabel(predIri);
-      labelCell.title = predIri;
-      tr.appendChild(labelCell);
 
-      if (predIri.endsWith('subClassOf')) labelCell.textContent = 'is a (subClassOf)';
-      if (predIri.endsWith('subPropertyOf')) labelCell.textContent = 'is a (subPropertyOf)';
-      ['required', 'recommended', 'optional'].forEach((value) => {
-        const td = document.createElement('td');
-        const input = document.createElement('input');
-        input.type = 'radio';
-        input.name = `curate-group-${predIri}`;
-        input.value = value;
-        input.dataset.predicateIri = predIri;
-        input.checked = (current === value);
-        td.appendChild(input);
-        tr.appendChild(td);
+      const labelTd = document.createElement('td');
+      labelTd.textContent = iriToNiceLabel(predIri);
+      labelTd.title = predIri;
+      tr.appendChild(labelTd);
+
+      const current = getCurrentCategory(predIri) || 'optional';
+
+      ['required', 'recommended', 'optional'].forEach(val => {
+        tr.appendChild(makeRadioCell(
+          `curate-${predIri}`,
+          val,
+          current === val,
+          async () => {
+            setCurrentCategory(predIri, val);
+            recomputeCurationSetsFromNormative();
+            evaluateAllRowsCuration();
+            refreshAllBulbs();
+            const s = getOntologySettings();
+            s.curationRules = { ...normativeCurationSettings };
+            await saveOntologySettings(s);
+
+            const original = CURATION_SNAPSHOT.singles.get(predIri);
+            tr.classList.toggle('changed-row', original !== val);
+          }
+        ));
       });
 
       tbody.appendChild(tr);
+    };
+
+    // — “is a” group row (single row for both predicates)
+    const renderIsAGroup = () => {
+      // only render if either predicate exists in headers
+      const present = base.includes(P.subClassOf) || base.includes(P.subProperty);
+      if (!present) return;
+
+      const tr = document.createElement('tr');
+
+      const labelTd = document.createElement('td');
+      labelTd.textContent = 'is a';
+      labelTd.title = `${P.subClassOf} & ${P.subProperty}`;
+      tr.appendChild(labelTd);
+
+      // current: if both have same category, show it; else show none selected
+      const c1 = getCurrentCategory(P.subClassOf)  || 'optional';
+      const c2 = getCurrentCategory(P.subProperty) || 'optional';
+      const same = (c1 === c2);
+      const current = same ? c1 : null;
+
+      const onChange = async (val) => {
+        setCurrentCategory(P.subClassOf,  val);
+        setCurrentCategory(P.subProperty, val);
+        recomputeCurationSetsFromNormative();
+        evaluateAllRowsCuration();
+        refreshAllBulbs();
+        const s = getOntologySettings();
+        s.curationRules = { ...normativeCurationSettings };
+        await saveOntologySettings(s);
+
+        const snap = CURATION_SNAPSHOT.isa;
+        const changed = (snap.subClassOf !== val) || (snap.subProperty !== val);
+        tr.classList.toggle('changed-row', changed);
+      };
+
+      ['required', 'recommended', 'optional'].forEach(val => {
+        tr.appendChild(makeRadioCell('curate-is-a', val, current === val, () => onChange(val)));
+      });
+
+      tbody.appendChild(tr);
+    };
+
+    // Drive the ordered render
+    ordered.forEach(item => {
+      if (item === 'isAGroup') renderIsAGroup();
+      else renderSingle(item);
     });
 
   } catch (e) {
