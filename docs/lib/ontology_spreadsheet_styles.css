@@ -80,6 +80,14 @@ input.htFocusCatcher {
   transition: background .15s ease-in-out, outline-color .15s ease-in-out;
 }
 
+/* Keep the header compact; no visual change to your bulb classes */
+.ht_clone_left .curation-bulb-th {
+  text-align: center !important;
+  width: 22px;
+  padding: 0 !important;
+}
+
+
 #toast-container {
   position: fixed;
   bottom: 20px;
