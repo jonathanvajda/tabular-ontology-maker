@@ -80,6 +80,28 @@ input.htFocusCatcher {
   transition: background .15s ease-in-out, outline-color .15s ease-in-out;
 }
 
+/* Only the fixed-left clone contains row headers */
+.ht_clone_left .curation-bulb-th {
+  text-align: center !important;
+  width: 22px;                /* adjust to taste */
+  padding: 0 !important;
+}
+
+.ht_clone_left .curation-bulb {
+  display: inline-block;
+  width: 1.1em;
+  line-height: 1.1em;
+  text-align: center;
+  user-select: none;
+  font-weight: 600;
+}
+
+/* Colors per status */
+.curation-bulb.metadata_complete   { color: #16a34a; } /* green */
+.curation-bulb.metadata_incomplete { color: #ea580c; } /* orange */
+.curation-bulb.uncurated           { color: #6b7280; } /* gray  */
+
+
 /* Keep the header compact; no visual change to your bulb classes */
 .ht_clone_left .curation-bulb-th {
   text-align: center !important;
