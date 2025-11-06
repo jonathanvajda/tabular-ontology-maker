@@ -512,7 +512,9 @@ const createTable = (container, data, colHeaders, columns) => {
       },
     afterGetRowHeader(row, TH) {
         const res = curationStatusByRow.get(row) || { status: 'uncurated' };
-        const glyph = statusToGlyph(res.status);      // <-- your existing glyphs
+        const glyph = typeof statusToGlyph(res.status) === 'string'
+          ? statusToGlyph(res.status)
+          : (statusToGlyph(res.status)?.glyph || '●');
         const title = (res.status || 'uncurated').replace(/_/g, ' ');
 
         TH.classList.add('curation-bulb-th');
