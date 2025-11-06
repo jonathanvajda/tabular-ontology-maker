@@ -2848,6 +2848,7 @@ function populateCurationSettingsToggleUI() {
     // — single predicate row
     const renderSingle = (predIri) => {
       const tr = document.createElement('tr');
+      tr.textAlign = 'center';
 
       const labelTd = document.createElement('td');
       labelTd.textContent = iriToNiceLabel(predIri);
