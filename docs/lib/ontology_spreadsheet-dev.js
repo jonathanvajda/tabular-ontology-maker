@@ -1083,9 +1083,9 @@ async function reloadSavedSession() {
 
       let isA = '';
       if (elementType === 'Class') {
-        isA = iriFromObjects(Array.from(pMap.get(w3cIRI.OWL_SUBCLASS)?.values() || []));
+        isA = iriFromObjects(Array.from(pMap.get(w3cIRI.RDFS_SUBCLASS)?.values() || []));
       } else if (elementType === 'ObjectProperty' || elementType === 'DatatypeProperty' || elementType === 'AnnotationProperty') {
-        isA = iriFromObjects(Array.from(pMap.get(w3cIRI.OWL_SUBPROP)?.values() || []));
+        isA = iriFromObjects(Array.from(pMap.get(w3cIRI.RDFS_SUBPROP)?.values() || []));
       } else if (elementType === 'NamedIndividual') {
         const classish = rdfTypes
           .map(v => /^<([^>]+)>$/.exec(v)?.[1])
@@ -1109,7 +1109,7 @@ async function reloadSavedSession() {
       for (const p of pMap.keys()) {
         if (
           p === w3cIRI.RDFS_LABEL || p === w3cIRI.SKOS_DEFINITION || p === w3cIRI.RDF_TYPE ||
-          p === w3cIRI.OWL_SUBCLASS || p === w3cIRI.OWL_SUBPROP || p === w3cIRI.CCO_CURATEDIN
+          p === w3cIRI.RDFS_SUBCLASS || p === w3cIRI.RDFS_SUBPROP || p === w3cIRI.CCO_CURATEDIN
         ) continue;
         extraPreds.add(p);
       }
@@ -2804,6 +2804,7 @@ function populateCurationSettingsToggleUI() {
       w3cIRI.RDFS_LABEL,
       w3cIRI.SKOS_DEFINITION,
       'isAGroup',
+      w3cIRI.CCO_CURATEDIN,
       // any others derived dynamically
     ];
 
@@ -2813,16 +2814,16 @@ function populateCurationSettingsToggleUI() {
       predicate !== w3cIRI.RDF_TYPE &&
       predicate !== w3cIRI.RDFS_LABEL &&
       predicate !== w3cIRI.SKOS_DEFINITION &&
-      predicate !== w3cIRI.OWL_SUBCLASS &&
-      predicate !== w3cIRI.OWL_SUBPROP
+      predicate !== w3cIRI.RDFS_SUBCLASS &&
+      predicate !== w3cIRI.RDFS_SUBPROP
     ).sort((a,b) => iriToNiceLabel(a).localeCompare(iriToNiceLabel(b)));
 
     // 2) Snapshot current categories (to know what changed)
     CURATION_SNAPSHOT = {
       singles: new Map(),
       isa: {
-        subClassOf:  getCurrentCategory(w3cIRI.OWL_SUBCLASS)  || 'required',
-        subProperty: getCurrentCategory(w3cIRI.OWL_SUBPROP) || 'required'
+        subClassOf:  getCurrentCategory(w3cIRI.RDFS_SUBCLASS)  || 'required',
+        subProperty: getCurrentCategory(w3cIRI.RDFS_SUBPROP) || 'required'
       }
     };
     [w3cIRI.RDF_TYPE, w3cIRI.RDFS_LABEL, w3cIRI.SKOS_DEFINITION, ...rest].forEach(iri => {
@@ -2881,25 +2882,25 @@ function populateCurationSettingsToggleUI() {
     // — “is a” group row (single row for both predicates)
     const renderIsAGroup = () => {
       // only render if either predicate exists in headers
-      const present = base.includes(w3cIRI.OWL_SUBCLASS) || base.includes(w3cIRI.OWL_SUBPROP);
+      const present = base.includes(w3cIRI.RDFS_SUBCLASS) || base.includes(w3cIRI.RDFS_SUBPROP);
       if (!present) return;
 
       const tr = document.createElement('tr');
 
       const labelTd = document.createElement('td');
       labelTd.textContent = 'is a';
-      labelTd.title = `${w3cIRI.OWL_SUBCLASS} & ${w3cIRI.OWL_SUBPROP}`;
+      labelTd.title = `${w3cIRI.RDFS_SUBCLASS} & ${w3cIRI.RDFS_SUBPROP}`;
       tr.appendChild(labelTd);
 
       // current: if both have same category, show it; else show none selected
-      const c1 = getCurrentCategory(w3cIRI.OWL_SUBCLASS)  || 'optional';
-      const c2 = getCurrentCategory(w3cIRI.OWL_SUBPROP) || 'optional';
+      const c1 = getCurrentCategory(w3cIRI.RDFS_SUBCLASS)  || 'optional';
+      const c2 = getCurrentCategory(w3cIRI.RDFS_SUBPROP) || 'optional';
       const same = (c1 === c2);
       const current = same ? c1 : null;
 
       const onChange = async (val) => {
-        setCurrentCategory(w3cIRI.OWL_SUBCLASS,  val);
-        setCurrentCategory(w3cIRI.OWL_SUBPROP, val);
+        setCurrentCategory(w3cIRI.RDFS_SUBCLASS,  val);
+        setCurrentCategory(w3cIRI.RDFS_SUBPROP, val);
         recomputeCurationSetsFromNormative();
         evaluateAllRowsCuration();
         refreshAllBulbs();
@@ -2908,7 +2909,7 @@ function populateCurationSettingsToggleUI() {
         await saveOntologySettings(s);
 
         const snap = CURATION_SNAPSHOT.isa;
-        const changed = (snap.w3cIRI.OWL_SUBCLASS !== val) || (snap.w3cIRI.OWL_SUBPROP !== val);
+        const changed = (snap.w3cIRI.RDFS_SUBCLASS !== val) || (snap.w3cIRI.RDFS_SUBPROP !== val);
         tr.classList.toggle('changed-row', changed);
       };
 
