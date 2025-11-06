@@ -46,17 +46,37 @@ const getElementTypes = () => {
   ];
 };
 
+const w3cIRI = [
+  RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
+  RDFS_LABEL = 'http://www.w3.org/2000/01/rdf-schema#label',
+  RDFS_SUBCLASS = 'http://www.w3.org/2000/01/rdf-schema#subClassOf',
+  RDFS_SUBPROP = 'http://www.w3.org/2000/01/rdf-schema#subPropertyOf',
+  OWL_ONTOLOGY = 'http://www.w3.org/2002/07/owl#Ontology',
+  OWL_CLASS = 'http://www.w3.org/2002/07/owl#Class',
+  OWL_NAMEDIND = 'http://www.w3.org/2002/07/owl#NamedIndividual',
+  OWL_OBJPROP = 'http://www.w3.org/2002/07/owl#ObjectProperty',
+  OWL_DATAPROP = 'http://www.w3.org/2002/07/owl#DataProperty',
+  OWL_ANNOPROP = 'http://www.w3.org/2002/07/owl#AnnotationProperty',
+  OWL_DATATYPE = 'http://www.w3.org/2002/07/owl#DatatypeProperty',
+  OWL_IMPORTS = 'http://www.w3.org/2002/07/owl#imports',
+  SKOS_DEFINITION = 'http://www.w3.org/2004/02/skos/core#definition',
+  CCO_CURATEDIN = 'https://www.commoncoreontologies.org/ont00001760',
+  DCTERMS_CREATOR = 'http://purl.org/dc/terms/creator',
+  DCTERMS_CREATED = 'http://purl.org/dc/terms/created',
+  DCTERMS_DESCRIPTION = 'http://purl.org/dc/terms/description',
+]
+
 const getIsAPredicate = (elementType) => {
   console.info('getIsAPredicate happened');
   switch (elementType) {
     case 'Class':
-      return 'http://www.w3.org/2000/01/rdf-schema#subClassOf';
+      return w3cIRI.RDFS_SUBCLASS ;
     case 'ObjectProperty':
     case 'DatatypeProperty':
     case 'AnnotationProperty':
-      return 'http://www.w3.org/2000/01/rdf-schema#subPropertyOf';
+      return w3cIRI.RDFS_SUBPROP;
     case 'NamedIndividual':
-      return 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+      return w3cIRI.RDF_TYPE;
     default:
       return null;
   }
@@ -244,9 +264,9 @@ function openOntologySettingsModal() {
 
   // existing fields
   document.getElementById("ontology-base-iri-input").value = (s.base || s.iri.split("/").slice(0, -1).join("/"));
-  document.getElementById("ontology-label-input").value = s["http://www.w3.org/2000/01/rdf-schema#label"] || "";
-  document.getElementById("ontology-creator-input").value = s["dcterms:creator"] || "";
-  document.getElementById("ontology-description-input").value = s["dcterms:description"] || "";
+  document.getElementById("ontology-label-input").value = s[w3cIRI.RDFS_LABEL] || "";
+  document.getElementById("ontology-creator-input").value = s[w3cIRI.DCTERMS_CREATOR] || "";
+  document.getElementById("ontology-description-input").value = s[w3cIRI.DCTERMS_DESCRIPTION] || "";
   toggleIriModeOptions();   // <- ensure sections reflect the currently checked mode
   document.getElementById("ontology-settings-modal").style.display = "block";
   updateOntologyPreview();
@@ -306,9 +326,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 3) Populate settings UI
   const s = getOntologySettings();
-  document.getElementById('ontology-label-input').value = s["http://www.w3.org/2000/01/rdf-schema#label"] || '';
-  document.getElementById('ontology-creator-input').value = s["dcterms:creator"] || '';
-  document.getElementById('ontology-description-input').value = s["dcterms:description"] || '';
+  document.getElementById('ontology-label-input').value = s[w3cIRI.RDFS_LABEL] || '';
+  document.getElementById('ontology-creator-input').value = s[w3cIRI.DCTERMS_CREATOR] || '';
+  document.getElementById('ontology-description-input').value = s[w3cIRI.DCTERMS_DESCRIPTION] || '';
   document.getElementById('ontology-base-iri-input').value = s.base || '';
   document.querySelector(`input[name="base-iri-delimiter"][value="${s.delimiter || '/'}"]`).checked = true;
   document.querySelector(`input[name="iri-mode"][value="${s.iriMode || 'opaque'}"]`).checked = true;
@@ -664,17 +684,17 @@ async function generateRdfString (rows, format = 'ttl') {
 
   writer.addQuad(
     N3.DataFactory.namedNode(ontologyIRI),
-    N3.DataFactory.namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'),
-    N3.DataFactory.namedNode('http://www.w3.org/2002/07/owl#Ontology')
+    N3.DataFactory.namedNode(w3cIRI.RDF_TYPE),
+    N3.DataFactory.namedNode(w3cIRI.OWL_ONTOLOGY)
   );
 
   Object.entries(settings).forEach(([key, value]) => {
     if (key === "iri") return; // already handled
-    if (key === "http://www.w3.org/2002/07/owl#imports" && Array.isArray(value)) {
+    if (key === w3cIRI.OWL_IMPORTS && Array.isArray(value)) {
       value.forEach(importIRI => {
         writer.addQuad(
           N3.DataFactory.namedNode(ontologyIRI),
-          N3.DataFactory.namedNode('http://www.w3.org/2002/07/owl#imports'),
+          N3.DataFactory.namedNode(w3cIRI.OWL_IMPORTS),
           N3.DataFactory.namedNode(importIRI)
         );
       });
@@ -693,19 +713,19 @@ async function generateRdfString (rows, format = 'ttl') {
     if (!subject || !type) return;
 
     writer.addQuad(N3.DataFactory.namedNode(subject),
-      N3.DataFactory.namedNode(`http://www.w3.org/1999/02/22-rdf-syntax-ns#type`),
+      N3.DataFactory.namedNode(w3cIRI.RDF_TYPE),
       N3.DataFactory.namedNode(`http://www.w3.org/2002/07/owl#${type}`)
     );
 
     if (label) {
       writer.addQuad(N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode('http://www.w3.org/2000/01/rdf-schema#label'),
+        N3.DataFactory.namedNode(w3cIRI.RDFS_LABEL),
         N3.DataFactory.literal(label));
     }
 
     if (definition) {
       writer.addQuad(N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode('http://www.w3.org/2004/02/skos/core#definition'),
+        N3.DataFactory.namedNode(w3cIRI.SKOS_DEFINITION),
         N3.DataFactory.literal(definition));
     }
 
@@ -728,7 +748,7 @@ async function generateRdfString (rows, format = 'ttl') {
     if (isCuratedInOntology) {
       writer.addQuad(
         N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode('https://www.commoncoreontologies.org/ont00001760'),
+        N3.DataFactory.namedNode(w3cIRI.CCO_CURATEDIN),
         N3.DataFactory.literal(isCuratedInOntology)
       );
     }
@@ -1028,22 +1048,6 @@ async function reloadSavedSession() {
       pMap.get(p).add(o);
     }
 
-    // Map to your 6 base columns
-    const P = {
-      label:        'http://www.w3.org/2000/01/rdf-schema#label',
-      definition:   'http://www.w3.org/2004/02/skos/core#definition',
-      rdfType:      'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
-      subClassOf:   'http://www.w3.org/2000/01/rdf-schema#subClassOf',
-      subPropertyOf:'http://www.w3.org/2000/01/rdf-schema#subPropertyOf',
-      curatedIn:    'https://www.commoncoreontologies.org/ont00001760',
-      owlClass:     'http://www.w3.org/2002/07/owl#Class',
-      owlObjProp:   'http://www.w3.org/2002/07/owl#ObjectProperty',
-      owlDataProp:  'http://www.w3.org/2002/07/owl#DatatypeProperty',
-      owlAnnProp:   'http://www.w3.org/2002/07/owl#AnnotationProperty',
-      owlNamedInd:  'http://www.w3.org/2002/07/owl#NamedIndividual',
-      owlOntology:  'http://www.w3.org/2002/07/owl#Ontology'
-    };
-
     const firstLiteral = (arr) =>
       (arr || []).find(v => v.startsWith('"'))?.replace(/^"(.*)"(?:@[\w-]+|\^\^<[^>]+>)?$/, '$1') || '';
 
@@ -1061,35 +1065,35 @@ async function reloadSavedSession() {
     for (const [s, pMap] of subjMap.entries()) {
 
       if (s === ontologyIriFromSettings) continue;
-      const rdfTypes = Array.from(pMap.get(P.rdfType)?.values() || []);
+      const rdfTypes = Array.from(pMap.get(w3cIRI.RDF_TYPE)?.values() || []);
       const hasType = iri => rdfTypes.includes(`<${iri}>`);
-      if (hasType(P.owlOntology)) continue;
+      if (hasType(w3cIRI.OWL_ONTOLOGY)) continue;
 
       let elementType = '';
-      if (hasType(P.owlClass))         elementType = 'Class';
-      else if (hasType(P.owlObjProp))  elementType = 'ObjectProperty';
-      else if (hasType(P.owlDataProp)) elementType = 'DatatypeProperty';
-      else if (hasType(P.owlAnnProp))  elementType = 'AnnotationProperty';
-      else if (hasType(P.owlNamedInd)) elementType = 'NamedIndividual';
-      else if (hasType(P.owlOntology)) elementType = 'Ontology'; // This is an outlier case, mostly for error handling
-      else if (rdfTypes.length)        elementType = 'NamedIndividual';
+      if (hasType(w3cIRI.OWL_CLASS))           elementType = 'Class';
+      else if (hasType(w3cIRI.OWL_OBJPROP))    elementType = 'ObjectProperty';
+      else if (hasType(w3cIRI.OWL_DATATYPE))   elementType = 'DatatypeProperty';
+      else if (hasType(w3cIRI.OWL_ANNOPROP))   elementType = 'AnnotationProperty';
+      else if (hasType(w3cIRI.OWL_INDIVIDUAL)) elementType = 'NamedIndividual';
+      else if (hasType(w3cIRI.OWL_ONTOLOGY))   elementType = 'Ontology'; // This is an outlier case, mostly for error handling
+      else if (rdfTypes.length)                elementType = 'NamedIndividual';
 
-      const label = firstLiteral(Array.from(pMap.get(P.label)?.values() || []));
-      const definition = firstLiteral(Array.from(pMap.get(P.definition)?.values() || []));
+      const label = firstLiteral(Array.from(pMap.get(w3cIRI.RDFS_LABEL)?.values() || []));
+      const definition = firstLiteral(Array.from(pMap.get(w3cIRI.SKOS_DEFINITION)?.values() || []));
 
       let isA = '';
       if (elementType === 'Class') {
-        isA = iriFromObjects(Array.from(pMap.get(P.subClassOf)?.values() || []));
+        isA = iriFromObjects(Array.from(pMap.get(w3cIRI.OWL_SUBCLASS)?.values() || []));
       } else if (elementType === 'ObjectProperty' || elementType === 'DatatypeProperty' || elementType === 'AnnotationProperty') {
-        isA = iriFromObjects(Array.from(pMap.get(P.subPropertyOf)?.values() || []));
+        isA = iriFromObjects(Array.from(pMap.get(w3cIRI.OWL_SUBPROP)?.values() || []));
       } else if (elementType === 'NamedIndividual') {
         const classish = rdfTypes
           .map(v => /^<([^>]+)>$/.exec(v)?.[1])
-          .filter(u => u && u !== P.owlClass && u !== P.owlObjProp && u !== P.owlDataProp && u !== P.owlAnnProp);
+          .filter(u => u && u !== w3cIRI.OWL_CLASS && u !== w3cIRI.OWL_OBJPROP && u !== w3cIRI.OWL_DATAPROP && u !== w3cIRI.OWL_ANNOPROP);
         if (classish.length) isA = classish[0];
       }
 
-      const curatedVals = Array.from(pMap.get(P.curatedIn)?.values() || []);
+      const curatedVals = Array.from(pMap.get(w3cIRI.CCO_CURATEDIN)?.values() || []);
       const curatedIn = iriFromObjects(curatedVals) || firstLiteral(curatedVals);
 
       // base row
@@ -1104,8 +1108,8 @@ async function reloadSavedSession() {
       // gather extra predicates (not mapped to base columns)
       for (const p of pMap.keys()) {
         if (
-          p === P.label || p === P.definition || p === P.rdfType ||
-          p === P.subClassOf || p === P.subPropertyOf || p === P.curatedIn
+          p === w3cIRI.RDFS_LABEL || p === w3cIRI.SKOS_DEFINITION || p === w3cIRI.RDF_TYPE ||
+          p === w3cIRI.OWL_SUBCLASS || p === w3cIRI.OWL_SUBPROP || p === w3cIRI.CCO_CURATEDIN
         ) continue;
         extraPreds.add(p);
       }
@@ -1663,10 +1667,10 @@ function iriToNiceLabel(iri) {
 
 // base header map
 const BASE_HEADER_TO_PRED = new Map([
-  ['label',        'http://www.w3.org/2000/01/rdf-schema#label'],
-  ['definition',   'http://www.w3.org/2004/02/skos/core#definition'],
-  ['element type', 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'],
-  ['is curated in ontology', 'https://www.commoncoreontologies.org/ont00001760'],
+  ['label',        w3cIRI.RDFS_LABEL],
+  ['definition',   w3cIRI.SKOS_DEFINITION],
+  ['element type', w3cIRI.RDF_TYPE],
+  ['is curated in ontology', w3cIRI.CCO_CURATEDIN],
 ]);
 
 // Expand a single header to one or more concrete predicate IRIs for curation rules
@@ -1679,9 +1683,9 @@ function headerToPredicateIrisForRules(header) {
   // Special: "is a" expands
   if (h === 'is a') {
     return [
-      'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
-      'http://www.w3.org/2000/01/rdf-schema#subClassOf',
-      'http://www.w3.org/2000/01/rdf-schema#subPropertyOf',
+      w3cIRI.RDF_TYPE,
+      w3cIRI.RDFS_SUBCLASS,
+      w3cIRI.RDFS_SUBPROP,
     ].filter(Boolean);
   }
 
@@ -2330,7 +2334,9 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
     "is defined by": "is curated in",
     "is curated in ontology": "is curated in",
     "cco2:ont00001760": "is curated in",
+    "https://www.commoncoreontologies.org/ont00001760": "is curated in",
     "cco2:ont00001753": "acronym",
+    "https://www.commoncoreontologies.org/ont00001753": "acronym",
     "cceo:acronym": "acronym"
     // Add more aliases as needed
   };
@@ -2627,7 +2633,7 @@ async function openImportsModal() {
 
   // ensure cache is loaded
   const settings = await getOntologySettingsAsync();
-  const imports = settings["http://www.w3.org/2002/07/owl#imports"] || [];
+  const imports = settings[w3cIRI.OWL_IMPORTS] || [];
   const importsMap = getImportsMap();
 
   imports.forEach((iri) => {
@@ -2713,9 +2719,9 @@ async function addImportIRI() {
 
   // ✅ use cached settings already in memory
   const settings = getOntologySettings();
-  settings["http://www.w3.org/2002/07/owl#imports"] = settings["http://www.w3.org/2002/07/owl#imports"] || [];
-  if (!settings["http://www.w3.org/2002/07/owl#imports"].includes(iri)) {
-    settings["http://www.w3.org/2002/07/owl#imports"].push(iri);
+  settings[w3cIRI.OWL_IMPORTS] = settings[w3cIRI.OWL_IMPORTS] || [];
+  if (!settings[w3cIRI.OWL_IMPORTS].includes(iri)) {
+    settings[w3cIRI.OWL_IMPORTS].push(iri);
     await saveOntologySettings(settings);
   }
 
@@ -2793,39 +2799,33 @@ function populateCurationSettingsToggleUI() {
     const tbody = document.getElementById('toggle-curation-settings'); // <tbody>
     if (!tbody) return;
 
-    // constants we care about
-    const P = {
-      type:        'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
-      label:       'http://www.w3.org/2000/01/rdf-schema#label',
-      definition:  'http://www.w3.org/2004/02/skos/core#definition',
-      subClassOf:  'http://www.w3.org/2000/01/rdf-schema#subClassOf',
-      subProperty: 'http://www.w3.org/2000/01/rdf-schema#subPropertyOf',
-    };
+    const ordered = [
+      w3cIRI.RDF_TYPE,
+      w3cIRI.RDFS_LABEL,
+      w3cIRI.SKOS_DEFINITION,
+      'isAGroup',
+      // any others derived dynamically
+    ];
 
     // 1) Build the exact order you want
     const base = collectPredicateIrisFromHeaders();
-    const rest = base.filter(p =>
-      p !== P.type && p !== P.label && p !== P.definition &&
-      p !== P.subClassOf && p !== P.subProperty
+    const rest = base.filter(predicate =>
+      predicate !== w3cIRI.RDF_TYPE &&
+      predicate !== w3cIRI.RDFS_LABEL &&
+      predicate !== w3cIRI.SKOS_DEFINITION &&
+      predicate !== w3cIRI.OWL_SUBCLASS &&
+      predicate !== w3cIRI.OWL_SUBPROP
     ).sort((a,b) => iriToNiceLabel(a).localeCompare(iriToNiceLabel(b)));
-
-    const ordered = [
-      P.type,
-      P.label,
-      P.definition,
-      'isAGroup', // single row that maps to BOTH subClassOf & subPropertyOf
-      ...rest
-    ].filter(Boolean);
 
     // 2) Snapshot current categories (to know what changed)
     CURATION_SNAPSHOT = {
       singles: new Map(),
       isa: {
-        subClassOf:  getCurrentCategory(P.subClassOf)  || 'optional',
-        subProperty: getCurrentCategory(P.subProperty) || 'optional'
+        subClassOf:  getCurrentCategory(w3cIRI.OWL_SUBCLASS)  || 'required',
+        subProperty: getCurrentCategory(w3cIRI.OWL_SUBPROP) || 'required'
       }
     };
-    [P.type, P.label, P.definition, ...rest].forEach(iri => {
+    [w3cIRI.RDF_TYPE, w3cIRI.RDFS_LABEL, w3cIRI.SKOS_DEFINITION, ...rest].forEach(iri => {
       CURATION_SNAPSHOT.singles.set(iri, getCurrentCategory(iri) || 'optional');
     });
 
@@ -2881,25 +2881,25 @@ function populateCurationSettingsToggleUI() {
     // — “is a” group row (single row for both predicates)
     const renderIsAGroup = () => {
       // only render if either predicate exists in headers
-      const present = base.includes(P.subClassOf) || base.includes(P.subProperty);
+      const present = base.includes(w3cIRI.OWL_SUBCLASS) || base.includes(w3cIRI.OWL_SUBPROP);
       if (!present) return;
 
       const tr = document.createElement('tr');
 
       const labelTd = document.createElement('td');
       labelTd.textContent = 'is a';
-      labelTd.title = `${P.subClassOf} & ${P.subProperty}`;
+      labelTd.title = `${w3cIRI.OWL_SUBCLASS} & ${w3cIRI.OWL_SUBPROP}`;
       tr.appendChild(labelTd);
 
       // current: if both have same category, show it; else show none selected
-      const c1 = getCurrentCategory(P.subClassOf)  || 'optional';
-      const c2 = getCurrentCategory(P.subProperty) || 'optional';
+      const c1 = getCurrentCategory(w3cIRI.OWL_SUBCLASS)  || 'optional';
+      const c2 = getCurrentCategory(w3cIRI.OWL_SUBPROP) || 'optional';
       const same = (c1 === c2);
       const current = same ? c1 : null;
 
       const onChange = async (val) => {
-        setCurrentCategory(P.subClassOf,  val);
-        setCurrentCategory(P.subProperty, val);
+        setCurrentCategory(w3cIRI.OWL_SUBCLASS,  val);
+        setCurrentCategory(w3cIRI.OWL_SUBPROP, val);
         recomputeCurationSetsFromNormative();
         evaluateAllRowsCuration();
         refreshAllBulbs();
@@ -2908,7 +2908,7 @@ function populateCurationSettingsToggleUI() {
         await saveOntologySettings(s);
 
         const snap = CURATION_SNAPSHOT.isa;
-        const changed = (snap.subClassOf !== val) || (snap.subProperty !== val);
+        const changed = (snap.w3cIRI.OWL_SUBCLASS !== val) || (snap.w3cIRI.OWL_SUBPROP !== val);
         tr.classList.toggle('changed-row', changed);
       };
 
