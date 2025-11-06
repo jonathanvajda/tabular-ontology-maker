@@ -46,25 +46,25 @@ const getElementTypes = () => {
   ];
 };
 
-const w3cIRI = [
-  RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
-  RDFS_LABEL = 'http://www.w3.org/2000/01/rdf-schema#label',
-  RDFS_SUBCLASS = 'http://www.w3.org/2000/01/rdf-schema#subClassOf',
-  RDFS_SUBPROP = 'http://www.w3.org/2000/01/rdf-schema#subPropertyOf',
-  OWL_ONTOLOGY = 'http://www.w3.org/2002/07/owl#Ontology',
-  OWL_CLASS = 'http://www.w3.org/2002/07/owl#Class',
-  OWL_NAMEDIND = 'http://www.w3.org/2002/07/owl#NamedIndividual',
-  OWL_OBJPROP = 'http://www.w3.org/2002/07/owl#ObjectProperty',
-  OWL_DATAPROP = 'http://www.w3.org/2002/07/owl#DataProperty',
-  OWL_ANNOPROP = 'http://www.w3.org/2002/07/owl#AnnotationProperty',
-  OWL_DATATYPE = 'http://www.w3.org/2002/07/owl#DatatypeProperty',
-  OWL_IMPORTS = 'http://www.w3.org/2002/07/owl#imports',
-  SKOS_DEFINITION = 'http://www.w3.org/2004/02/skos/core#definition',
-  CCO_CURATEDIN = 'https://www.commoncoreontologies.org/ont00001760',
-  DCTERMS_CREATOR = 'http://purl.org/dc/terms/creator',
-  DCTERMS_CREATED = 'http://purl.org/dc/terms/created',
-  DCTERMS_DESCRIPTION = 'http://purl.org/dc/terms/description',
-]
+const w3cIRI = {
+  RDF_TYPE: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
+  RDFS_LABEL: 'http://www.w3.org/2000/01/rdf-schema#label',
+  RDFS_SUBCLASS: 'http://www.w3.org/2000/01/rdf-schema#subClassOf',
+  RDFS_SUBPROP: 'http://www.w3.org/2000/01/rdf-schema#subPropertyOf',
+  OWL_ONTOLOGY: 'http://www.w3.org/2002/07/owl#Ontology',
+  OWL_CLASS: 'http://www.w3.org/2002/07/owl#Class',
+  OWL_NAMEDIND: 'http://www.w3.org/2002/07/owl#NamedIndividual',
+  OWL_OBJPROP: 'http://www.w3.org/2002/07/owl#ObjectProperty',
+  OWL_DATAPROP: 'http://www.w3.org/2002/07/owl#DataProperty',
+  OWL_ANNOPROP: 'http://www.w3.org/2002/07/owl#AnnotationProperty',
+  OWL_DATATYPE: 'http://www.w3.org/2002/07/owl#DatatypeProperty',
+  OWL_IMPORTS: 'http://www.w3.org/2002/07/owl#imports',
+  SKOS_DEFINITION: 'http://www.w3.org/2004/02/skos/core#definition',
+  CCO_CURATEDIN: 'https://www.commoncoreontologies.org/ont00001760',
+  DCTERMS_CREATOR: 'http://purl.org/dc/terms/creator',
+  DCTERMS_CREATED: 'http://purl.org/dc/terms/created',
+  DCTERMS_DESCRIPTION: 'http://purl.org/dc/terms/description',
+};
 
 const getIsAPredicate = (elementType) => {
   console.info('getIsAPredicate happened');
