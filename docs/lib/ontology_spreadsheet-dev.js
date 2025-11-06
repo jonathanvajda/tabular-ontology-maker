@@ -500,6 +500,29 @@ const createTable = (container, data, colHeaders, columns) => {
     stretchH: 'none',
     rowHeaders: true,
     rowHeaderWidth: 28,
+    beforeRender() {
+        // Minimal: recompute once per render using your existing function.
+        // If you already populate curationStatusByRow elsewhere, you can skip this.
+        curationStatusByRow.clear();
+        const rows = this.countRows();
+        for (let r = 0; r < rows; r++) {
+          const result = evaluateRowCuration(r);
+          curationStatusByRow.set(r, result);
+        }
+      },
+    afterGetRowHeader(row, TH) {
+        const res = curationStatusByRow.get(row) || { status: 'uncurated' };
+        const glyph = statusToGlyph(res.status);      // <-- your existing glyphs
+        const title = (res.status || 'uncurated').replace(/_/g, ' ');
+
+        TH.classList.add('curation-bulb-th');
+        // Minimal: reuse your existing bulb classes so colors stay exactly as-is
+        TH.innerHTML = `<span class="curation-bulb ${res.status}" title="${title}">${glyph}</span>`;
+      },
+    afterChange(changes) {
+        if (!changes) return;
+        this.render(); // headers will repaint using the same glyphs/colors
+      },
     contextMenu: true,
     manualColumnResize: true,
     hiddenColumns: { columns: [], indicators: true }, // little triangle indicator
@@ -549,7 +572,7 @@ function applyHiddenColumnsByName() {
       if (hiddenNames.has(String(h))) indices.push(i);
     });
     hotInstance.updateSettings({ hiddenColumns: { columns: indices, indicators: true }});
-    console.info('[ManagePredicates] Applied hidden columns:', indices, '(names=', [...hiddenNames], ')');
+    console.info('[ManagePredicates] Applied hidden columns:', indices, '(names=', Array.from(hiddenNames), ')');
   } catch (e) {
     console.error('[ManagePredicates] applyHiddenColumnsByName failed', e);
   }
@@ -1816,7 +1839,7 @@ function evaluateAllRowsCuration() {
   const total = hotInstance.countRows();
   const out = [];
   for (let r = 0; r < total; r++) {
-    out.push({ row: r, ...evaluateRowCuration(r) });
+    out.push({ row: r, result: evaluateRowCuration(r) });
   }
   return out;
 }
@@ -1874,7 +1897,6 @@ function repaintCurationBulbByIri(iri, status) {
   el.title = title;
   el.setAttribute('aria-label', title);
 }
-
 
 /**
  * This function refreshes a bulb icon for each row based on its curation status.
