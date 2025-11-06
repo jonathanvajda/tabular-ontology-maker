@@ -1074,7 +1074,7 @@ async function reloadSavedSession() {
       else if (hasType(w3cIRI.OWL_OBJPROP))    elementType = 'ObjectProperty';
       else if (hasType(w3cIRI.OWL_DATATYPE))   elementType = 'DatatypeProperty';
       else if (hasType(w3cIRI.OWL_ANNOPROP))   elementType = 'AnnotationProperty';
-      else if (hasType(w3cIRI.OWL_INDIVIDUAL)) elementType = 'NamedIndividual';
+      else if (hasType(w3cIRI.OWL_NAMEDIND))   elementType = 'NamedIndividual';
       else if (hasType(w3cIRI.OWL_ONTOLOGY))   elementType = 'Ontology'; // This is an outlier case, mostly for error handling
       else if (rdfTypes.length)                elementType = 'NamedIndividual';
 
