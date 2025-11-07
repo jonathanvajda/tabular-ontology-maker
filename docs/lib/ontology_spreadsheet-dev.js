@@ -1469,7 +1469,7 @@ async function reloadSavedSession() {
       for (const p of pMap.keys()) {
         if (
           p === w3cIRI.RDFS_LABEL || p === w3cIRI.SKOS_DEFINITION || p === w3cIRI.RDF_TYPE ||
-          p === w3cIRI.RDFS_SUBCLASS || p === w3cIRI.RDFS_SUBPROP || p === w3cIRI.CCO_CURATEDIN
+          p === w3cIRI.RDFS_SUBCLASS || p === w3cIRI.RDFS_SUBPROP || p === w3cIRI.CCO_CURATEDIN || p === CURATION_PROPERTY.iri
         ) continue;
         extraPreds.add(p);
       }
