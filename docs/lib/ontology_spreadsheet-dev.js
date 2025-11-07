@@ -500,31 +500,6 @@ const createTable = (container, data, colHeaders, columns) => {
     stretchH: 'none',
     rowHeaders: true,
     rowHeaderWidth: 28,
-    beforeRender() {
-        // Minimal: recompute once per render using your existing function.
-        // If you already populate curationStatusByRow elsewhere, you can skip this.
-        curationStatusByRow.clear();
-        const rows = this.countRows();
-        for (let r = 0; r < rows; r++) {
-          const result = evaluateRowCuration(r);
-          curationStatusByRow.set(r, result);
-        }
-      },
-    afterGetRowHeader(row, TH) {
-        const res = curationStatusByRow.get(row) || { status: 'uncurated' };
-        const glyph = typeof statusToGlyph(res.status) === 'string'
-          ? statusToGlyph(res.status)
-          : (statusToGlyph(res.status)?.glyph || '●');
-        const title = (res.status || 'uncurated').replace(/_/g, ' ');
-
-        TH.classList.add('curation-bulb-th');
-        // Minimal: reuse your existing bulb classes so colors stay exactly as-is
-        TH.innerHTML = `<span class="curation-bulb ${res.status}" title="${title}">${glyph}</span>`;
-      },
-    afterChange(changes) {
-        if (!changes) return;
-        this.render(); // headers will repaint using the same glyphs/colors
-      },
     contextMenu: true,
     manualColumnResize: true,
     hiddenColumns: { columns: [], indicators: true }, // little triangle indicator
@@ -1466,6 +1441,7 @@ function attachHotHooks() {
   });
 }
 
+// This function backfills IRIs in the Handsontable instance based on the selected mode.
 function backfillIris() {
   try {
     if (!hotInstance) {
@@ -1876,38 +1852,9 @@ function attachCurationHooks() {
   });
 
   // When rows are created/removed, re-check the table
-  hotInstance.addHook('afterCreateRow', () => evaluateAllRowsCuration()); refreshAllBulbs();
-  hotInstance.addHook('afterRemoveRow', () => evaluateAllRowsCuration()); refreshAllBulbs();
+  hotInstance.addHook('afterCreateRow', () => evaluateAllRowsCuration());
+  hotInstance.addHook('afterRemoveRow', () => evaluateAllRowsCuration());
 }
-
-/**
- * This function repaints a curation status bulb icon for a given IRI.
- * @description Used for updating the UI to reflect the curation status of a term. 
- * @param {*} iri 
- * @param {*} status 
- * @returns 
- */
-function repaintCurationBulbByIri(iri, status) {
-  if (!iri) return;
-  const el = getBulbElForIri(iri) || ensureBulbElForIri(iri);
-  if (!el) return;
-
-  const { char, color, title } = statusToGlyph(status || CURATION_STATUS.UNCURATED);
-  // Use text + color (no images)
-  el.textContent = char;
-  el.style.color = color;
-  el.title = title;
-  el.setAttribute('aria-label', title);
-}
-
-/**
- * This function refreshes a bulb icon for each row based on its curation status.
- */
-function repaintCurationBulb(rowIndex, status) {
-  const iri = iriForRow(rowIndex);
-  repaintCurationBulbByIri(iri, status);
-}
-
 
 /**
  * This function retrieves the IRI for a given row index.
@@ -1920,65 +1867,11 @@ function iriForRow(rowIndex) {
   return (typeof iri === 'string' && iri.trim()) ? iri.trim() : null;
 }
 
-/**
- * Returns the glyph character and color for a given curation status.
- * @description Used for rendering status indicators in the UI.
- * @param {*} status 
- * @returns 
- */
-function statusToGlyph(status) {
-  switch (status) {
-    case CURATION_STATUS.COMPLETE:   return { char: '●', color: '#22c55e', title: 'Metadata Complete' };   // green
-    case CURATION_STATUS.INCOMPLETE: return { char: '●', color: '#eab308', title: 'Metadata Incomplete' }; // amber
-    case CURATION_STATUS.UNCURATED:
-    default:                         return { char: '●', color: '#9ca3af', title: 'Uncurated' };           // gray
-  }
-}
-
-// Replace this with your own retrieval strategy
-function getBulbElForIri(iri) {
-  return document.querySelector(`[data-curation-bulb][data-iri="${CSS.escape(iri)}"]`);
-}
-
-// Optional creator (only if you want this module to create bulbs)
-function ensureBulbElForIri(iri) {
-  let el = getBulbElForIri(iri);
-  if (el) return el;
-  // If you want this to auto-create, uncomment and define your container:
-  // const wrap = document.getElementById('curation-bulb-strip');
-  // if (!wrap) return null;
-  // el = document.createElement('span');
-  // el.setAttribute('data-curation-bulb', '');
-  // el.setAttribute('data-iri', iri);
-  // el.style.display = 'inline-block';
-  // el.style.width = '1em';
-  // el.style.textAlign = 'center';
-  // el.style.userSelect = 'none';
-  // wrap.appendChild(el);
-  return el;
-}
-
-
-/**
- * This function recursively refreshes all curation status bulbs for the table.
- * It retrieves the current curation status for each row and repaints the corresponding bulb icon.
- */
-function refreshAllBulbs() {
-  if (!hotInstance) return;
-  const total = hotInstance.countRows();
-  for (let r = 0; r < total; r++) {
-    const iri = iriForRow(r);
-    const status = curationStatusByRow.get(r)?.status || CURATION_STATUS.UNCURATED;
-    repaintCurationBulbByIri(iri, status);
-  }
-}
-
 
 // Call this once right after your existing attachHotHooks()
 function initCurationStatusEngine() {
   attachCurationHooks();          // keeps curationStatusByRow up-to-date
   evaluateAllRowsCuration();      // initial sweep
-  refreshAllBulbs();              // initial paint
 
   // Repaint touched rows after edits
   hotInstance.addHook('afterChange', (changes, source) => {
@@ -1987,12 +1880,11 @@ function initCurationStatusEngine() {
     for (const r of touched) {
       const iri = iriForRow(r);
       const status = curationStatusByRow.get(r)?.status || CURATION_STATUS.UNCURATED;
-      repaintCurationBulbByIri(iri, status);
     }
   });
 
   // Re-sync on structure/ordering changes
-  const reSync = () => { evaluateAllRowsCuration(); refreshAllBulbs(); };
+  const reSync = () => { evaluateAllRowsCuration(); };
   hotInstance.addHook('afterCreateRow', reSync);
   hotInstance.addHook('afterRemoveRow', reSync);
   hotInstance.addHook('afterColumnSort', reSync);
@@ -2730,6 +2622,7 @@ async function handleImportFileUpload(event, iri) {
   reader.readAsText(file);
 }
 
+// This function retrieves the local import content for a given IRI from the ontology settings.
 function getLocalImportContent(iri) {
   const s = getOntologySettings();
   return s?._imports?.[iri]?.content || null;
@@ -2753,6 +2646,7 @@ async function addImportIRI() {
   openImportsModal();
 }
 
+// This function saves the ontology imports and closes the modal.
 function saveImportsAndClose() {
   document.getElementById("ontology-imports-modal").style.display = "none";
 }
@@ -2807,10 +2701,30 @@ document.getElementById('manage-predicates-cancel-btn').addEventListener('click'
     document.getElementById('manage-predicates-modal').style.display = 'none';
   });
 
+// This function handles the 'curation-status-tracking' radio buttons in the Curation Settings modal, that on change of disable to enable, it will display the 'curation-status-tracking-settings-div', and upon change of enable to disable, it will hide the 'curation-status-tracking-settings-div'.
+document.getElementsByName('curation-status-tracking').forEach(radio => {
+  radio.addEventListener('change', (event) => {
+    const settingsDiv = document.getElementById('curation-status-tracking-settings-div');
+    if (event.target.value === 'enable') {
+      settingsDiv.style.display = 'block';
+    } else {
+      settingsDiv.style.display = 'none';
+    }
+  });
+});
+
 // Call this once on startup (so your evaluator has the arrays ready)
 recomputeCurationSetsFromNormative();
 
 let CURATION_SNAPSHOT = null;
+
+const curationStates = {
+  'http://purl.obolibrary.org/obo/IAO_0000120': 'metadata complete',
+  'http://purl.obolibrary.org/obo/IAO_0000123': 'metadata incomplete',
+  'http://purl.obolibrary.org/obo/IAO_0000125': 'pending final vetting',
+  'http://purl.obolibrary.org/obo/IAO_0000122': 'ready for release',
+  'http://purl.obolibrary.org/obo/IAO_0000124': 'needs revision',
+};
 
 /**
  * Populates the 'toggle-curation-settings' container with one row per predicate:
@@ -2890,7 +2804,6 @@ function populateCurationSettingsToggleUI() {
             setCurrentCategory(predIri, val);
             recomputeCurationSetsFromNormative();
             evaluateAllRowsCuration();
-            refreshAllBulbs();
             const s = getOntologySettings();
             s.curationRules = { ...normativeCurationSettings };
             await saveOntologySettings(s);
@@ -2911,6 +2824,7 @@ function populateCurationSettingsToggleUI() {
       if (!present) return;
 
       const tr = document.createElement('tr');
+      tr.style.textAlign = "center";
 
       const labelTd = document.createElement('td');
       labelTd.textContent = 'is a';
@@ -2928,7 +2842,6 @@ function populateCurationSettingsToggleUI() {
         setCurrentCategory(w3cIRI.RDFS_SUBPROP, val);
         recomputeCurationSetsFromNormative();
         evaluateAllRowsCuration();
-        refreshAllBulbs();
         const s = getOntologySettings();
         s.curationRules = { ...normativeCurationSettings };
         await saveOntologySettings(s);
