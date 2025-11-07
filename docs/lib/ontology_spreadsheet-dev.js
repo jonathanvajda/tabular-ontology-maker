@@ -643,7 +643,8 @@ const getColumnDefinitions = () => {
         Handsontable.renderers.TextRenderer.apply(this, [instance, td, row, col, prop, text, cellProperties]);
       }
     },
-    { type: 'text' } // is curated in ontology
+    { type: 'text' }, // is curated in ontology
+    { type: 'text', readOnly: true } // has curation status (computed)
   ];
 };
 
@@ -662,7 +663,7 @@ const getInitialData = () => {
 // Gets the column headers for the Handsontable instance.  
 const getColumnHeaders = () => {
   console.info('getColumnHeaders happened');
-  return ["iri", "label", "element type", "definition", "is a", "is curated in ontology"].concat(customPredicates);
+  return ["iri", "label", "element type", "definition", "is a", "is curated in ontology", CURATION_PROPERTY.label].concat(customPredicates);
 };
 
 /**
@@ -670,22 +671,20 @@ const getColumnHeaders = () => {
  * label with the CURIE in parentheses.
  */
 function formatCurationStatusHeader() {
-    const curationColIndex = getCurationStatusColumnIndex();
-    if (curationColIndex === -1 || !hotInstance) return;
+  const curationColIndex = getCurationStatusColumnIndex();
+  if (curationColIndex === -1 || !hotInstance) return;
 
-    const formattedLabel = `${CURATION_PROPERTY.label} (${CURATION_PROPERTY.curie})`;
-    
-    // HandsOnTable requires updating the settings' colHeaders property
-    hotInstance.updateSettings({
-        colHeaders: (index) => {
-            // Intercept the column header function to return the formatted label
-            if (index === curationColIndex) {
-                return formattedLabel;
-            }
-            // Return existing headers for all other columns
-            return hotInstance.getColHeader()[index];
-        }
-    });
+  const formattedLabel = `${CURATION_PROPERTY.label} (${CURATION_PROPERTY.curie})`;
+
+  // Cache current headers to avoid recursion inside HOT's header getter
+  const originalHeaders = hotInstance.getColHeader();
+
+  hotInstance.updateSettings({
+    colHeaders: (index) => {
+      if (index === curationColIndex) return formattedLabel;
+      return originalHeaders[index];
+    }
+  });
 }
 
 const createTable = (container, data, colHeaders, columns) => {
