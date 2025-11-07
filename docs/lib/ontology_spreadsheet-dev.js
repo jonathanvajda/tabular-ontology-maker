@@ -76,8 +76,13 @@ const CURATION_PROPERTY = {
 
 
 /**
- * Maps human-readable keys to standard IAO Curation Status objects 
+ * Maps human-readable keys to standard IAO Curation Status objects
  * for both RDF export and cell display (IRI + human-readable label).
+ *
+ * - UNCURATED: Scenario A (Missing required fields)
+ * - METADATA_INCOMPLETE: Scenario B (Required met, all recommended missing)
+ * - METADATA_COMPLETE: Scenario C (Required met, some recommended present)
+ * - PENDING: Scenario D (Required met, all recommended present)
  */
 const CURATION_STATUS = {
   // Tier 1: Missing required metadata (Scenario A)
@@ -104,7 +109,7 @@ const CURATION_STATUS = {
     label: 'pending final vetting',
     curie: 'obo:IAO_0000125'
   },
-  // Final state
+  // Final state (not in scenarios, but good to have)
   READY_FOR_RELEASE: {
     iri: 'http://purl.obolibrary.org/obo/IAO_0000122',
     label: 'ready for release',
@@ -167,6 +172,7 @@ const curationLogic = {
   /**
    * Calculates the curation status of an ontology element by checking its
    * present predicates against the single normative curation settings object.
+   * This is a pure function with no side effects.
    *
    * @param {Set<string>} presentPredicates - A Set of predicate IRIs that have a value for the element (e.g., from a row).
    * @param {Object<string, string>} settings - The normativeCurationSettings object {IRI: 'required'|'recommended'|'optional'}.
@@ -175,15 +181,19 @@ const curationLogic = {
    */
   calculateCurationStatus: (presentPredicates, settings) => {
     // 1. Input validation
-    if (!(presentPredicates instanceof Set) || typeof settings !== 'object' || settings === null) {
-      throw new TypeError("Inputs must be a Set of IRIs and a settings object.");
+    if (!(presentPredicates instanceof Set)) {
+      throw new TypeError("Input 'presentPredicates' must be a Set.");
     }
-    
+    if (typeof settings !== 'object' || settings === null) {
+      throw new TypeError("Input 'settings' must be a valid object.");
+    }
+
     let missingRequired = 0;
     let missingRecommended = 0;
     let totalRecommended = 0;
 
     // 2. Iterate over the normative settings (the source of truth) ONCE
+    //    We count missing required and missing/total recommended predicates.
     for (const iri in settings) {
       if (Object.prototype.hasOwnProperty.call(settings, iri)) {
         const status = settings[iri];
@@ -202,25 +212,33 @@ const curationLogic = {
       }
     }
 
-    // 3. Apply status rules (using your updated keys)
+    // 3. Apply status rules based on your scenarios
 
-    // TIER 1: Uncurated (Scenario A)
+    // Scenario A: Missing one or more required fields.
+    // This is the first and most important check.
     if (missingRequired > 0) {
       return CURATION_STATUS.UNCURATED;
     }
 
-    // TIER 4: Pending Final Vetting (Scenario D) - All recommended present
-    if (totalRecommended > 0 && missingRecommended === 0) {
+    // Edge case: If no fields are 'recommended' (totalRecommended === 0),
+    // any row with all 'required' fields is considered complete.
+    if (totalRecommended === 0) {
+      return CURATION_STATUS.METADATA_COMPLETE;
+    }
+
+    // Scenario D: All required met AND all recommended met.
+    if (missingRecommended === 0) {
       return CURATION_STATUS.PENDING;
     }
-    
-    // TIER 2: Metadata Incomplete (Scenario B) - All recommended missing
-    if (totalRecommended > 0 && missingRecommended === totalRecommended) {
+
+    // Scenario B: All required met BUT all recommended are missing.
+    if (missingRecommended === totalRecommended) {
       return CURATION_STATUS.METADATA_INCOMPLETE;
     }
 
-    // TIER 3: Metadata Complete (Scenario C or Fallback) 
-    return CURATION_STATUS.METADATA_COMPLETE; 
+    // Scenario C: All required met AND some (but not all) recommended are met.
+    // This is the fallback case.
+    return CURATION_STATUS.METADATA_COMPLETE;
   }
 };
 
