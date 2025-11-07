@@ -116,17 +116,10 @@ const CURATION_STATUS = {
 /**
  * Finds the column index for the 'has curation status' property, supporting 
  * lookups by human-readable label, full IRI, or CURIE.
- * * Assumes: hotInstance, iriPrefixes, expandCURIEtoIRI, and CURATION_PROPERTY are available.
- *
- * @returns {number} The column index, or -1 if not found.
- */
-/**
- * Finds the column index for the 'has curation status' property, supporting 
- * lookups by human-readable label, full IRI, or CURIE.
  * This function relies on the globally available hotInstance, iriPrefixes, and curieToIri.
  *
  * @returns {number} The column index, or -1 if not found.
- */
+*/
 function getCurationStatusColumnIndex() {
   if (!hotInstance) return -1;
 
@@ -148,15 +141,16 @@ function getCurationStatusColumnIndex() {
     try {
       let headerIri = header;
       
-      // Use your existing curieToIri function to resolve the header (Fixing the runtime error)
-      const resolvedIri = curieToIri(header); 
-
-      // If curieToIri returns an IRI, use it for comparison
-      if (resolvedIri) {
-        headerIri = resolvedIri;
+      // If the header contains a colon, treat it as a potential CURIE
+      if (header.includes(':')) {
+        // Use your existing curieToIri function to resolve the CURIE
+        const resolvedIri = curieToIri(header); 
+        if (resolvedIri) {
+            headerIri = resolvedIri;
+        }
       }
       
-      // Compare the resolved IRI/full IRI header against the target IRI
+      // Compare the final resolved IRI (or the original header if it was a full IRI)
       if (headerIri === targetIri) {
         return c;
       }
@@ -165,6 +159,7 @@ function getCurationStatusColumnIndex() {
     }
   }
 
+  // If the column is not found, this returns -1, which is the problem point.
   return -1;
 }
 
@@ -674,7 +669,6 @@ function formatCurationStatusHeader() {
         }
     });
 }
-// Call formatCurationStatusHeader() once when the table is loaded/reloaded.
 
 const createTable = (container, data, colHeaders, columns) => {
   console.info('createTable happened');
@@ -827,6 +821,7 @@ function initHandsontable() {
   attachHotHooks();
   applyHiddenColumnsToHot();
   harvestRowsIntoVocab(rows);
+  formatCurationStatusHeader();
   initCurationStatusEngine();
 
   hotInitDone = true;
@@ -1325,6 +1320,7 @@ async function reloadSavedSession() {
     hotInstance = createTable(container, finalRows, newHeaders, newColumns);
     attachHotHooks();
     applyHiddenColumnsToHot();
+    formatCurationStatusHeader();
     harvestRowsIntoVocab(finalRows);
 
     showToast(`✅ Reloaded ${subjMap.size} subject${subjMap.size!==1?'s':''} from latest saved RDF`, 'success');
@@ -1760,6 +1756,7 @@ function confirmAddPredicate() {
         hotInstance = createTable(container, cleanedRows, newHeaders, newColumns);
         attachHotHooks();
         applyHiddenColumnsToHot();
+        formatCurationStatusHeader();
         harvestRowsIntoVocab(cleanedRows);
       }
     }
@@ -2026,16 +2023,20 @@ function evaluateRowCuration(rowIndex) {
  */
 function evaluateAllRowsCuration() {
     if (!hotInstance) return;
+    
+    const curationColIndex = getCurationStatusColumnIndex();
+    if (curationColIndex === -1) {
+        console.error("Curation Status column not found. Cannot evaluate rows.");
+        return; 
+    }
 
     // Use begin/end batch updates for performance when updating many rows
     hotInstance.batch(() => {
         const rowCount = hotInstance.countRows();
         for (let i = 0; i < rowCount; i++) {
-            // evaluateRowCuration must be the function provided in the previous step
             evaluateRowCuration(i); 
         }
     });
-    // The batch update will automatically trigger a single render when done.
 }
 
 // Add this listener to your initialization logic to enable the button
@@ -2475,6 +2476,7 @@ async function handleInsertDataSave() {
     hotInstance = createTable(container, mergedRows, allHeaders, allColumns);
     attachHotHooks();
     applyHiddenColumnsToHot();
+    formatCurationStatusHeader();
     harvestRowsIntoVocab(mergedRows);
 
     
