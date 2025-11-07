@@ -6,8 +6,8 @@ let hotInitDone = false;
 let currentImportFile = null;
 
 // Base spreadsheet columns (in order):
-// 0: iri, 1: label, 2: element type, 3: definition, 4: is a, 5: is curated in ontology
-const BASE_COLS = 6;
+// 0: iri, 1: label, 2: element type, 3: definition, 4: is a, 5: is curated in ontology, 6: has curation status
+const BASE_COLS = 7;
 
 const container = document.getElementById('hot');
 const output = document.getElementById('rdfOutput');
@@ -1133,7 +1133,7 @@ async function generateRdfString (rows, format = 'ttl') {
     }
 
     customPredicates.forEach((predicate, idx) => {
-    const colIndex = BASE_COLS + idx;  // start right after the 6 base columns
+    const colIndex = BASE_COLS + idx;  // start right after the 7 base columns
     const cellValue = row[colIndex];
     if (cellValue) {
       writer.addQuad(
@@ -1463,6 +1463,7 @@ async function reloadSavedSession() {
       row[3] = definition;
       row[4] = isA;
       row[5] = curatedIn;
+      row[6] = ''; // curation status (recomputed later)
 
       // gather extra predicates (not mapped to base columns)
       for (const p of pMap.keys()) {
@@ -2090,6 +2091,12 @@ function evaluateRowCuration(rowIndex) {
   
   if (!hotInstance) return;
 
+  const curationCol = getCurationStatusColumnIndex();
+  if (curationCol === -1) {
+    // Column isn’t available yet (disabled or not inserted); skip safely
+    return null;
+  }
+
   const headers = hotInstance.getColHeader();
   const row = hotInstance.getSourceDataAtRow(rowIndex);
 
@@ -2118,10 +2125,7 @@ function evaluateRowCuration(rowIndex) {
     // Non-empty row: run the core calculation logic
     
     // 1. Call the new pure function
-    statusObject = curationLogic.calculateCurationStatus(
-      present, 
-      settings
-    );
+    statusObject = curationLogic.calculateCurationStatus(present, settings);
 
     // 2. Compute missing gaps for the result object (used for details/debugging)
     missingRequired = Object.keys(settings).filter(iri => 
@@ -2137,7 +2141,7 @@ function evaluateRowCuration(rowIndex) {
   const cellValue = `${statusObject.label} (${statusObject.curie})`;
   
   // 4. Update the status cell
-  hotInstance.setDataAtCell(rowIndex, getCurationStatusColumnIndex(), cellValue);
+  hotInstance.setDataAtCell(rowIndex, curationCol, cellValue);
 
   // 5. Store and return the result
   const result = { 
