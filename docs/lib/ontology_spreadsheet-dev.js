@@ -120,50 +120,51 @@ const CURATION_STATUS = {
  *
  * @returns {number} The column index, or -1 if not found.
  */
+/**
+ * Finds the column index for the 'has curation status' property, supporting 
+ * lookups by human-readable label, full IRI, or CURIE.
+ * This function relies on the globally available hotInstance, iriPrefixes, and curieToIri.
+ *
+ * @returns {number} The column index, or -1 if not found.
+ */
 function getCurationStatusColumnIndex() {
   if (!hotInstance) return -1;
 
   const headers = hotInstance.getColHeader();
 
-  // 1. Define the targets (pre-expanded IRI is required for comparison)
   const targetLabel = CURATION_PROPERTY.label;
-  const targetCurie = CURATION_PROPERTY.curie;
   const targetIri = CURATION_PROPERTY.iri;
 
   // Iterate over all column headers
   for (let c = 0; c < headers.length; c++) {
     const header = headers[c];
     
-    // Check 1: Match by Human-Readable Label (Primary expectation)
+    // Check 1: Match by Human-Readable Label
     if (header === targetLabel) {
       return c;
     }
 
     // Check 2 & 3: Match by IRI or CURIE
     try {
-      let headerIri;
+      let headerIri = header;
       
-      // If the header contains a colon, treat it as a potential CURIE
-      if (header.includes(':')) {
-        // Attempt to expand the header (CURIE check)
-        headerIri = expandCURIEtoIRI(header, iriPrefixes); 
-      } else {
-        // Assume it is a full IRI (IRI check)
-        headerIri = header;
-      }
+      // Use your existing curieToIri function to resolve the header (Fixing the runtime error)
+      const resolvedIri = curieToIri(header); 
 
-      // Check if the resolved IRI/CURIE matches the target IRI
+      // If curieToIri returns an IRI, use it for comparison
+      if (resolvedIri) {
+        headerIri = resolvedIri;
+      }
+      
+      // Compare the resolved IRI/full IRI header against the target IRI
       if (headerIri === targetIri) {
         return c;
       }
     } catch (e) {
-      // If expandCURIEtoIRI throws an error (e.g., prefix not defined),
-      // we ignore it and continue checking other headers.
-      console.warn(`Could not resolve header for column ${c}: ${header}`, e.message);
+      // Ignore errors from curieToIri (e.g., if a header is an unknown CURIE)
     }
   }
 
-  // Column not found
   return -1;
 }
 
@@ -650,6 +651,30 @@ const getColumnHeaders = () => {
   console.info('getColumnHeaders happened');
   return ["iri", "label", "element type", "definition", "is a", "is curated in ontology"].concat(customPredicates);
 };
+
+/**
+ * Formats the header of the 'has curation status' column to the human-readable 
+ * label with the CURIE in parentheses.
+ */
+function formatCurationStatusHeader() {
+    const curationColIndex = getCurationStatusColumnIndex();
+    if (curationColIndex === -1 || !hotInstance) return;
+
+    const formattedLabel = `${CURATION_PROPERTY.label} (${CURATION_PROPERTY.curie})`;
+    
+    // HandsOnTable requires updating the settings' colHeaders property
+    hotInstance.updateSettings({
+        colHeaders: (index) => {
+            // Intercept the column header function to return the formatted label
+            if (index === curationColIndex) {
+                return formattedLabel;
+            }
+            // Return existing headers for all other columns
+            return hotInstance.getColHeader()[index];
+        }
+    });
+}
+// Call formatCurationStatusHeader() once when the table is loaded/reloaded.
 
 const createTable = (container, data, colHeaders, columns) => {
   console.info('createTable happened');
@@ -1995,16 +2020,107 @@ function evaluateRowCuration(rowIndex) {
   return result;
 }
 
-// Evaluate all rows; returns an array of {row, ...result}
+/**
+ * Iterates through all non-empty rows and evaluates their curation status.
+ * This is the function called by the 'update all rows now' button and dynamic updates.
+ */
 function evaluateAllRowsCuration() {
-  if (!hotInstance) return [];
-  const total = hotInstance.countRows();
-  const out = [];
-  for (let r = 0; r < total; r++) {
-    out.push({ row: r, result: evaluateRowCuration(r) });
-  }
-  return out;
+    if (!hotInstance) return;
+
+    // Use begin/end batch updates for performance when updating many rows
+    hotInstance.batch(() => {
+        const rowCount = hotInstance.countRows();
+        for (let i = 0; i < rowCount; i++) {
+            // evaluateRowCuration must be the function provided in the previous step
+            evaluateRowCuration(i); 
+        }
+    });
+    // The batch update will automatically trigger a single render when done.
 }
+
+// Add this listener to your initialization logic to enable the button
+document.getElementById("update-curation-statuses-btn").addEventListener("click", evaluateAllRowsCuration);
+
+// For the 'Dynamic' option: 
+// You need to conditionally add/remove the 'afterChange' hook based on the user's setting.
+
+function toggleDynamicCuration(isDynamic) {
+    if (isDynamic) {
+        // Add hook: Re-evaluate all rows after data changes
+        // NOTE: This runs on every change, which may be slow. A better approach is to
+        // run evaluateRowCuration only on the specific rows that changed (changes[c][0]).
+        hotInstance.addHook('afterChange', evaluateAllRowsCuration);
+    } else {
+        // Remove hook for 'Manual' mode
+        hotInstance.removeHook('afterChange', evaluateAllRowsCuration);
+    }
+}
+// Call toggleDynamicCuration(true/false) when the 'Curation Settings' modal is saved.
+
+/**
+ * Gathers all IRIs/CURIEs used as predicates in the table columns
+ * (excluding utility columns like IRI, Label, Type).
+ * This relies on the globally available hotInstance and curieToIri.
+ * * @returns {Set<string>} A Set of unique predicate IRIs.
+ */
+function getAllTablePredicates() {
+    if (!hotInstance) return new Set();
+
+    const allPredicates = new Set();
+    const headers = hotInstance.getColHeader();
+    const curationColIndex = getCurationStatusColumnIndex();
+    
+    // Adjust this based on where your first predicate column starts (e.g., 3 after IRI, Label, Type)
+    const PREDICATE_START_INDEX = BASE_COLS - 3; // Assuming first 3 of BASE_COLS are not predicates
+
+    for (let c = PREDICATE_START_INDEX; c < headers.length; c++) {
+        // Skip the curation status column itself
+        if (c === curationColIndex) continue;
+
+        const header = headers[c];
+        let predicateIRI = header;
+
+        try {
+            // Attempt to resolve CURIEs in headers using your existing function
+            const resolvedIri = curieToIri(header);
+            if (resolvedIri) {
+                predicateIRI = resolvedIri;
+            }
+        } catch (e) {
+            // Header is neither a valid CURIE nor an IRI that can be resolved, ignore it.
+            continue;
+        }
+
+        // Add the resolved IRI to the set
+        allPredicates.add(predicateIRI);
+    }
+    
+    return allPredicates;
+}
+
+/**
+ * Generates the full list of predicates for the Curation Settings modal, 
+ * marking any predicate found in the table but not in settings as 'optional' by default.
+ * * @returns {Object<string, string>} A map of {IRI: 'required'|'recommended'|'optional'}
+ */
+function getFullModalCurationSettings() {
+    const allTablePredicates = getAllTablePredicates();
+    // Start with the existing settings (which define required/recommended)
+    const modalSettings = { ...normativeCurationSettings }; 
+
+    // Merge table predicates into the settings map
+    for (const iri of allTablePredicates) {
+        // If the predicate is in the table but NOT yet in settings, 
+        // add it as 'optional' by default.
+        if (!modalSettings[iri]) {
+            modalSettings[iri] = 'optional';
+        }
+    }
+    // All predicates used in the table are now included and categorized.
+    return modalSettings;
+}
+
+// Your modal window logic should call getFullModalCurationSettings() when building the list of options.
 
 // Helper to get a simple status snapshot (array aligned to table order)
 function getCurationStatusSnapshot() {
