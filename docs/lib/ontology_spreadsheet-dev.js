@@ -64,6 +64,168 @@ const w3cIRI = {
   DCTERMS_CREATOR: 'http://purl.org/dc/terms/creator',
   DCTERMS_CREATED: 'http://purl.org/dc/terms/created',
   DCTERMS_DESCRIPTION: 'http://purl.org/dc/terms/description',
+  DCTERMS_CITATION: 'http://purl.org/dc/terms/bibliographicCitation'
+};
+
+// The IAO property for curation status predicate
+const CURATION_PROPERTY = {
+  curie: 'obo:IAO_0000114',
+  label: 'has curation status',
+  iri: 'http://purl.obolibrary.org/obo/IAO_0000114'
+};
+
+
+/**
+ * Maps human-readable keys to standard IAO Curation Status objects 
+ * for both RDF export and cell display (IRI + human-readable label).
+ */
+const CURATION_STATUS = {
+  // Tier 1: Missing required metadata (Scenario A)
+  UNCURATED: {
+    iri: 'http://purl.obolibrary.org/obo/IAO_0000124',
+    label: 'uncurated',
+    curie: 'obo:IAO_0000124'
+  },
+  // Tier 2: Required met, but all recommended missing (Scenario B)
+  METADATA_INCOMPLETE: {
+    iri: 'http://purl.obolibrary.org/obo/IAO_0000123',
+    label: 'metadata incomplete',
+    curie: 'obo:IAO_0000123'
+  },
+  // Tier 3: Required met, and some recommended present (Scenario C)
+  METADATA_COMPLETE: {
+    iri: 'http://purl.obolibrary.org/obo/IAO_0000120',
+    label: 'metadata complete',
+    curie: 'obo:IAO_0000120'
+  },
+  // Tier 4: Required met, and all recommended present (Scenario D)
+  PENDING: {
+    iri: 'http://purl.obolibrary.org/obo/IAO_0000125',
+    label: 'pending final vetting',
+    curie: 'obo:IAO_0000125'
+  },
+  // Final state
+  READY_FOR_RELEASE: {
+    iri: 'http://purl.obolibrary.org/obo/IAO_0000122',
+    label: 'ready for release',
+    curie: 'obo:IAO_0000122'
+  },
+};
+
+// --- Curation Column Index Finder ---
+/**
+ * Finds the column index for the 'has curation status' property, supporting 
+ * lookups by human-readable label, full IRI, or CURIE.
+ * * Assumes: hotInstance, iriPrefixes, expandCURIEtoIRI, and CURATION_PROPERTY are available.
+ *
+ * @returns {number} The column index, or -1 if not found.
+ */
+function getCurationStatusColumnIndex() {
+  if (!hotInstance) return -1;
+
+  const headers = hotInstance.getColHeader();
+
+  // 1. Define the targets (pre-expanded IRI is required for comparison)
+  const targetLabel = CURATION_PROPERTY.label;
+  const targetCurie = CURATION_PROPERTY.curie;
+  const targetIri = CURATION_PROPERTY.iri;
+
+  // Iterate over all column headers
+  for (let c = 0; c < headers.length; c++) {
+    const header = headers[c];
+    
+    // Check 1: Match by Human-Readable Label (Primary expectation)
+    if (header === targetLabel) {
+      return c;
+    }
+
+    // Check 2 & 3: Match by IRI or CURIE
+    try {
+      let headerIri;
+      
+      // If the header contains a colon, treat it as a potential CURIE
+      if (header.includes(':')) {
+        // Attempt to expand the header (CURIE check)
+        headerIri = expandCURIEtoIRI(header, iriPrefixes); 
+      } else {
+        // Assume it is a full IRI (IRI check)
+        headerIri = header;
+      }
+
+      // Check if the resolved IRI/CURIE matches the target IRI
+      if (headerIri === targetIri) {
+        return c;
+      }
+    } catch (e) {
+      // If expandCURIEtoIRI throws an error (e.g., prefix not defined),
+      // we ignore it and continue checking other headers.
+      console.warn(`Could not resolve header for column ${c}: ${header}`, e.message);
+    }
+  }
+
+  // Column not found
+  return -1;
+}
+
+const curationLogic = {
+  /**
+   * Calculates the curation status of an ontology element by checking its
+   * present predicates against the single normative curation settings object.
+   *
+   * @param {Set<string>} presentPredicates - A Set of predicate IRIs that have a value for the element (e.g., from a row).
+   * @param {Object<string, string>} settings - The normativeCurationSettings object {IRI: 'required'|'recommended'|'optional'}.
+   * @returns {{iri: string, label: string, curie: string}} The full status object from CURATION_STATUS.
+   * @throws {TypeError} If inputs are invalid.
+   */
+  calculateCurationStatus: (presentPredicates, settings) => {
+    // 1. Input validation
+    if (!(presentPredicates instanceof Set) || typeof settings !== 'object' || settings === null) {
+      throw new TypeError("Inputs must be a Set of IRIs and a settings object.");
+    }
+    
+    let missingRequired = 0;
+    let missingRecommended = 0;
+    let totalRecommended = 0;
+
+    // 2. Iterate over the normative settings (the source of truth) ONCE
+    for (const iri in settings) {
+      if (Object.prototype.hasOwnProperty.call(settings, iri)) {
+        const status = settings[iri];
+        const isPresent = presentPredicates.has(iri);
+
+        if (status === 'required') {
+          if (!isPresent) {
+            missingRequired++;
+          }
+        } else if (status === 'recommended') {
+          totalRecommended++;
+          if (!isPresent) {
+            missingRecommended++;
+          }
+        }
+      }
+    }
+
+    // 3. Apply status rules (using your updated keys)
+
+    // TIER 1: Uncurated (Scenario A)
+    if (missingRequired > 0) {
+      return CURATION_STATUS.UNCURATED;
+    }
+
+    // TIER 4: Pending Final Vetting (Scenario D) - All recommended present
+    if (totalRecommended > 0 && missingRecommended === 0) {
+      return CURATION_STATUS.PENDING;
+    }
+    
+    // TIER 2: Metadata Incomplete (Scenario B) - All recommended missing
+    if (totalRecommended > 0 && missingRecommended === totalRecommended) {
+      return CURATION_STATUS.METADATA_INCOMPLETE;
+    }
+
+    // TIER 3: Metadata Complete (Scenario C or Fallback) 
+    return CURATION_STATUS.METADATA_COMPLETE; 
+  }
 };
 
 const getIsAPredicate = (elementType) => {
@@ -1642,11 +1804,6 @@ const normativeCurationSettings = {
 const curationStatusByRow = new Map();
 
 // Canonical status labels
-const CURATION_STATUS = {
-  UNCURATED: 'uncurated',
-  INCOMPLETE: 'metadata incomplete',
-  COMPLETE: 'metadata complete'
-};
 
 // Try to resolve CURIE-like strings to IRIs; pass full IRIs through
 function curieToIri(maybe) {
@@ -1769,44 +1926,71 @@ function presentPredicatesForRow(row, headers) {
 }
 
 // Evaluate one row against the normative settings
-function evaluateRowCuration(rowIndex, {
-  requiredSet = new Set(requiredCurationMetaData),
-  recommendedSet = new Set(recommendedCurationMetaData)
-} = {}) {
+// NOTE: This function assumes that normativeCurationSettings, hotInstance,
+// hasValue, presentPredicatesForRow, and curationLogic are available in scope.
+function evaluateRowCuration(rowIndex) {
+  // Use the single source of truth for curation standards
+  const settings = normativeCurationSettings; 
+  
   if (!hotInstance) return;
 
   const headers = hotInstance.getColHeader();
   const row = hotInstance.getSourceDataAtRow(rowIndex);
 
-  // If the row is effectively empty (no IRI, type, label, def, is a), mark uncurated and skip details.
-  const coarseNonEmpty = [0,1,2,3,4].some(c => hasValue(row?.[c]));
-  if (!coarseNonEmpty) {
-    const result = {
-      status: CURATION_STATUS.UNCURATED,
-      missingRequired: Array.from(requiredSet),
-      missingRecommended: Array.from(recommendedSet),
-      presentPredicates: new Set()
-    };
-    curationStatusByRow.set(rowIndex, result);
-    return result;
-  }
+  // Alias for the uncurated status object from the new CURATION_STATUS map
+  const UNC = CURATION_STATUS.UNCURATED; 
 
+  // If the row is effectively empty (no IRI, type, label, def, is a), mark uncurated.
+  const coarseNonEmpty = [0,1,2,3,4].some(c => hasValue(row?.[c]));
+  
+  // Calculate the predicates present in the row using your existing utility
   const present = presentPredicatesForRow(row, headers);
 
-  // Compute gaps
-  const missingRequired = Array.from(requiredSet).filter(p => !present.has(p));
-  const missingRecommended = Array.from(recommendedSet).filter(p => !present.has(p));
+  let statusObject;
+  let missingRequired;
+  let missingRecommended;
 
-  let status;
-  if (missingRequired.length > 0) {
-    status = CURATION_STATUS.UNCURATED;
-  } else if (missingRecommended.length > 0) {
-    status = CURATION_STATUS.INCOMPLETE;
+  if (!coarseNonEmpty) {
+    // Empty row: set status to UNCURATED
+    statusObject = UNC;
+    
+    // For the result object, list all required/recommended items as missing
+    missingRequired = Object.keys(settings).filter(iri => settings[iri] === 'required'); 
+    missingRecommended = Object.keys(settings).filter(iri => settings[iri] === 'recommended');
+    
   } else {
-    status = CURATION_STATUS.COMPLETE;
+    // Non-empty row: run the core calculation logic
+    
+    // 1. Call the new pure function
+    statusObject = curationLogic.calculateCurationStatus(
+      present, 
+      settings
+    );
+
+    // 2. Compute missing gaps for the result object (used for details/debugging)
+    missingRequired = Object.keys(settings).filter(iri => 
+      settings[iri] === 'required' && !present.has(iri)
+    );
+    missingRecommended = Object.keys(settings).filter(iri => 
+      settings[iri] === 'recommended' && !present.has(iri)
+    );
   }
 
-  const result = { status, missingRequired, missingRecommended, presentPredicates: present };
+  // 3. Prepare the value for HandsOnTable cell display
+  // Format: 'metadata complete (obo:IAO_0000120)'
+  const cellValue = `${statusObject.label} (${statusObject.curie})`;
+  
+  // 4. Update the status cell
+  hotInstance.setDataAtCell(rowIndex, getCurationStatusColumnIndex(), cellValue);
+
+  // 5. Store and return the result
+  const result = { 
+    status: statusObject, 
+    missingRequired, 
+    missingRecommended, 
+    presentPredicates: present 
+  };
+  
   curationStatusByRow.set(rowIndex, result);
   return result;
 }
@@ -2718,12 +2902,13 @@ recomputeCurationSetsFromNormative();
 
 let CURATION_SNAPSHOT = null;
 
+// Mapping of curation state IRIs to human-readable labels
 const curationStates = {
   'http://purl.obolibrary.org/obo/IAO_0000120': 'metadata complete',
   'http://purl.obolibrary.org/obo/IAO_0000123': 'metadata incomplete',
   'http://purl.obolibrary.org/obo/IAO_0000125': 'pending final vetting',
   'http://purl.obolibrary.org/obo/IAO_0000122': 'ready for release',
-  'http://purl.obolibrary.org/obo/IAO_0000124': 'needs revision',
+  'http://purl.obolibrary.org/obo/IAO_0000124': 'uncurated',
 };
 
 /**
