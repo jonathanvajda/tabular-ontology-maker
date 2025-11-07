@@ -2123,6 +2123,63 @@ function getFullModalCurationSettings() {
 
 // Your modal window logic should call getFullModalCurationSettings() when building the list of options.
 
+/**
+ * Adds the 'has curation status' column if needed, ensuring it's hidden 
+ * by default and its header is correctly formatted.
+ * This is called when Curation Status is enabled.
+ * * NOTE: Assumes CURATION_PROPERTY and formatCurationStatusHeader are defined.
+ */
+function ensureCurationStatusColumn(isEnabled) {
+    if (!hotInstance) return;
+
+    const curationColIndex = getCurationStatusColumnIndex();
+    const headers = hotInstance.getColHeader();
+    
+    // Check if the column is already the last column (the only place we add it)
+    const isLastColumn = (curationColIndex === headers.length - 1);
+
+    if (isEnabled) {
+        if (curationColIndex === -1) {
+            // 1. Column is missing: Add it as the last column.
+            hotInstance.alter('insert_col', headers.length);
+            
+            // 2. Set the predicate's IRI as the header (so it saves correctly)
+            const newIndex = hotInstance.countCols() - 1;
+            hotInstance.updateSettings({
+                colHeaders: (index) => {
+                    const currentHeaders = hotInstance.getColHeader();
+                    if (index === newIndex) {
+                        return CURATION_PROPERTY.iri;
+                    }
+                    return currentHeaders[index];
+                }
+            });
+            
+            // 3. Mark the new column as hidden by default
+            const currentHiddenCols = hotInstance.getSettings().hiddenColumns?.indicators || false;
+
+            hotInstance.updateSettings({
+                hiddenColumns: {
+                    indicators: currentHiddenCols,
+                    columns: [...(hotInstance.getSettings().hiddenColumns?.columns || []), newIndex]
+                }
+            });
+            
+        } 
+        
+        // 4. Ensure header is human-readable (Fixes Issue 1)
+        formatCurationStatusHeader();
+        
+    } else if (!isEnabled && curationColIndex !== -1 && isLastColumn) {
+        // If disabling AND it's the last column we added, remove it.
+        // NOTE: We only remove it if it's the last column to prevent altering other user columns.
+        hotInstance.alter('remove_col', curationColIndex);
+    }
+    
+    // Trigger a full evaluation after column changes
+    evaluateAllRowsCuration();
+}
+
 // Helper to get a simple status snapshot (array aligned to table order)
 function getCurationStatusSnapshot() {
   if (!hotInstance) return [];
@@ -3195,6 +3252,27 @@ function saveCurationSettings() {
     showToast('❌ Failed to save curation-status settings', 'error');
   }
 }
+
+// --- Handler for 'Curation Settings' Modal Save & Close ---
+
+function handleCurationSettingsSave() {
+    // 1. Read the state of the "Enable Curation Status Updates" checkbox
+    const isCurationEnabled = getCurationEnabledSetting(); // Implement this
+    
+    // 2. Add/Remove the column based on the setting
+    ensureCurationStatusColumn(isCurationEnabled);
+    
+    // 3. Toggle dynamic update mode (Issue 2 fix)
+    const curationMode = getCurationModeSetting(); // 'Dynamic' or 'Manual'
+    toggleDynamicCuration(curationMode === 'Dynamic');
+    
+    // ... Save your normativeCurationSettings to the database here ...
+    
+    // 4. Close the modal
+    closeCurationSettingsModal(); // Implement this
+}
+// Ensure this handler is attached to your modal's save button:
+// document.getElementById("curation-settings-save-btn").addEventListener("click", handleCurationSettingsSave);
 
 document.getElementById('curationSettingsBtn').addEventListener('click', () => {
   populateCurationSettingsToggleUI();
