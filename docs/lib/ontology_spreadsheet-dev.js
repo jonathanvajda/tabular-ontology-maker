@@ -1043,26 +1043,6 @@ const handleExport = async (shouldDownload = false) => {
   }
 };
 
-async function openDb(name, version, { upgrade } = {}) {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(name, version);
-    request.onupgradeneeded = (event) => {
-      const db = request.result;
-      if (typeof upgrade === 'function') {
-        upgrade(db, event.oldVersion, event.newVersion, request.transaction);
-      }
-    };
-
-    request.onsuccess = () => {
-      resolve(request.result); // <-- this is the actual IDBDatabase
-    };
-
-    request.onerror = () => {
-      reject(request.error);
-    };
-  });
-}
-
 /**
  * Saves the current RDF data to IndexedDB.
  * Uses the idb library for IndexedDB operations.
@@ -1374,49 +1354,6 @@ function toPascalCase(str) {
     .replace(/[^a-z0-9]+(.)/g, (_, chr) => chr.toUpperCase()) // handle word boundaries
     .replace(/^./, chr => chr.toUpperCase()); // capitalize first letter
 }
-
-
-
-/**
- * Opens the prefix manager modal and populates the table with current prefixes
- */
-function openPrefixManagerModal() {
-  try {
-    const tableBody = document.getElementById("prefix-table-body");
-    tableBody.innerHTML = ""; // Clear old rows
-
-    // Loop through iriPrefixes and create a row for each
-    Object.entries(iriPrefixes).forEach(([prefix, iri]) => {
-      const row = document.createElement("tr");
-
-      const prefixCell = document.createElement("td");
-      prefixCell.textContent = prefix;
-      row.appendChild(prefixCell);
-
-      const iriCell = document.createElement("td");
-      iriCell.textContent = iri;
-      row.appendChild(iriCell);
-
-      const removeCell = document.createElement("td");
-      const removeBtn = document.createElement("button");
-      removeBtn.textContent = "❌";
-      removeBtn.addEventListener("click", () => {
-        delete iriPrefixes[prefix];
-        openPrefixManagerModal(); // re-render the table
-      });
-      removeCell.appendChild(removeBtn);
-      row.appendChild(removeCell);
-
-      tableBody.appendChild(row);
-    });
-
-    document.getElementById("prefix-manager-modal").style.display = "block";
-  } catch (err) {
-    console.error("[openPrefixManagerModal] Failed to populate prefix table:", err);
-    showToast("❌ Failed to open prefix manager", "error");
-  }
-}
-
 
 /*
 * This set of functions are used to assist the user with a quick lookup service.
@@ -2198,18 +2135,6 @@ function ensureCurationStatusColumn(isEnabled) {
     evaluateAllRowsCuration();
 }
 
-// Helper to get a simple status snapshot (array aligned to table order)
-function getCurationStatusSnapshot() {
-  if (!hotInstance) return [];
-  const total = hotInstance.countRows();
-  const arr = new Array(total);
-  for (let r = 0; r < total; r++) {
-    const entry = curationStatusByRow.get(r) || evaluateRowCuration(r);
-    arr[r] = entry?.status || CURATION_STATUS.UNCURATED;
-  }
-  return arr;
-}
-
 // ===============================
 // Optional: lightweight HOT wiring
 // (safe to leave out if you prefer manual calls)
@@ -2805,14 +2730,48 @@ document.getElementById('predicateSettingsModalAddPredicateBtn').addEventListene
 // Optional: what happens when the user clicks "Reload Prior Session"
 document.getElementById('reloadSavedSessionBtn')?.addEventListener('click', reloadSavedSession);
 
-// This set of functions handle the prefixes
+// Prefix Manager Logic. This set of functions handle the prefixes
 
-// Prefix Manager Logic
-// Show Prefix Manager modal
-function showPrefixManagerModal() {
-  populatePrefixTable();
-  document.getElementById('prefix-manager-modal').style.display = 'block';
+/**
+ * Opens the prefix manager modal and populates the table with current prefixes
+ */
+function openPrefixManagerModal() {
+  try {
+    const tableBody = document.getElementById("prefix-table-body");
+    tableBody.innerHTML = ""; // Clear old rows
+
+    // Loop through iriPrefixes and create a row for each
+    Object.entries(iriPrefixes).forEach(([prefix, iri]) => {
+      const row = document.createElement("tr");
+
+      const prefixCell = document.createElement("td");
+      prefixCell.textContent = prefix;
+      row.appendChild(prefixCell);
+
+      const iriCell = document.createElement("td");
+      iriCell.textContent = iri;
+      row.appendChild(iriCell);
+
+      const removeCell = document.createElement("td");
+      const removeBtn = document.createElement("button");
+      removeBtn.textContent = "❌";
+      removeBtn.addEventListener("click", () => {
+        delete iriPrefixes[prefix];
+        openPrefixManagerModal(); // re-render the table
+      });
+      removeCell.appendChild(removeBtn);
+      row.appendChild(removeCell);
+
+      tableBody.appendChild(row);
+    });
+
+    document.getElementById("prefix-manager-modal").style.display = "block";
+  } catch (err) {
+    console.error("[openPrefixManagerModal] Failed to populate prefix table:", err);
+    showToast("❌ Failed to open prefix manager", "error");
+  }
 }
+
 
 // Hide Prefix Manager modal
 function hidePrefixManagerModal() {
@@ -2885,35 +2844,6 @@ function savePrefixesAndClose() {
 // Cancel and close without saving (no rollback necessary for in-memory edit)
 function cancelPrefixesModal() {
   hidePrefixManagerModal();
-}
-
-
-function getImportsMap() {
-  const s = getOntologySettings();
-  if (!s._imports) s._imports = {};
-  return s._imports;
-}
-function hasLocalImport(iri) {
-  const m = getImportsMap();
-  return !!m[iri]?.content;
-}
-async function setLocalImport(iri, { content, mediaType }) {
-  const s = getOntologySettings();
-  s._imports = s._imports || {};
-  s._imports[iri] = {
-    content,
-    mediaType: mediaType || guessMediaType(content),
-    updatedAt: new Date().toISOString()
-  };
-  await saveOntologySettings(s);
-}
-function guessMediaType(text) {
-  // super-lightweight; expand if you like
-  if (/^\s*@prefix\b|@base\b|:\s/.test(text)) return "text/turtle";
-  if (/<rdf:RDF\b/.test(text)) return "application/rdf+xml";
-  if (/"@context"\s*:/.test(text)) return "application/ld+json";
-  if (/^\s*<[^>]+>\s+<[^>]+>\s+/.test(text)) return "application/n-triples";
-  return "text/plain";
 }
 
 
@@ -3068,6 +2998,40 @@ function saveManagePredicates() {
     showToast('❌ Failed to save predicate management settings', 'error');
   }
 }
+
+/**
+ * Helper function to find all column visibility checkboxes in the
+ * 'Manage Predicates' modal and set their 'checked' state.
+ * @param {boolean} isChecked - true to check all, false to uncheck all.
+ */
+function setAllColumnVisibilityCheckboxes(isChecked) {
+  try {
+    const checkboxes = document.querySelectorAll('#columns-toggle-list input[type="checkbox"]');
+    if (checkboxes.length === 0) {
+      console.warn('[ColumnVisibility] No checkboxes found to update.');
+      return;
+    }
+    checkboxes.forEach(cb => {
+      cb.checked = isChecked;
+    });
+  } catch (e) {
+    console.error('[ColumnVisibility] Error updating checkboxes:', e);
+  }
+}
+
+// --- Attach Handlers for "Select All" / "Select None" ---
+
+// This listener finds the "Select All" button in the Manage Predicates modal
+// and attaches a click handler.
+document.getElementById('columns-select-all-btn').addEventListener('click', () => {
+  setAllColumnVisibilityCheckboxes(true); // true = check all = visible
+});
+
+// This listener finds the "Select None" button in the Manage Predicates modal
+// and attaches a click handler.
+document.getElementById('columns-select-none-btn').addEventListener('click', () => {
+  setAllColumnVisibilityCheckboxes(false); // false = uncheck all = hidden
+});
 
 document.getElementById('manage-predicates-save-btn').addEventListener('click', () => {
   saveManagePredicates(); // 👈 save visibility settings
@@ -3285,23 +3249,21 @@ function handleCurationSettingsSave() {
     toggleDynamicCuration(curationMode === 'Dynamic');
     
     // ... Save your normativeCurationSettings to the database here ...
-    
-    // 4. Close the modal
-    closeCurationSettingsModal(); // Implement this
 }
-// Ensure this handler is attached to your modal's save button:
-// document.getElementById("curation-settings-save-btn").addEventListener("click", handleCurationSettingsSave);
 
+// Open Curation Settings Modal
 document.getElementById('curationSettingsBtn').addEventListener('click', () => {
   populateCurationSettingsToggleUI();
   document.getElementById('curation-settings-modal').style.display = 'block';
 });
 
+// Curation Settings Modal Save & Close
 document.getElementById('curation-settings-save-btn').addEventListener('click', () => {
-  saveCurationSettings(); // 👈 save curation status settings
+  handleCurationSettingsSave();
   document.getElementById('curation-settings-modal').style.display = 'none';
   })
 
+// Curation Settings Modal Cancel
 document.getElementById('curation-settings-cancel-btn').addEventListener('click', () => {
     document.getElementById('curation-settings-modal').style.display = 'none';
   });
