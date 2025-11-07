@@ -687,6 +687,93 @@ function formatCurationStatusHeader() {
   });
 }
 
+/**
+ * Pure, composable helpers for curation evaluation (side-effect free).
+ */
+const CurationUtils = {
+
+  /**
+   * Resolve a header string to a full IRI, reusing existing utilities and constants.
+   * – Passes through full IRIs.
+   * – Uses curieToIri for CURIEs.
+   * – Maps known base headers to your canonical IRIs.
+   *
+   * @param {string} header
+   * @returns {string|null} predicate IRI or null if not resolvable
+   */
+  resolveHeaderToIri: (header) => {
+    if (!header || typeof header !== 'string') return null;
+    const h = header.trim();
+
+    // Match the curation column label exactly
+    if (h === CURATION_PROPERTY.label) return CURATION_PROPERTY.iri;
+
+    // Known base headers → IRIs you already use elsewhere
+    switch (h) {
+      case 'label': return w3cIRI.RDFS_LABEL;
+      case 'definition': return w3cIRI.SKOS_DEFINITION;
+      case 'element type': return w3cIRI.RDF_TYPE;
+      case 'is a': return null; // special (depends on element type); skip here
+      case 'is curated in ontology': return w3cIRI.CCO_CURATEDIN;
+      default: break;
+    }
+
+    // Try CURIE or full IRI via your existing resolver
+    return curieToIri(h) || null;
+  },
+
+  /**
+   * Build a Set of predicate IRIs present for this row, limited to predicates
+   * mentioned in normative settings (O(n) by headers).
+   *
+   * @param {any[]} row - HOT row array
+   * @param {string[]} headers - HOT headers array
+   * @param {Object<string,'required'|'recommended'|'optional'>} normative
+   * @returns {Set<string>}
+   * @throws {TypeError} if inputs are invalid
+   */
+  presentPredicatesFromRow: (row, headers, normative) => {
+    if (!Array.isArray(row) || !Array.isArray(headers) || typeof normative !== 'object' || normative === null) {
+      throw new TypeError('presentPredicatesFromRow expects (row:Array, headers:Array, normative:Object).');
+    }
+    const present = new Set();
+
+    // Iterate only over keys present in normative (keeps this focused/DRY)
+    for (const iri in normative) {
+      if (!Object.prototype.hasOwnProperty.call(normative, iri)) continue;
+
+      // Find the header/column that corresponds to this IRI
+      let colIndex = -1;
+      for (let c = 0; c < headers.length; c++) {
+        const resolved = CurationUtils.resolveHeaderToIri(headers[c]);
+        if (resolved === iri) { colIndex = c; break; }
+      }
+      if (colIndex === -1) continue;
+
+      const val = row[colIndex];
+      if (val !== null && val !== undefined && String(val).trim() !== '') {
+        present.add(iri);
+      }
+    }
+    return present;
+  },
+
+  /**
+   * End-to-end pure computation: get curation status object for a row.
+   * Reuses your curationLogic.calculateCurationStatus (DRY).
+   *
+   * @param {any[]} row
+   * @param {string[]} headers
+   * @param {Object<string,'required'|'recommended'|'optional'>} normative
+   * @returns {{iri:string,label:string,curie:string}}
+   */
+  statusFromRow: (row, headers, normative) => {
+    const present = CurationUtils.presentPredicatesFromRow(row, headers, normative);
+    return curationLogic.calculateCurationStatus(present, normative);
+  }
+};
+
+
 const createTable = (container, data, colHeaders, columns) => {
   console.info('createTable happened');
   return new Handsontable(container, {
@@ -735,6 +822,40 @@ function saveHiddenColumnNames(names) {
     console.error('[ManagePredicates] saveHiddenColumnNames failed', e);
   }
 }
+
+/**
+ * Apply hidden columns to the current Handsontable instance.
+ * Impure by design: updates HOT settings and re-renders.
+ *
+ * @param {number[]} columns - Column indexes to hide.
+ * @returns {void}
+ * @throws {TypeError} If columns is not a number[] or hotInstance is missing.
+ */
+const applyHiddenColumns = (columns) => {
+  // Input validation
+  if (!Array.isArray(columns) || !columns.every(n => Number.isInteger(n) && n >= 0)) {
+    throw new TypeError('applyHiddenColumns: columns must be an array of non-negative integers.');
+  }
+  if (!hotInstance) {
+    throw new Error('applyHiddenColumns: Handsontable instance is not initialized.');
+  }
+
+  // Merge with any existing plugin config, but overwrite the columns list
+  const current = hotInstance.getSettings()?.hiddenColumns || {};
+  hotInstance.updateSettings({
+    hiddenColumns: { 
+      ...current,
+      columns,               // <- the authoritative list
+      indicators: true       // small markers in header (optional)
+    }
+  });
+
+  // If the curation column just became visible, refresh its pretty label
+  try { formatCurationStatusHeader?.(); } catch (_) {}
+
+  hotInstance.render();
+};
+
 
 /** Apply hidden names to current HOT by mapping names -> indices */
 function applyHiddenColumnsByName() {
@@ -825,24 +946,83 @@ function setIsCuratedInForAllRows() {
   console.info(`[setIsCuratedInForAllRows] Set for ${updatedCount} of ${totalRows} rows (only empty cells updated)`);
 }
 
+/**
+ * Pure utilities for column visibility (Handsontable hiddenColumns plugin).
+ */
+const ColumnVisibility = {
+  /**
+   * Decide which column indexes should be hidden given headers + settings.
+   * - Hides the "has curation status" column when curation is disabled.
+   * - Leaves it visible otherwise.
+   *
+   * @param {string[]} headers - Table headers (index-aligned with columns).
+   * @param {{ curationEnabled?: boolean }} settings - Ontology settings.
+   * @returns {number[]} An array of column indexes to hide.
+   * @throws {TypeError} If inputs are invalid.
+   */
+  getHiddenColumns: (headers, settings) => {
+    // Input validation
+    if (!Array.isArray(headers)) {
+      throw new TypeError('getHiddenColumns: headers must be an array of strings.');
+    }
+    if (settings == null || typeof settings !== 'object') {
+      throw new TypeError('getHiddenColumns: settings must be an object.');
+    }
+
+    const hidden = [];
+
+    // Only hide the curation column when the feature is disabled
+    const curationEnabled = !!settings.curationEnabled;
+    if (!curationEnabled) {
+      const idx = getCurationStatusColumnIndex(); // you already have this
+      if (typeof idx === 'number' && idx >= 0) hidden.push(idx);
+    }
+
+    return hidden;
+  }
+};
+
+
 // Initializes the Handsontable instance if not already done.
+/**
+ * Initialize Handsontable once, restore manual hidden columns,
+ * and merge in auto-hidden columns (e.g., curation col when disabled).
+ */
 function initHandsontable() {
   if (hotInitDone) return;
   if (hotInstance) { try { hotInstance.destroy(); } catch (_) {} }
 
-  const rows = getInitialData();
-  const headers = getColumnHeaders();
-  const cols = getColumnDefinitions();
+  // 1) Build rows/schema
+  const rows     = getInitialData();
+  const headers  = getColumnHeaders();
+  const columns  = getColumnDefinitions();
+  const settings = getOntologySettings(); // IndexedDB-backed cache
 
-  hotInstance = createTable(container, rows, headers, cols);
-  attachHotHooks();
-  applyHiddenColumnsToHot();
-  harvestRowsIntoVocab(rows);
-  formatCurationStatusHeader();
-  initCurationStatusEngine();
+  // 2) Create HOT using 4-arg createTable
+  hotInstance = createTable(container, rows, headers, columns);
+  attachHotHooks?.();
+
+  // 3) Restore MANUAL hidden-by-name (from Manage Predicates)
+  applyHiddenColumnsByName(); // maps saved names -> indices and updates HOT
+
+  // 4) Compute AUTO hidden (e.g., hide curation column until enabled)
+  //    Use the live headers snapshot in case HOT altered anything.
+  const liveHeaders = hotInstance.getColHeader();
+  const autoHidden  = ColumnVisibility.getHiddenColumns(liveHeaders, settings);
+
+  // 5) Merge manual + auto and apply once
+  const currentHidden = (hotInstance.getSettings()?.hiddenColumns?.columns) || [];
+  const merged = Array.from(new Set([...currentHidden, ...autoHidden]));
+  hotInstance.updateSettings({ hiddenColumns: { columns: merged, indicators: true } });
+
+  // 6) Finish init
+  harvestRowsIntoVocab?.(rows);
+  formatCurationStatusHeader?.(); // prettify label if visible
+  initCurationStatusEngine?.();
 
   hotInitDone = true;
 }
+
 
 // This function checks if the element type is a predicate
 window.getIsAPredicateForRow = (rowIndex) => {
@@ -3263,7 +3443,11 @@ function handleCurationSettingsSave() {
     const curationMode = getCurationModeSetting(); // 'Dynamic' or 'Manual'
     toggleDynamicCuration(curationMode === 'Dynamic');
     
-    // ... Save your normativeCurationSettings to the database here ...
+    // Re-read settings and recompute visibility
+    const headers = hotInstance.getColHeader();            // snapshot of current headers
+    const settings = getOntologySettings();                // latest cache
+    const toHide = ColumnVisibility.getHiddenColumns(headers, settings);
+    applyHiddenColumns(toHide);
 }
 
 // Open Curation Settings Modal
