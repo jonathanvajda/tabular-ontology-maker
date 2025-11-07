@@ -2011,7 +2011,6 @@ function toggleDynamicCuration(isDynamic) {
         hotInstance.removeHook('afterChange', evaluateAllRowsCuration);
     }
 }
-// Call toggleDynamicCuration(true/false) when the 'Curation Settings' modal is saved.
 
 /**
  * Gathers all IRIs/CURIEs used as predicates in the table columns
@@ -3235,8 +3234,25 @@ function saveCurationSettings() {
   }
 }
 
-// --- Handler for 'Curation Settings' Modal Save & Close ---
+/**
+ * Reads the Curation Settings modal to see if the user wants
+ * dynamic (on-change) or manual status updates.
+ *
+ * @returns {string} 'Dynamic' or 'Manual'
+ */
+function getCurationModeSetting() {
+  // Find the 'Dynamic' radio button
+  const dynamicRadio = document.getElementById('curation-status-updates-setting-dynamic');
 
+  if (dynamicRadio && dynamicRadio.checked) {
+    return 'Dynamic';
+  }
+
+  // Default to 'Manual' if dynamic isn't checked or isn't found
+  return 'Manual';
+}
+
+// --- Handler for 'Curation Settings' Modal Save & Close ---
 function handleCurationSettingsSave() {
     // 1. Read the state of the "Enable Curation Status Updates" checkbox
     const isCurationEnabled = getCurationEnabledSetting(); // Implement this
