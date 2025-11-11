@@ -1136,21 +1136,10 @@ async function generateRdfString (rows, format = 'ttl') {
         N3.DataFactory.literal(isCuratedInOntology)
       );
     }
-
-    customPredicates.forEach((predicate, idx) => {
-    const colIndex = BASE_COLS + idx;  // start right after the 7 base columns
-    const cellValue = row[colIndex];
-    if (cellValue) {
-      writer.addQuad(
-        N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode(predicate),
-        N3.DataFactory.literal(cellValue)
-      );
-    }
-  });
-    const idx = getCurationStatusColumnIndex();
-    if (idx >= 0) {
-      const v = row[idx];
+    
+    const curationStatusidx = getCurationStatusColumnIndex();
+    if (curationStatusidx >= 0) {
+      const v = row[curationStatusidx];
       if (v) {
         const key = String(v).trim().toUpperCase().replace(/\s+/g, '_');
         const s = CURATION_STATUS[key];
@@ -1163,6 +1152,18 @@ async function generateRdfString (rows, format = 'ttl') {
         }
       }
     }
+
+    customPredicates.forEach((predicate, idx) => {
+    const colIndex = BASE_COLS + idx;  // start right after the 7 base columns
+    const cellValue = row[colIndex];
+    if (cellValue) {
+      writer.addQuad(
+        N3.DataFactory.namedNode(subject),
+        N3.DataFactory.namedNode(predicate),
+        N3.DataFactory.literal(cellValue)
+      );
+    }
+  });
   });
 
   return new Promise((resolve, reject) => {
