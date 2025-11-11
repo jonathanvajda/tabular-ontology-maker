@@ -2301,45 +2301,35 @@ function ensureCurationStatusColumn(isEnabled) {
     const isLastColumn = (curationColIndex === headers.length - 1);
 
     if (isEnabled) {
-        if (curationColIndex === -1) {
-            // 1. Column is missing: Add it as the last column.
-            hotInstance.alter('insert_col', headers.length);
-            
-            // 2. Set the predicate's IRI as the header (so it saves correctly)
-            const newIndex = hotInstance.countCols() - 1;
-            hotInstance.updateSettings({
-                colHeaders: (index) => {
-                    const currentHeaders = hotInstance.getColHeader();
-                    if (index === newIndex) {
-                        return CURATION_PROPERTY.iri;
-                    }
-                    return currentHeaders[index];
-                }
-            });
-            
-            // 3. Mark the new column as hidden by default
-            const currentHiddenCols = hotInstance.getSettings().hiddenColumns?.indicators || false;
+        if (curationColIndex < 0) {
+            console.warn('[Curation] Curation column missing from schema. Add it to getColumnHeaders()/getColumnDefinitions().');
+              return;
+        }
+        const current = hotInstance.getSettings()?.hiddenColumns || {};
+        const curList = Array.isArray(current.columns) ? [...current.columns] : [];
 
-            hotInstance.updateSettings({
-                hiddenColumns: {
-                    indicators: currentHiddenCols,
-                    columns: [...(hotInstance.getSettings().hiddenColumns?.columns || []), newIndex]
-                }
-            });
-            
-        } 
+        const has = curList.includes(curationColIndex);
+        const wantHidden = !isEnabled;
+
+        // toggle
+        const nextList = wantHidden ? Array.from(new Set([...curList, curationColIndex]))
+                                    : curList.filter(i => i !== curationColIndex);
+
+        hotInstance.updateSettings({
+          hiddenColumns: {
+            ...current,
+            columns: nextList,
+            indicators: true
+          }
+        }); 
         
-        // 4. Ensure header is human-readable (Fixes Issue 1)
-        formatCurationStatusHeader();
-        
-    } else if (!isEnabled && curationColIndex !== -1 && isLastColumn) {
-        // If disabling AND it's the last column we added, remove it.
-        // NOTE: We only remove it if it's the last column to prevent altering other user columns.
-        hotInstance.alter('remove_col', curationColIndex);
-    }
+        if (!wantHidden) {
+          try { formatCurationStatusHeader?.(); } catch (_) {}
+        }
+    } 
     
     // Trigger a full evaluation after column changes
-    evaluateAllRowsCuration();
+    evaluateAllRowsCuration?.();
 }
 
 // ===============================
