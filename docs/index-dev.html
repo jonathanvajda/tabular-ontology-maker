@@ -206,18 +206,6 @@
 
     <button id="predicateSettingsModalAddPredicateBtn">Add</button>
 
-    <hr style="margin:12px 0">
-
-    <h3 style="margin:6px 0;">Show / Hide Columns</h3>
-    <!-- Optional quick actions -->
-    <div style="margin-top:8px;">
-      <button id="columns-select-all-btn" type="button">Select All</button>
-      <button id="columns-select-none-btn" type="button">Select None</button>
-    </div>
-    <div id="columns-toggle-list" style="max-height:220px; overflow:auto; border:1px solid #eee; padding:8px; font-size:.95em;">
-      <!-- JS populates checkboxes here -->
-    </div>
-
     <div style="margin-top:12px; text-align:right;">
       <button id="manage-predicates-save-btn">Save & Close</button>
       <button id="manage-predicates-cancel-btn">Cancel</button>
@@ -225,67 +213,7 @@
   </div>
 
 
-<!-- Manage Curation Settings Modal -->
-  <div id="curation-settings-modal"
-      style="display:none; position:fixed; background:white; border:1px solid gray;
-              padding:20px; z-index:1000; top:20%; left:20%; width:50%; max-width: 600px;">
 
-    <h2 style="margin-top:0;">Manage Curation Settings</h2>
-    <div id="curation-status-tracking-boolean-div" style="margin-bottom:1em;">
-      <p>Curation Status Tracking</p>
-      <input type="radio"
-             id="curation-status-tracking-disable"
-             name="curation-status-tracking"
-             value="disable"
-             checked>
-      <label for="curation-status-tracking-disable">Disable</label><br />
-      <input type="radio"
-             id="curation-status-tracking-enable"
-             name="curation-status-tracking"
-             value="enable">
-      <label for="curation-status-tracking-enable">Enable</label><br />
-    </div>
-
-    <div id="curation-status-tracking-settings-div" style="display: none">
-      <p style="color:#555; font-size:0.9em; margin-top:0;">
-        Choose which metadata fields are <b>Required</b>, <b>Recommended</b>, or <b>Optional</b>.
-      </p>
-
-      <!-- Table-like layout -->
-      <table id="curation-settings-table" class="curation-table">
-        <thead>
-          <tr>
-            <th style="padding: 0.5em; width: 200px;">Predicate</th>
-            <th style="padding: 0.5em">Required</th>
-            <th style="padding: 0.5em">Recommended</th>
-            <th style="padding: 0.5em">Optional</th>
-          </tr>
-        </thead>
-        <tbody id="toggle-curation-settings">
-          <!-- JS will inject <tr> rows here -->
-        </tbody>
-      </table>
-      <div id="update-curation-statuses">
-        <p>Update the Curation Status Annotations</p>
-              <input type="radio"
-                    id="curation-status-updates-setting-dynamic"
-                    name="curation-status-updates-setting"
-                    value="dynamic">
-              <label for="curation-status-updates-setting-dynamic">Dynamic (any time a row changes)</label><br />
-              <input type="radio"
-                    id="curation-status-updates-setting-manual"
-                    name="curation-status-updates-setting"
-                    value="manual"
-                    checked>
-              <label for="curation-status-updates-setting-manual">Manual</label><br />
-          <button id="update-curation-statuses-btn" type="button" style="margin-top:8px;">Update all rows now</button>
-      </div>
-    </div>
-    <div style="margin-top:12px; text-align:right;">
-      <button id="curation-settings-save-btn">Save & Close</button>
-      <button id="curation-settings-cancel-btn">Cancel</button>
-    </div>
-  </div>
 
 
   <!-- Insert Data Modal -->
