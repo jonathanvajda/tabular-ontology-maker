@@ -128,7 +128,7 @@ const CURATION_STATUS = {
 function getCurationStatusColumnIndex() {
   if (!hotInstance) return -1;
 
-  const headers = hotInstance.getColHeader();
+  const headers = hotInstance.getColHeader().map(String);
 
   const targetLabel = CURATION_PROPERTY.label;
   const targetIri = CURATION_PROPERTY.iri;
@@ -760,7 +760,6 @@ const CurationUtils = {
 
   /**
    * End-to-end pure computation: get curation status object for a row.
-   * Reuses your curationLogic.calculateCurationStatus (DRY).
    *
    * @param {any[]} row
    * @param {string[]} headers
@@ -3434,6 +3433,35 @@ function getCurationModeSetting() {
   // Default to 'Manual' if dynamic isn't checked or isn't found
   return 'Manual';
 }
+
+/**
+ * Pure accessor that returns whether curation is enabled, based on a settings object.
+ * @param {{ curationEnabled?: boolean }|null|undefined} settings
+ * @returns {boolean} True if enabled, else false.
+ */
+const SettingsAccessors = {
+  /** 
+   * @param {{ curationEnabled?: boolean }|null|undefined} settings 
+   * @returns {boolean}
+   */
+  getCurationEnabled: (settings) => {
+    // Input validation
+    if (settings == null || typeof settings !== 'object') return false;
+    return !!settings.curationEnabled;
+  }
+};
+
+/**
+ * Backward-compatible wrapper used by existing code.
+ * Reads the current ontology settings and returns the flag.
+ * (Side-effect free with respect to the app state; only reads.)
+ * @returns {boolean}
+ */
+function getCurationEnabledSetting() {
+  const s = getOntologySettings(); // you already have this
+  return SettingsAccessors.getCurationEnabled(s);
+}
+
 
 // --- Handler for 'Curation Settings' Modal Save & Close ---
 function handleCurationSettingsSave() {
