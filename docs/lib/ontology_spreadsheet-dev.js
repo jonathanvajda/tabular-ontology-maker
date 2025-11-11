@@ -1016,8 +1016,14 @@ function initHandsontable() {
 
   // 6) Finish init
   harvestRowsIntoVocab?.(rows);
-  formatCurationStatusHeader?.(); // prettify label if visible
-  initCurationStatusEngine?.();
+  if (getCurationEnabledSetting() === true) {
+    console.info('[Curation] Curation status enabled.');
+    formatCurationStatusHeader?.(); // prettify label if visible
+    initCurationStatusEngine?.(); // starts tracking curation status
+    console.info('[Curation] Initializing Curation Status engine.');
+  } else {
+    console.info('[Curation] Curation status disabled; skipping engine init.');
+  }
 
   hotInitDone = true;
 }
@@ -3223,31 +3229,11 @@ document.getElementById('manage-predicates-cancel-btn').addEventListener('click'
     document.getElementById('manage-predicates-modal').style.display = 'none';
   });
 
-// This function handles the 'curation-status-tracking' radio buttons in the Curation Settings modal, that on change of disable to enable, it will display the 'curation-status-tracking-settings-div', and upon change of enable to disable, it will hide the 'curation-status-tracking-settings-div'.
-document.getElementsByName('curation-status-tracking').forEach(radio => {
-  radio.addEventListener('change', (event) => {
-    const settingsDiv = document.getElementById('curation-status-tracking-settings-div');
-    if (event.target.value === 'enable') {
-      settingsDiv.style.display = 'block';
-    } else {
-      settingsDiv.style.display = 'none';
-    }
-  });
-});
 
 // Call this once on startup (so your evaluator has the arrays ready)
 recomputeCurationSetsFromNormative();
 
 let CURATION_SNAPSHOT = null;
-
-// Mapping of curation state IRIs to human-readable labels
-const curationStates = {
-  'http://purl.obolibrary.org/obo/IAO_0000120': 'metadata complete',
-  'http://purl.obolibrary.org/obo/IAO_0000123': 'metadata incomplete',
-  'http://purl.obolibrary.org/obo/IAO_0000125': 'pending final vetting',
-  'http://purl.obolibrary.org/obo/IAO_0000122': 'ready for release',
-  'http://purl.obolibrary.org/obo/IAO_0000124': 'uncurated',
-};
 
 /**
  * Populates the 'toggle-curation-settings' container with one row per predicate:
@@ -3463,10 +3449,50 @@ function getCurationEnabledSetting() {
 }
 
 
+/**
+ * Registers all modal UI event listeners
+ */
+
+// Event Listeners for Ontology Settings Management
+document.getElementById("ontologySettingsBtn").addEventListener("click", openOntologySettingsModal);
+document.getElementById("ontology-base-iri-input").addEventListener("input", updateOntologyPreview);
+document.getElementById("ontology-label-input").addEventListener("input", updateOntologyPreview);
+document.getElementById("ontology-creator-input").addEventListener("input", updateOntologyPreview);
+document.getElementById("ontology-description-input").addEventListener("input", updateOntologyPreview);
+document.querySelectorAll('input[name="base-iri-delimiter"]').forEach(radio => {
+  radio.addEventListener("change", updateOntologyPreview);
+  initializeIriModeToggles()
+});
+
+// Event Listeners for Prefix Management
+function initializePrefixManagerListeners() {
+  document.getElementById('new-prefix').addEventListener('input', handlePrefixInputChange);
+  document.getElementById('new-prefix-iri').addEventListener('input', handlePrefixInputChange);
+  document.getElementById('add-prefix-btn').addEventListener('click', handleAddPrefix);
+  document.getElementById('save-prefixes-btn').addEventListener('click', savePrefixesAndClose);
+  document.getElementById('cancel-prefixes-btn').addEventListener('click', cancelPrefixesModal);
+}
+
+initializePrefixManagerListeners();
+
+// Event Listeners for Import Management
+document.getElementById("ontologyImportsBtn").addEventListener("click", openImportsModal);
+
+// Event Listeners for Predicate Management
+document.getElementById('managePredicatesBtn').addEventListener('click', () => {
+  document.getElementById('predicate-iri').value = '';
+  populateColumnsToggleUI();
+  document.getElementById('manage-predicates-modal').style.display = 'block';
+  });
+document.getElementById('managePrefixesBtn').addEventListener("click", function () {
+  openPrefixManagerModal();
+});
+
+
 // --- Handler for 'Curation Settings' Modal Save & Close ---
 function handleCurationSettingsSave() {
     // 1. Read the state of the "Enable Curation Status Updates" checkbox
-    const isCurationEnabled = getCurationEnabledSetting(); // Implement this
+    const isCurationEnabled = getCurationEnabledSetting();
     
     // 2. Add/Remove the column based on the setting
     ensureCurationStatusColumn(isCurationEnabled);
@@ -3499,47 +3525,25 @@ document.getElementById('curation-settings-cancel-btn').addEventListener('click'
     document.getElementById('curation-settings-modal').style.display = 'none';
   });
 
-
-/**
- * Registers all modal UI event listeners
- */
-
-// Event Listeners for Ontology Settings Management
-document.getElementById("ontologySettingsBtn").addEventListener("click", openOntologySettingsModal);
-document.getElementById("ontology-base-iri-input").addEventListener("input", updateOntologyPreview);
-document.getElementById("ontology-label-input").addEventListener("input", updateOntologyPreview);
-document.getElementById("ontology-creator-input").addEventListener("input", updateOntologyPreview);
-document.getElementById("ontology-description-input").addEventListener("input", updateOntologyPreview);
-document.querySelectorAll('input[name="base-iri-delimiter"]').forEach(radio => {
-  radio.addEventListener("change", updateOntologyPreview);
-  initializeIriModeToggles()
-});
-
-  // Event Listeners for Prefix Management
-function initializePrefixManagerListeners() {
-  document.getElementById('new-prefix').addEventListener('input', handlePrefixInputChange);
-  document.getElementById('new-prefix-iri').addEventListener('input', handlePrefixInputChange);
-  document.getElementById('add-prefix-btn').addEventListener('click', handleAddPrefix);
-  document.getElementById('save-prefixes-btn').addEventListener('click', savePrefixesAndClose);
-  document.getElementById('cancel-prefixes-btn').addEventListener('click', cancelPrefixesModal);
-}
-
-initializePrefixManagerListeners();
-
-// Event Listeners for Import Management
-document.getElementById("ontologyImportsBtn").addEventListener("click", openImportsModal);
-
-// Event Listeners for Predicate Management
-document.getElementById('managePredicatesBtn').addEventListener('click', () => {
-  document.getElementById('predicate-iri').value = '';
-  populateColumnsToggleUI();
-  document.getElementById('manage-predicates-modal').style.display = 'block';
+// This function handles the 'curation-status-tracking' radio buttons in the Curation Settings modal, that on change of disable to enable, it will display the 'curation-status-tracking-settings-div', and upon change of enable to disable, it will hide the 'curation-status-tracking-settings-div'.
+document.getElementsByName('curation-status-tracking').forEach(radio => {
+  radio.addEventListener('change', (event) => {
+    const settingsDiv = document.getElementById('curation-status-tracking-settings-div');
+    if (event.target.value === 'enable') {
+      settingsDiv.style.display = 'block';
+      try {
+        initCurationStatusEngine();
+        console.info('[CurationSettings] Curation Status Engine initialized successfully.');
+      } catch (e) {
+        console.error('[CurationSettings] Curation Status Engine failed to initialize.', e);
+      }
+    } else {
+      settingsDiv.style.display = 'none';
+    }
   });
-document.getElementById('managePrefixesBtn').addEventListener("click", function () {
-  openPrefixManagerModal();
 });
 
-
+// Event Listeners for Insert Data Modal
 function setupInsertDataModalListeners() {
   // Open/close buttons
   document.getElementById("importBtn").addEventListener("click", openInsertDataModal);
