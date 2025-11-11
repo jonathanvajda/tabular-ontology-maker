@@ -2069,6 +2069,9 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
     "is curated in ontology": "is curated in",
     "cco2:ont00001760": "is curated in",
     "https://www.commoncoreontologies.org/ont00001760": "is curated in",
+    "has curation status": "has curation status",
+    "obo:IAO_0000114": "has curation status",
+    "http://purl.obolibrarry.org/obo/IAO_0000114": "has curation status",
     "cco2:ont00001753": "acronym",
     "https://www.commoncoreontologies.org/ont00001753": "acronym",
     "cceo:acronym": "acronym"
@@ -2535,25 +2538,13 @@ function setAllColumnVisibilityCheckboxes(isChecked) {
   }
 }
 
-// --- Attach Handlers for "Select All" / "Select None" ---
-
-// This listener finds the "Select All" button in the Manage Predicates modal
-// and attaches a click handler.
-document.getElementById('columns-select-all-btn').addEventListener('click', () => {
-  setAllColumnVisibilityCheckboxes(true); // true = check all = visible
-});
-
-// This listener finds the "Select None" button in the Manage Predicates modal
-// and attaches a click handler.
-document.getElementById('columns-select-none-btn').addEventListener('click', () => {
-  setAllColumnVisibilityCheckboxes(false); // false = uncheck all = hidden
-});
-
+// Save button listener for Manage Predicates modal
 document.getElementById('manage-predicates-save-btn').addEventListener('click', () => {
   saveManagePredicates(); // 👈 save visibility settings
   document.getElementById('manage-predicates-modal').style.display = 'none';
   })
 
+// Cancel button listener for Manage Predicates modal
 document.getElementById('manage-predicates-cancel-btn').addEventListener('click', () => {
     document.getElementById('manage-predicates-modal').style.display = 'none';
   });
