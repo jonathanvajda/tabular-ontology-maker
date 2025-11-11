@@ -2146,7 +2146,9 @@ function evaluateRowCuration(rowIndex) {
   const cellValue = `${statusObject.label} (${statusObject.curie})`;
   
   // 4. Update the status cell
-  hotInstance.setDataAtCell(rowIndex, curationCol, cellValue);
+  if (hotInstance.getDataAtCell(rowIndex, curationCol) !== cellValue) {
+    hotInstance.setDataAtCell(rowIndex, curationCol, cellValue, 'curation-eval');
+  }
 
   // 5. Store and return the result
   const result = { 
@@ -2334,7 +2336,7 @@ function attachCurationHooks() {
 
   // Re-evaluate changed rows only
   hotInstance.addHook('afterChange', (changes, source) => {
-    if (!Array.isArray(changes) || source === 'LoadData') return;
+    if (!Array.isArray(changes) || source === 'LoadData' || source === 'curation-eval') return;
     const touched = new Set(changes.map(ch => ch[0]).filter(i => Number.isInteger(i)));
     for (const r of touched) evaluateRowCuration(r);
   });
