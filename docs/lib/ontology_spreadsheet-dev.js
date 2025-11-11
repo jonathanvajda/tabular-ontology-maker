@@ -1136,7 +1136,7 @@ async function generateRdfString (rows, format = 'ttl') {
         N3.DataFactory.literal(isCuratedInOntology)
       );
     }
-    
+
     const curationStatusidx = getCurationStatusColumnIndex();
     if (curationStatusidx >= 0) {
       const v = row[curationStatusidx];
@@ -1918,7 +1918,9 @@ function confirmAddPredicate() {
     }
 
     // 2) Read visibility checkboxes and persist
-    const hiddenNames = [];
+    // const hiddenNames = []; -- temporary swap since should get the columns from the HOT instead of starting fresh the first time
+    const hiddenNames = new Set(loadHiddenColumnNames());
+
     document.querySelectorAll('#columns-toggle-list input[type="checkbox"]').forEach(cb => {
       const name = cb.dataset.name;
       if (!cb.checked) hiddenNames.push(name); // unchecked = hidden
