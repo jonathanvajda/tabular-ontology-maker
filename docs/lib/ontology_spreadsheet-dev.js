@@ -1147,7 +1147,22 @@ async function generateRdfString (rows, format = 'ttl') {
         N3.DataFactory.literal(cellValue)
       );
     }
-  }); 
+  });
+    const idx = getCurationStatusColumnIndex();
+    if (idx >= 0) {
+      const v = row[idx];
+      if (v) {
+        const key = String(v).trim().toUpperCase().replace(/\s+/g, '_');
+        const s = CURATION_STATUS[key];
+        if (s) {
+          writer.addQuad(
+            N3.DataFactory.namedNode(subject),
+            N3.DataFactory.namedNode(CURATION_PROPERTY.iri),
+            N3.DataFactory.namedNode(s.iri)
+          );
+        }
+      }
+    }
   });
 
   return new Promise((resolve, reject) => {
