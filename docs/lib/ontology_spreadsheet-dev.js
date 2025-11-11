@@ -1801,13 +1801,22 @@ function preventDefaults(event) {
  * Shows/hides header row checkbox based on file type radio
  */
 function handleFileTypeChange() {
-  var fileType = document.querySelector('input[name="file-type"]:checked').value;
-  var checkboxContainer = document.getElementById("header-checkbox-container");
+  const fileType = document.querySelector('input[name="file-type"]:checked').value;
+  const headerCheckbox = document.getElementById('header-checkbox-container');
+
+  if (fileType === 'ontology') {
+    headerCheckbox.style.display = 'none';
+    console.info("[UI] Hiding header row checkbox");
+  } else {
+    headerCheckbox.style.display = 'block';
+    console.info("[UI] Showing header row checkbox");
+  }
+
   if (fileType === "spreadsheet") {
-    checkboxContainer.style.display = "block";
+    headerCheckbox.style.display = "block";
     console.info("[UI] Showing header row checkbox");
   } else {
-    checkboxContainer.style.display = "none";
+    headerCheckbox.style.display = "none";
     console.info("[UI] Hiding header row checkbox");
   }
 }
@@ -2013,6 +2022,269 @@ async function handleInsertDataSave() {
   }
 }
 
+/**
+ * Parses an RDF file (Turtle, RDF/XML, JSON-LD, etc.) using N3.js.
+ * @param {File} file - The file object from the drag-and-drop area.
+ * @param {object} mimeTypes - Your mimeTypes constant.
+ * @param {function} guessMediaType - Your guessMediaType function.
+ * @param {function} parseFileExtension - Assumed function to get 'ttl', 'rdf', etc.
+ * @returns {Promise<Array>} A promise that resolves with an array of N3.js quads.
+ */
+function parseOntologyData(file, mimeTypes, guessMediaType, parseFileExtension) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (event) => {
+      try {
+        const fileContent = event.target.result;
+        const extension = parseFileExtension(file.name);
+        
+        // Try to get MIME type from extension, fall back to guessing from content
+        const mimeType = mimeTypes[extension] || guessMediaType(fileContent);
+
+        const parser = new N3.Parser({ format: mimeType });
+        const quads = [];
+
+        parser.parse(fileContent, (error, quad, prefixes) => {
+          if (error) {
+            // Reject the promise on a parsing error
+            return reject(new Error(`N3.js parsing error: ${error.message}`));
+          }
+          if (quad) {
+            // Add valid quads (triples) to the array
+            quads.push(quad);
+          } else {
+            // Parsing is complete (no quad, no error)
+            resolve(quads);
+          }
+        });
+      } catch (error) {
+        reject(new Error(`File reading or parser initialization error: ${error.message}`));
+      }
+    };
+
+    reader.onerror = () => {
+      reject(new Error('Failed to read the file.'));
+    };
+
+    // Start reading the file as text
+    reader.readAsText(file);
+  });
+}
+
+/**
+ * Helper function to pivot N3.js quads into a Handsontable-compatible row structure.
+ * It groups triples by subject and maps predicates to known table columns.
+ * @param {Array} quads - Array of quads from parseOntologyData.
+ * @param {Array<string>} knownPredicates - Array of column headers (e.g., ["IRI", "rdfs:label", ...])
+ * @returns {object} - An object { valid: true, cleanedRows: [...], errors: [] }
+ */
+function validateAndPivotOntologyData(quads, knownPredicates) {
+  const subjectData = new Map(); // Key: subject URI, Value: { predicate: object }
+  const errors = [];
+
+  // 1. Group quads by subject
+  for (const quad of quads) {
+    const s = quad.subject.value;
+    const p = quad.predicate.value;
+    const o = quad.object.value;
+
+    if (!subjectData.has(s)) {
+      subjectData.set(s, {});
+    }
+
+    const predicates = subjectData.get(s);
+    
+    // Check if this predicate is already a column
+    if (knownPredicates.includes(p)) {
+        // Handle multiple values for the same predicate (e.g., multiple rdfs:comment)
+        // This simple version joins with a comma. You could also create duplicate rows.
+        if (predicates[p]) {
+            predicates[p] += `, ${o}`;
+        } else {
+            predicates[p] = o;
+        }
+    }
+    // You could add an 'else' here to collect unrecognized predicates as an error/warning
+  }
+
+  // 2. Pivot the Map into an array of rows
+  const cleanedRows = [];
+  const subjectHeader = knownPredicates[0]; // Assumes first column is the Subject/IRI
+
+  for (const [subjectUri, predicates] of subjectData.entries()) {
+    // Create a new row array, initialized to null
+    const newRow = new Array(knownPredicates.length).fill(null);
+    
+    // Set the subject in the first column
+    newRow[0] = subjectUri;
+
+    // Map the predicates to their corresponding columns
+    for (const [predicateUri, objectValue] of Object.entries(predicates)) {
+      const colIndex = knownPredicates.indexOf(predicateUri);
+      if (colIndex > 0) { // colIndex 0 is subject, which we already set
+        newRow[colIndex] = objectValue;
+      }
+    }
+    cleanedRows.push(newRow);
+  }
+  
+  // For now, validation is simple. You could add more complex checks here.
+  if (cleanedRows.length === 0 && quads.length > 0) {
+      errors.push("Data was parsed, but no subjects matched the known table columns.");
+  }
+
+  return { valid: errors.length === 0, cleanedRows, errors };
+}
+
+/**
+ * Handles the Insert Data "Save" button click for ONTOLOGY data.
+ * This function mirrors the structure of handleInsertDataSave.
+ */
+async function handleInsertOntologySave() {
+  const selectedInsertMode = document.querySelector('input[name="insert-mode"]:checked')?.value;
+  try {
+    // Validate mode: only 'append' or 'replace'
+    const insertMode = selectedInsertMode;
+    if (!["append", "replace"].includes(insertMode)) {
+      console.warn("Invalid insert mode:", insertMode);
+      showToast("❌ Invalid insert mode selected", "error");
+      return;
+    }
+
+    if (!currentImportFile) {
+      console.warn("No file selected");
+      showToast("❌ Please select a file before saving", "error");
+      return;
+    }
+
+    // NOTE: The "hasHeader" checkbox is irrelevant for ontology data, so we skip it.
+
+    // Get all current column headers and definitions
+    const allHeaders = getColumnHeaders(); // already includes customs
+    const allColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
+
+    // The "known predicates" are all column headers.
+    // We assume the first header is the Subject (e.g., "IRI").
+    const knownPredicates = allHeaders;
+
+    // --- REPLACED BLOCK ---
+    // Instead of parsing a spreadsheet, parse the ontology file
+    const quads = await parseOntologyData(
+        currentImportFile, 
+        mimeTypes, 
+        guessMediaType, 
+        parseFileExtension // Pass in your helper functions
+    );
+
+    // Pivot the quads (S-P-O) into a tabular structure (Subject, Predicate1, Predicate2, ...)
+    const result = validateAndPivotOntologyData(quads, knownPredicates);
+    // --- END REPLACED BLOCK ---
+
+    if (!result.valid) {
+      console.warn("Validation failed", result.errors);
+      // Use a modal or toast instead of alert() if possible
+      showToast("Import failed:\n" + result.errors.join("\n"), "error");
+      return;
+    }
+    
+    if (result.cleanedRows.length === 0) {
+        showToast("ℹ️ No new data found matching the current table columns.", "info");
+        // Close modal and reset
+        document.getElementById("insert-data-modal").style.display = "none";
+        currentImportFile = null;
+        resetFileInput();
+        return;
+    }
+
+    // Merge clean data (this logic remains identical)
+    const { mergedRows, stats } = mergeTableData(
+      hotInstance.getData(),
+      result.cleanedRows,
+      insertMode
+    );
+
+    // Rebuild table with merged data (this logic remains identical)
+    hotInstance.destroy();
+    hotInstance = createTable(container, mergedRows, allHeaders, allColumns);
+    attachHotHooks();
+    applyHiddenColumnsToHot();
+    harvestRowsIntoVocab(mergedRows);
+
+    
+    // Toast feedback (this logic remains identical)
+    showToast(
+      `✅ ${stats.appended} subjects loaded (${stats.total} total rows)`,
+      "success"
+    );
+
+    // Close modal (this logic remains identical)
+    document.getElementById("insert-data-modal").style.display = "none";
+    currentImportFile = null;
+    resetFileInput();
+
+  } catch (error) {
+    console.error("Import error:", error);
+    showToast(`❌ Error processing import: ${error.message}`, "error");
+  }
+}
+
+/**
+ * Primary save handler that delegates to the correct import function
+ * based on the selected radio button.
+ * * This should be called by your 'Save' button.
+ */
+async function handlePrimarySave() {
+  // Use 'file-type' which matches your HTML
+  const importType = document.querySelector('input[name="file-type"]:checked')?.value;
+
+  try {
+    if (importType === 'spreadsheet') {
+      // Calls your existing function for CSV/XLSX
+      await handleInsertDataSave(); 
+    } else if (importType === 'ontology') {
+      // Calls the new function for TTL, RDF, etc.
+      await handleInsertOntologySave(); 
+    } else {
+      showToast("❌ Please select a file type (Spreadsheet or Ontology)", "error");
+    }
+  } catch (error) {
+    // This provides a top-level catch in case the individual
+    // handlers fail in a way their own try/catch doesn't handle.
+    console.error("Primary save handler error:", error);
+    showToast("❌ A critical error occurred during save.", "error");
+  }
+}
+
+/**
+ * Auto-selects the file-type radio button based on the file's extension
+ * and shows/hides the header checkbox.
+ * * Call this from your file drop/select handler, passing the file object.
+ * e.g., autoSelectFileType(currentImportFile);
+ *
+ * @param {File} file The file that was just dropped or selected.
+ */
+function autoSelectFileType(file) {
+  if (!file) return;
+
+  const extension = parseFileExtension(file.name); // Your existing function
+  const headerCheckbox = document.getElementById('header-checkbox-container');
+  
+  // Your 'extensions' constant from the previous prompt
+  const ontologyExtensions = Object.values(extensions); // ['ttl', 'rdf', 'jsonld', 'nt', 'trig']
+  
+  if (ontologyExtensions.includes(extension)) {
+    // Select 'Ontology'
+    document.querySelector('input[name="file-type"][value="ontology"]').checked = true;
+    // Hide header row checkbox - it's not relevant for ontology
+    headerCheckbox.style.display = 'none';
+  } else {
+    // Default to 'Spreadsheet'
+    document.querySelector('input[name="file-type"][value="spreadsheet"]').checked = true;
+    // Show header row checkbox
+    headerCheckbox.style.display = 'block';
+  }
+}
 
 function resetFileInput() {
   const fileNameSpan = document.getElementById("file-input");
@@ -2366,6 +2638,41 @@ function cancelPrefixesModal() {
 }
 
 
+// Ontology Imports Logic
+function getImportsMap() {
+  const s = getOntologySettings();
+  if (!s.w3cIRI.OWL_IMPORTS) s.w3cIRI.OWL_IMPORTS = {};
+  return s.w3cIRI.OWL_IMPORTS;
+}
+
+// Check if a local import exists for the given IRI
+function hasLocalImport(iri) {
+  const m = getImportsMap();
+  return !!m[iri]?.content;
+}
+
+// Save local import content for a given IRI
+async function setLocalImport(iri, { content, mediaType }) {
+  const s = getOntologySettings();
+  s.w3cIRI.OWL_IMPORTS = s.w3cIRI.OWL_IMPORTS || {};
+  s.w3cIRI.OWL_IMPORTS[iri] = {
+    content,
+    mediaType: mediaType || guessMediaType(content),
+    updatedAt: new Date().toISOString()
+  };
+  await saveOntologySettings(s);
+}
+
+// Simple media type guessing based on content
+function guessMediaType(text) {
+  // super-lightweight; expand if you like
+  if (/^\s*@prefix\b|@base\b|:\s/.test(text)) return "text/turtle";
+  if (/<rdf:RDF\b/.test(text)) return "application/rdf+xml";
+  if (/"@context"\s*:/.test(text)) return "application/ld+json";
+  if (/^\s*<[^>]+>\s+<[^>]+>\s+/.test(text)) return "application/n-triples";
+  return "text/plain";
+}
+
 // This function opens the ontology imports modal and populates it with current imports.
 // It retrieves the imports from the ontology settings and displays them with their status.
 async function openImportsModal() {
@@ -2593,7 +2900,7 @@ function setupInsertDataModalListeners() {
   // Open/close buttons
   document.getElementById("importBtn").addEventListener("click", openInsertDataModal);
   document.getElementById('file-input').addEventListener('change', handleFileInputChange);
-  document.getElementById("insert-data-save-btn").addEventListener("click", handleInsertDataSave);
+  document.getElementById("insert-data-save-btn").addEventListener("click", handlePrimarySave);
   document.getElementById("insert-data-cancel-btn").addEventListener("click", closeInsertDataModal);
   document.getElementById("remove-file-btn").addEventListener("click", resetFileSelection);
 
