@@ -2641,7 +2641,7 @@ function cancelPrefixesModal() {
 // Ontology Imports Logic
 function getImportsMap() {
   const s = getOntologySettings();
-  importedIRI = w3cIRI.OWL_IMPORTS
+  const importedIRI = w3cIRI.OWL_IMPORTS;
   if (!s.importedIRI) s.importedIRI = {};
   return s.importedIRI;
 }
@@ -2655,7 +2655,7 @@ function hasLocalImport(iri) {
 // Save local import content for a given IRI
 async function setLocalImport(iri, { content, mediaType }) {
   const s = getOntologySettings();
-  importedIRI = w3cIRI.OWL_IMPORTS
+  importedIRI = w3cIRI.OWL_IMPORTS;
   s.importedIRI = s.importedIRI || {};
   s.importedIRI[iri] = {
     content,
@@ -2730,6 +2730,7 @@ async function handleImportFileUpload(event, iri) {
   const reader = new FileReader();
   reader.onload = async (e) => {
     const content = e.target.result;
+    importedIRI = w3cIRI.OWL_IMPORTS;
 
     if (!isValidOntology(content)) {
       validationMsg.textContent = "⚠️ Not a valid RDF/OWL text";
@@ -2742,8 +2743,8 @@ async function handleImportFileUpload(event, iri) {
     const ext = parseFileExtension(file.name);
     const mediaType = mimeTypes[ext] || "text/plain";
 
-    settings._imports = settings._imports || {};
-    settings._imports[iri] = {
+    settings.importedIRI = settings.importedIRI || {};
+    settings.importedIRI[iri] = {
       content,
       ext,
       mediaType,
@@ -2760,7 +2761,8 @@ async function handleImportFileUpload(event, iri) {
 // This function retrieves the local import content for a given IRI from the ontology settings.
 function getLocalImportContent(iri) {
   const s = getOntologySettings();
-  return s?._imports?.[iri]?.content || null;
+  importedIRI = w3cIRI.OWL_IMPORTS;
+  return s?.importedIRI?.[iri]?.content || null;
 }
 
 // This function adds a new import IRI to the ontology settings.
