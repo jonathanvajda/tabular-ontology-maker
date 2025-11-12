@@ -502,7 +502,17 @@ const createTable = (container, data, colHeaders, columns) => {
     contextMenu: true,
     manualColumnResize: true,
     hiddenColumns: { columns: [], indicators: true }, // little triangle indicator
-    licenseKey: 'non-commercial-and-evaluation'
+    licenseKey: 'non-commercial-and-evaluation',
+
+    // inject validator for first column across all rows
+    cells(row, col) {
+      const meta = {};
+      if (col === 0) {
+        meta.validator = (value, cb) => cb(Boolean(resolveToIri(value)));
+        meta.allowInvalid = true; // keep editable, just mark invalid
+      }
+      return meta;
+    }
   });
 };
 
@@ -810,10 +820,11 @@ async function generateRdfString (rows, format = 'ttl') {
     const colIndex = BASE_COLS + idx;  // start right after the 7 base columns
     const cellValue = row[colIndex];
     if (cellValue) {
+      const customObject = asObjectTerm(cellValue);
       writer.addQuad(
         N3.DataFactory.namedNode(subject),
         N3.DataFactory.namedNode(predicate),
-        N3.DataFactory.literal(cellValue)
+        customObject
       );
     }
   });
@@ -1324,27 +1335,19 @@ function resolveToIri(value) {
   // If they picked from the dropdown, it may be "Label — CURIE"
   const maybeCode = v.includes("—") ? v.split("—").pop().trim() : v;
 
-  // Already a full IRI?
-  if (/^https?:\/\//i.test(maybeCode)) return maybeCode;
+  // Already a full IRI? (accept any scheme, not just http)
+  if (/^[a-z][a-z0-9+.-]*:/i.test(maybeCode)) return maybeCode;
 
   // CURIE?
   if (maybeCode.includes(":")) {
     const [pfx, local] = maybeCode.split(":");
     const base = iriPrefixes[pfx];
     if (base) return base + local;
-    // Or look up by known curie
+
     const rec = vocabByCurie.get(maybeCode);
     if (rec) return rec.iri;
   }
-
-  // Label match (case-insensitive)
-  const byLabel = vocabByLabelLC.get(maybeCode.toLowerCase());
-  if (byLabel) return byLabel.iri;
-
-  // Last resort: if it looks like an IRI, return as-is
-  if (/^[a-z]+:/i.test(maybeCode)) return maybeCode;
-
-  return null;
+  return null; // not resolvable → invalid
 }
 
 // This function is used to harvest rows from a Handsontable instance into the vocabulary index.
