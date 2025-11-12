@@ -722,24 +722,42 @@ async function generateRdfString (rows, format = 'ttl') {
     N3.DataFactory.namedNode(w3cIRI.OWL_ONTOLOGY)
   );
 
-  Object.entries(settings).forEach(([key, value]) => {
-    if (key === "iri") return; // already handled
-    if (key === w3cIRI.OWL_IMPORTS && Array.isArray(value)) {
-      value.forEach(importIRI => {
+  // helpers
+  const isAbsoluteIri = (s) => typeof s === 'string' && /^https?:\/\//i.test(s);
+  const resolvePredicate = (k) => {
+    if (isAbsoluteIri(k)) return k;
+    // optionally support CURIE keys in settings:
+    if (typeof k === 'string' && k.includes(':')) {
+      try { const iri = curieToIri(k); if (iri) return iri; } catch (_) {}
+    }
+    return null;
+  };
+
+  for (const [key, value] of Object.entries(settings)) {
+    if (key === 'iri') continue;                             // already handled
+    if (key === 'owlImportsLocal') continue;                 // app-internal cache: skip
+    if (key === w3cIRI.OWL_IMPORTS && Array.isArray(value)) { // emit imports as IRIs
+      for (const importIRI of value) {
         writer.addQuad(
           N3.DataFactory.namedNode(ontologyIRI),
           N3.DataFactory.namedNode(w3cIRI.OWL_IMPORTS),
           N3.DataFactory.namedNode(importIRI)
         );
-      });
-    } else if (value) {
+      }
+      continue;
+    }
+
+    // Emit only if predicate is an IRI (or resolvable CURIE) and value is scalar
+    const pred = resolvePredicate(key);
+    const isScalar = ['string','number','boolean'].includes(typeof value);
+    if (pred && isScalar) {
       writer.addQuad(
         N3.DataFactory.namedNode(ontologyIRI),
-        N3.DataFactory.namedNode(key),
-        N3.DataFactory.literal(value)
+        N3.DataFactory.namedNode(pred),
+        N3.DataFactory.literal(String(value))
       );
     }
-  });
+  }
 
 
   rows.forEach((row) => {
