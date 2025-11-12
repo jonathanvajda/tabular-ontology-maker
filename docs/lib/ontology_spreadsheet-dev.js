@@ -2640,29 +2640,36 @@ function cancelPrefixesModal() {
 
 // Ontology Imports Logic
 function getImportsMap() {
-  const s = getOntologySettings();
-  const importedIRI = w3cIRI.OWL_IMPORTS;
-  if (!s.importedIRI) s.importedIRI = {};
-  return s.importedIRI;
+  const settings = getOntologySettings();
+  // local cache lives here
+  settings.owlImportsLocal = settings.owlImportsLocal || {};
+  return settings.owlImportsLocal;
 }
 
 // Check if a local import exists for the given IRI
 function hasLocalImport(iri) {
-  const m = getImportsMap();
-  return !!m[iri]?.content;
+  return !!getImportsMap()[iri]?.content;
 }
 
 // Save local import content for a given IRI
 async function setLocalImport(iri, { content, mediaType }) {
-  const s = getOntologySettings();
-  importedIRI = w3cIRI.OWL_IMPORTS;
-  s.importedIRI = s.importedIRI || {};
-  s.importedIRI[iri] = {
+  const settings = getOntologySettings();
+
+  // Ensure owl:imports list exists and includes the IRI
+  settings[w3cIRI.OWL_IMPORTS] = settings[w3cIRI.OWL_IMPORTS] || [];
+  if (!settings[w3cIRI.OWL_IMPORTS].includes(iri)) {
+    settings[w3cIRI.OWL_IMPORTS].push(iri);
+  }
+
+  // Store local cache under a separate key
+  settings.owlImportsLocal = settings.owlImportsLocal || {};
+  settings.owlImportsLocal[iri] = {
     content,
     mediaType: mediaType || guessMediaType(content),
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
   };
-  await saveOntologySettings(s);
+
+  await saveOntologySettings(settings);
 }
 
 // Simple media type guessing based on content
@@ -2730,7 +2737,6 @@ async function handleImportFileUpload(event, iri) {
   const reader = new FileReader();
   reader.onload = async (e) => {
     const content = e.target.result;
-    importedIRI = w3cIRI.OWL_IMPORTS;
 
     if (!isValidOntology(content)) {
       validationMsg.textContent = "⚠️ Not a valid RDF/OWL text";
@@ -2743,8 +2749,15 @@ async function handleImportFileUpload(event, iri) {
     const ext = parseFileExtension(file.name);
     const mediaType = mimeTypes[ext] || "text/plain";
 
-    settings.importedIRI = settings.importedIRI || {};
-    settings.importedIRI[iri] = {
+    // Ensure owl:imports ARRAY exists and includes this IRI
+    settings[w3cIRI.OWL_IMPORTS] = settings[w3cIRI.OWL_IMPORTS] || [];
+    if (!settings[w3cIRI.OWL_IMPORTS].includes(iri)) {
+      settings[w3cIRI.OWL_IMPORTS].push(iri);
+    }
+
+    // Save the local cached content in a separate MAP
+    settings.owlImportsLocal = settings.owlImportsLocal || {};
+    settings.owlImportsLocal[iri] = {
       content,
       ext,
       mediaType,
@@ -2753,7 +2766,7 @@ async function handleImportFileUpload(event, iri) {
 
     await saveOntologySettings(settings);
     showToast("✅ Ontology import saved", "success");
-    openImportsModal(); // refresh rows
+    openImportsModal(); // refresh
   };
   reader.readAsText(file);
 }
@@ -2761,8 +2774,7 @@ async function handleImportFileUpload(event, iri) {
 // This function retrieves the local import content for a given IRI from the ontology settings.
 function getLocalImportContent(iri) {
   const s = getOntologySettings();
-  importedIRI = w3cIRI.OWL_IMPORTS;
-  return s?.importedIRI?.[iri]?.content || null;
+  return s.owlImportsLocal?.[iri]?.content || null;
 }
 
 // This function adds a new import IRI to the ontology settings.
@@ -2771,7 +2783,6 @@ async function addImportIRI() {
   const iri = iriInput.value.trim();
   if (!iri) return;
 
-  // ✅ use cached settings already in memory
   const settings = getOntologySettings();
   settings[w3cIRI.OWL_IMPORTS] = settings[w3cIRI.OWL_IMPORTS] || [];
   if (!settings[w3cIRI.OWL_IMPORTS].includes(iri)) {
