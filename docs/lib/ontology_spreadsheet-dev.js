@@ -798,10 +798,11 @@ async function generateRdfString (rows, format = 'ttl') {
 
     // writer
     if (isCuratedInOntology) {
+      const obj = asObjectTerm(isCuratedInOntology);
       writer.addQuad(
         N3.DataFactory.namedNode(subject),
         N3.DataFactory.namedNode(w3cIRI.CCO_CURATEDIN),
-        N3.DataFactory.literal(isCuratedInOntology)
+        obj
       );
     }
 
@@ -1014,6 +1015,27 @@ function iriFromObjects(objs) {
     if (m) return m[1];
   }
   return '';
+}
+
+function asObjectTerm(value) {
+  if (value == null) return null;
+  const v = String(value).trim();
+
+  // Already wrapped <IRI>
+  if (/^<[^>\s]+>$/.test(v)) {
+    return N3.DataFactory.namedNode(v.slice(1, -1));
+  }
+  // Absolute IRI
+  if (/^https?:\/\/\S+$/i.test(v)) {
+    return N3.DataFactory.namedNode(v);
+  }
+  // CURIE → IRI (uses your curieToIri)
+  if (/^[A-Za-z][\w-]*:[\w.-]+$/.test(v)) {
+    const iri = curieToIri(v);
+    if (iri) return N3.DataFactory.namedNode(iri);
+  }
+  // Fallback: literal
+  return N3.DataFactory.literal(v);
 }
 
 async function storeGetAll(store) {
