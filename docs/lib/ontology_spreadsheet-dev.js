@@ -2641,8 +2641,9 @@ function cancelPrefixesModal() {
 // Ontology Imports Logic
 function getImportsMap() {
   const s = getOntologySettings();
-  if (!s.w3cIRI.OWL_IMPORTS) s.w3cIRI.OWL_IMPORTS = {};
-  return s.w3cIRI.OWL_IMPORTS;
+  importedIRI = w3cIRI.OWL_IMPORTS
+  if (!s.importedIRI) s.importedIRI = {};
+  return s.importedIRI;
 }
 
 // Check if a local import exists for the given IRI
@@ -2654,8 +2655,9 @@ function hasLocalImport(iri) {
 // Save local import content for a given IRI
 async function setLocalImport(iri, { content, mediaType }) {
   const s = getOntologySettings();
-  s.w3cIRI.OWL_IMPORTS = s.w3cIRI.OWL_IMPORTS || {};
-  s.w3cIRI.OWL_IMPORTS[iri] = {
+  importedIRI = w3cIRI.OWL_IMPORTS
+  s.importedIRI = s.importedIRI || {};
+  s.importedIRI[iri] = {
     content,
     mediaType: mediaType || guessMediaType(content),
     updatedAt: new Date().toISOString()
