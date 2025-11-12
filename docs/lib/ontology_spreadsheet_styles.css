@@ -96,6 +96,11 @@ input.htFocusCatcher {
   font-weight: 600;
 }
 
+/* Handsontable adds .htInvalid to failing cells */
+.htInvalid {
+  background-color: #ffecec !important; /* very light red */
+}
+
 /* Colors per status */
 .curation-bulb.metadata_complete   { color: #16a34a; } /* green */
 .curation-bulb.metadata_incomplete { color: #ea580c; } /* orange */
