@@ -3039,8 +3039,6 @@ document.getElementById("ontologyImportsBtn").addEventListener("click", openImpo
 document.getElementById('managePredicatesBtn').addEventListener('click', () => {
   document.getElementById('predicate-iri').value = '';
   // populateColumnsToggleUI();
-  document.getElementById('manage-predicates-modal').style.display = 'block';
-
   renderCustomPredicateChecklist('custom-predicate-list', {
     defaultChecked: true,                // start all checked
     // prechecked: new Set(['rdfs:comment', BASE_COLS + 2]), // you can override specifics
@@ -3055,7 +3053,7 @@ document.getElementById('managePredicatesBtn').addEventListener('click', () => {
       });
     },
   });
-
+  document.getElementById('manage-predicates-modal').style.display = 'block';
 });
 
 document.getElementById('managePrefixesBtn').addEventListener("click", function () {
