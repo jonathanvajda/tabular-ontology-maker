@@ -1549,6 +1549,98 @@ function removeRowsFromBottom(n = 1) {
 }
 
 
+
+/**
+ * Returns [ {index, header} ] for custom predicate columns (all columns after BASE_COLS).
+ */
+function getCustomPredicateColumns() {
+  if (!hotInstance) return [];
+  const headers = hotInstance.getColHeader(); // includes hidden columns
+  const out = [];
+  for (let c = BASE_COLS; c < headers.length; c++) {
+    out.push({ index: c, header: String(headers[c]) });
+  }
+  return out;
+}
+
+/**
+ * Render a checklist of custom predicates into a container.
+ *
+ * @param {string|HTMLElement} containerOrId  Element or element id of the container
+ * @param {Object} [opts]
+ * @param {Set<string>|Set<number>} [opts.prechecked]  Headers or indices to start checked
+ * @param {boolean} [opts.defaultChecked=false]        Checked state if not in `prechecked`
+ * @param {(info:{index:number, header:string, checked:boolean, event:Event})=>void} [opts.onToggle]
+ * @param {(h:string)=>string} [opts.labelize]         Optional fn to prettify labels (e.g., iriToNiceLabel)
+ */
+function renderCustomPredicateChecklist(containerOrId, opts = {}) {
+  const container = typeof containerOrId === 'string'
+    ? document.getElementById(containerOrId)
+    : containerOrId;
+  if (!container) {
+    console.warn('[renderCustomPredicateChecklist] container not found');
+    return;
+  }
+
+  const {
+    prechecked,
+    defaultChecked = false,
+    onToggle,
+    labelize = (h) => (typeof iriToNiceLabel === 'function' ? iriToNiceLabel(h) : h),
+  } = opts;
+
+  // Build list of items
+  const items = getCustomPredicateColumns();
+
+  // Clear and render
+  container.innerHTML = '';
+  const ul = document.createElement('ul');
+  ul.style.listStyle = 'none';
+  ul.style.padding = '0';
+  ul.style.margin = '0';
+
+  // If you want to reflect current visibility, grab hidden indices:
+  const hidden = (hotInstance.getSettings().hiddenColumns?.columns) || [];
+
+  items.forEach(({ index, header }) => {
+    const id = `pred-${index}`;
+    const li = document.createElement('li');
+    li.style.display = 'flex';
+    li.style.alignItems = 'center';
+    li.style.gap = '8px';
+    li.style.margin = '6px 0';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = id;
+
+    // Determine initial checked state
+    let startChecked = defaultChecked;
+    if (prechecked instanceof Set) {
+      // Support either header names or indices in the set
+      startChecked = prechecked.has(header) || prechecked.has(index);
+    }
+    checkbox.checked = startChecked;
+
+    // (Optional) show if currently hidden in HOT
+    const hiddenBadge = hidden.includes(index) ? ' (hidden)' : '';
+
+    const label = document.createElement('label');
+    label.setAttribute('for', id);
+    label.textContent = `${labelize(header)}${hiddenBadge}`;
+
+    checkbox.addEventListener('change', (ev) => {
+      onToggle?.({ index, header, checked: ev.target.checked, event: ev });
+    });
+
+    li.appendChild(checkbox);
+    li.appendChild(label);
+    ul.appendChild(li);
+  });
+
+  container.appendChild(ul);
+}
+
 /*
   These functions are used to manage predicates:
     confirmAddPredicate adds a new predicate to the ontology spreadsheet.
@@ -2946,9 +3038,26 @@ document.getElementById("ontologyImportsBtn").addEventListener("click", openImpo
 // Event Listeners for Predicate Management
 document.getElementById('managePredicatesBtn').addEventListener('click', () => {
   document.getElementById('predicate-iri').value = '';
-  populateColumnsToggleUI();
+  // populateColumnsToggleUI();
   document.getElementById('manage-predicates-modal').style.display = 'block';
+
+  renderCustomPredicateChecklist('custom-predicate-list', {
+    defaultChecked: true,                // start all checked
+    // prechecked: new Set(['rdfs:comment', BASE_COLS + 2]), // you can override specifics
+    labelize: (h) => iriToNiceLabel?.(h) || h,  // pretty CURIE if possible
+    onToggle: ({ index, header, checked }) => {
+      // Example: toggle visibility
+      const settings = hotInstance.getSettings();
+      const hidden = new Set(settings.hiddenColumns?.columns || []);
+      if (!checked) hidden.add(index); else hidden.delete(index);
+      hotInstance.updateSettings({
+        hiddenColumns: { columns: Array.from(hidden), indicators: true }
+      });
+    },
   });
+
+});
+
 document.getElementById('managePrefixesBtn').addEventListener("click", function () {
   openPrefixManagerModal();
 });
