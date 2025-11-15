@@ -1682,21 +1682,6 @@ function confirmAddPredicate() {
         harvestRowsIntoVocab(cleanedRows);
       }
     }
-
-    // 2) Read visibility checkboxes and persist
-    // const hiddenNames = []; -- temporary swap since should get the columns from the HOT instead of starting fresh the first time
-    const hiddenNames = new Set(loadHiddenColumnNames());
-
-    document.querySelectorAll('#columns-toggle-list input[type="checkbox"]').forEach(cb => {
-      const name = cb.dataset.name;
-      if (!cb.checked) hiddenNames.push(name); // unchecked = hidden
-    });
-    saveHiddenColumnNames(hiddenNames);
-
-    // 3) Apply to HOT
-    applyHiddenColumnsByName();
-
-    // 4) Close modal
     showToast('✅ Predicates/columns updated', 'success');
   } catch (e) {
     console.error('[ManagePredicates] confirmAddPredicate failed', e);
@@ -2652,7 +2637,10 @@ document.getElementById('importSettingsModalCancelSettingsBtn').addEventListener
 // Predicate settings modal open/close/add
 document.getElementById('predicateSettingsModalAddPredicateBtn').addEventListener('click', () => {
   // Save the new predicate selection
-  try {confirmAddPredicate}
+  try {confirmAddPredicate
+    console.info("[predicate-settings] Adding new predicate");
+    showToast("✅ Predicate added", "success");
+  }
   catch (err) {
     console.error("[predicate-settings] Failed to add predicate:", err);
     showToast("❌ Failed to add predicate", "error");
