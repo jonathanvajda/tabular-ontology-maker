@@ -142,11 +142,32 @@ function getOntologySettings() {
   return SETTINGS_CACHE;
 }
 
-// Async accessor
-async function getOntologySettingsAsync() {
-  if (!SETTINGS_CACHE) await settingsLoad();
-  return SETTINGS_CACHE;
+// === Predicate Value Modes =====================================
+// Store per-predicate value mode: 'iri' | 'literal' (default inferred)
+function getPredicateValueModes() {
+  const s = getOntologySettings();
+  s.predicateValueModes = s.predicateValueModes || {};
+  return s.predicateValueModes;
 }
+function getPredicateValueMode(iri) {
+  const m = getPredicateValueModes();
+  return m[iri] || null; // null => not set
+}
+function setPredicateValueMode(iri, mode) {
+  const s = getOntologySettings();
+  s.predicateValueModes = s.predicateValueModes || {};
+  s.predicateValueModes[iri] = mode; // 'iri' | 'literal'
+}
+async function savePredicateValueModes() {
+  await saveOntologySettings(getOntologySettings());
+}
+// A tiny default heuristic for new predicates (tweak later if you like)
+function defaultModeForPredicate(iri) {
+  // simple heuristic: assume object-like if ends with '#...Property' or contains 'sameAs'
+  if (/#.+Property$/.test(iri) || /sameAs$/i.test(iri)) return 'iri';
+  return 'literal';
+}
+
 
 function getSelectedDelimiter() {
   const selected = document.querySelector('input[name="base-iri-delimiter"]:checked');
@@ -505,6 +526,38 @@ const createTable = (container, data, colHeaders, columns) => {
     licenseKey: 'non-commercial-and-evaluation',
 
     // inject validator for first column across all rows
+    cells: (row, col) => {
+      const cellProps = {};
+
+      // your existing per-column logic…
+
+      // For custom predicate columns, enforce IRI vs literal
+      if (col >= BASE_COLS) {
+        const predIri = customPredicates[col - BASE_COLS];
+        const mode = getPredicateValueMode(predIri) || defaultModeForPredicate(predIri);
+
+        if (mode === 'iri') {
+          // basic validator: must resolve to IRI (absolute or CURIE)
+          cellProps.validator = (value, cb) => {
+            if (value == null || String(value).trim() === '') return cb(true); // allow empty
+            const v = String(value).trim();
+            // already <IRI>
+            if (/^<[^>\s]+>$/.test(v)) return cb(true);
+            // absolute IRI
+            if (/^https?:\/\/\S+$/i.test(v)) return cb(true);
+            // curie
+            if (/^[A-Za-z][\w-]*:[\w.-]+$/.test(v) && curieToIri(v)) return cb(true);
+            cb(false);
+          };
+          // Optionally a nice tooltip:
+          cellProps.allowInvalid = false;
+        } else {
+          // 'literal' — no special validator (or add your own literal constraints)
+        }
+      }
+
+      return cellProps;
+    },
     cells(row, col) {
       const meta = {};
       if (col === 0) {
@@ -513,123 +566,9 @@ const createTable = (container, data, colHeaders, columns) => {
       }
       return meta;
     }
+    
   });
 };
-
-function applyHiddenColumnsToHot() {
-  if (!hotInstance) return;
-  const headers = hotInstance.getColHeader();
-  const hiddenNames = new Set(loadHiddenColumnNames());
-  const indices = [];
-  headers.forEach((h, i) => { if (hiddenNames.has(String(h))) indices.push(i); });
-  hotInstance.updateSettings({ hiddenColumns: { columns: indices, indicators: true }});
-}
-
-// Applies hidden columns to the current Handsontable instance
-function loadHiddenColumnNames() {
-  try {
-    const raw = localStorage.getItem('hiddenColumnNames');
-    const arr = raw ? JSON.parse(raw) : [];
-    return Array.isArray(arr) ? arr : [];
-  } catch (e) {
-    console.error('[ManagePredicates] loadHiddenColumnNames failed', e);
-    return [];
-  }
-}
-
-// Returns array of hidden column indices for current HOT instance
-function saveHiddenColumnNames(names) {
-  try {
-    localStorage.setItem('hiddenColumnNames', JSON.stringify(names || []));
-    console.info('[ManagePredicates] Saved hidden names:', names);
-  } catch (e) {
-    console.error('[ManagePredicates] saveHiddenColumnNames failed', e);
-  }
-}
-
-/**
- * Apply hidden columns to the current Handsontable instance.
- * Impure by design: updates HOT settings and re-renders.
- *
- * @param {number[]} columns - Column indexes to hide.
- * @returns {void}
- * @throws {TypeError} If columns is not a number[] or hotInstance is missing.
- */
-const applyHiddenColumns = (columns) => {
-  // Input validation
-  if (!Array.isArray(columns) || !columns.every(n => Number.isInteger(n) && n >= 0)) {
-    throw new TypeError('applyHiddenColumns: columns must be an array of non-negative integers.');
-  }
-  if (!hotInstance) {
-    throw new Error('applyHiddenColumns: Handsontable instance is not initialized.');
-  }
-
-  // Merge with any existing plugin config, but overwrite the columns list
-  const current = hotInstance.getSettings()?.hiddenColumns || {};
-  hotInstance.updateSettings({
-    hiddenColumns: { 
-      ...current,
-      columns,               // <- the authoritative list
-      indicators: true       // small markers in header (optional)
-    }
-  });
-  hotInstance.render();
-};
-
-
-/** Apply hidden names to current HOT by mapping names -> indices */
-function applyHiddenColumnsByName() {
-  if (!hotInstance) return;
-  try {
-    const headers = hotInstance.getColHeader();
-    const hiddenNames = new Set(loadHiddenColumnNames());
-    const indices = [];
-    headers.forEach((h, i) => {
-      if (hiddenNames.has(String(h))) indices.push(i);
-    });
-    hotInstance.updateSettings({ hiddenColumns: { columns: indices, indicators: true }});
-    console.info('[ManagePredicates] Applied hidden columns:', indices, '(names=', Array.from(hiddenNames), ')');
-  } catch (e) {
-    console.error('[ManagePredicates] applyHiddenColumnsByName failed', e);
-  }
-}
-
-// Applies hidden columns to current HOT instance
-function populateColumnsToggleUI() {
-  try {
-    const container = document.getElementById('columns-toggle-list');
-    if (!container) return;
-    const headers = hotInstance.getColHeader();
-    const hidden = new Set(loadHiddenColumnNames());
-
-    container.innerHTML = '';
-    headers.forEach((name, idx) => {
-      const safeId = 'colvis-' + btoa(String(name)).replace(/=/g, '');
-      const row = document.createElement('div');
-      row.style.display = 'flex';
-      row.style.alignItems = 'center';
-      row.style.gap = '8px';
-      row.style.margin = '4px 0';
-
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.id = safeId;
-      cb.dataset.name = String(name);
-      // checked = visible; unchecked = hidden
-      cb.checked = !hidden.has(String(name));
-
-      const label = document.createElement('label');
-      label.htmlFor = safeId;
-      label.textContent = String(name);
-
-      row.appendChild(cb);
-      row.appendChild(label);
-      container.appendChild(row);
-    });
-  } catch (e) {
-    console.error('[ManagePredicates] populateColumnsToggleUI failed', e);
-  }
-}
 
 /**
  * Sets cco2:ont00001760 ('is curated in ontology') value for rows with empty cells in that column,
@@ -817,17 +756,37 @@ async function generateRdfString (rows, format = 'ttl') {
     }
 
     customPredicates.forEach((predicate, idx) => {
-    const colIndex = BASE_COLS + idx;  // start right after the 7 base columns
-    const cellValue = row[colIndex];
-    if (cellValue) {
-      const customObject = asObjectTerm(cellValue);
-      writer.addQuad(
-        N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode(predicate),
-        customObject
-      );
-    }
-  });
+      const colIndex = BASE_COLS + idx;
+      const cellValue = row[colIndex];
+      if (!cellValue) return;
+
+      const mode = getPredicateValueMode(predicate) || defaultModeForPredicate(predicate);
+
+      if (mode === 'iri') {
+        // Try to emit as resource (NamedNode); fallback to literal if not resolvable
+        const v = String(cellValue).trim();
+        let obj = null;
+        if (/^<[^>\s]+>$/.test(v)) obj = N3.DataFactory.namedNode(v.slice(1, -1));
+        else if (/^https?:\/\/\S+$/i.test(v)) obj = N3.DataFactory.namedNode(v);
+        else if (/^[A-Za-z][\w-]*:[\w.-]+$/.test(v)) {
+          const iri = curieToIri(v);
+          if (iri) obj = N3.DataFactory.namedNode(iri);
+        }
+
+        writer.addQuad(
+          N3.DataFactory.namedNode(subject),
+          N3.DataFactory.namedNode(predicate),
+          obj || N3.DataFactory.literal(v)
+        );
+      } else {
+        // literal mode
+        writer.addQuad(
+          N3.DataFactory.namedNode(subject),
+          N3.DataFactory.namedNode(predicate),
+          N3.DataFactory.literal(String(cellValue))
+        );
+      }
+    });
   });
 
   return new Promise((resolve, reject) => {
@@ -1202,7 +1161,6 @@ async function reloadSavedSession() {
     if (hotInstance) { try { hotInstance.destroy(); } catch(_) {} }
     hotInstance = createTable(container, finalRows, newHeaders, newColumns);
     attachHotHooks();
-    applyHiddenColumnsToHot();
     harvestRowsIntoVocab(finalRows);
 
     showToast(`✅ Reloaded ${subjMap.size} subject${subjMap.size!==1?'s':''} from latest saved RDF`, 'success');
@@ -1564,6 +1522,61 @@ function getCustomPredicateColumns() {
 }
 
 /**
+ * Build the predicate modes checklist (custom predicates only).
+ * containerOrId: element or element id where the list goes.
+ */
+function renderPredicateModesChecklist(containerOrId) {
+  const container = typeof containerOrId === 'string'
+    ? document.getElementById(containerOrId)
+    : containerOrId;
+  if (!container) return;
+
+  // Collect custom predicate IRIs from your known list
+  // You already track them in `customPredicates` and align by BASE_COLS.
+  const preds = Array.isArray(customPredicates) ? [...customPredicates] : [];
+
+  const modes = getPredicateValueModes();
+  container.innerHTML = '';
+
+  const ul = document.createElement('ul');
+  ul.style.listStyle = 'none';
+  ul.style.padding = '0';
+  ul.style.margin = '0';
+
+  preds.forEach((iri, i) => {
+    const id = `pred-mode-${i}`;
+    const li = document.createElement('li');
+    li.style.display = 'flex';
+    li.style.alignItems = 'center';
+    li.style.gap = '10px';
+    li.style.margin = '6px 0';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = id;
+
+    // checked => treat values as IRI
+    const current = modes[iri] || defaultModeForPredicate(iri);
+    checkbox.checked = (current === 'iri');
+
+    const label = document.createElement('label');
+    label.setAttribute('for', id);
+    label.textContent = (typeof iriToNiceLabel === 'function' ? iriToNiceLabel(iri) : iri);
+
+    checkbox.addEventListener('change', (ev) => {
+      setPredicateValueMode(iri, ev.target.checked ? 'iri' : 'literal');
+    });
+
+    li.appendChild(checkbox);
+    li.appendChild(label);
+    ul.appendChild(li);
+  });
+
+  container.appendChild(ul);
+}
+
+
+/**
  * Render a checklist of custom predicates into a container.
  *
  * @param {string|HTMLElement} containerOrId  Element or element id of the container
@@ -1598,9 +1611,6 @@ function renderCustomPredicateChecklist(containerOrId, opts = {}) {
   ul.style.listStyle = 'none';
   ul.style.padding = '0';
   ul.style.margin = '0';
-
-  // If you want to reflect current visibility, grab hidden indices:
-  const hidden = (hotInstance.getSettings().hiddenColumns?.columns) || [];
 
   items.forEach(({ index, header }) => {
     const id = `pred-${index}`;
@@ -1645,7 +1655,7 @@ function renderCustomPredicateChecklist(containerOrId, opts = {}) {
   These functions are used to manage predicates:
     confirmAddPredicate adds a new predicate to the ontology spreadsheet.
 */
-function confirmAddPredicate() {
+async function confirmAddPredicate() {
   try {
     // 1) Handle add predicate (existing flow)
     const select = document.getElementById('predicate-select');
@@ -1678,25 +1688,27 @@ function confirmAddPredicate() {
         hotInstance.destroy();
         hotInstance = createTable(container, cleanedRows, newHeaders, newColumns);
         attachHotHooks();
-        applyHiddenColumnsToHot();
         harvestRowsIntoVocab(cleanedRows);
+        try {
+            // existing: you pushed the new IRI into customPredicates and updated the table
+
+            // NEW: initialize value mode for this predicate (once)
+            if (!getPredicateValueMode(newPredicateIri)) {
+              setPredicateValueMode(newPredicateIri, defaultModeForPredicate(newPredicateIri));
+              await savePredicateValueModes();
+            }
+
+            // Refresh the list in the modal so the new predicate appears
+            try { renderPredicateModesChecklist('predicate-modes-list'); } catch(_) {}
+
+            showToast('✅ Predicate added', 'success');
+          } catch (e) {
+            console.error('[ManagePredicates] confirmAddPredicate failed', e);
+            showToast('❌ Failed to add predicate', 'error');
+          }
       }
     }
 
-    // 2) Read visibility checkboxes and persist
-    // const hiddenNames = []; -- temporary swap since should get the columns from the HOT instead of starting fresh the first time
-    const hiddenNames = new Set(loadHiddenColumnNames());
-
-    document.querySelectorAll('#columns-toggle-list input[type="checkbox"]').forEach(cb => {
-      const name = cb.dataset.name;
-      if (!cb.checked) hiddenNames.push(name); // unchecked = hidden
-    });
-    saveHiddenColumnNames(hiddenNames);
-
-    // 3) Apply to HOT
-    applyHiddenColumnsByName();
-
-    // 4) Close modal
     showToast('✅ Predicates/columns updated', 'success');
   } catch (e) {
     console.error('[ManagePredicates] confirmAddPredicate failed', e);
@@ -2136,7 +2148,6 @@ async function handleInsertDataSave() {
     hotInstance.destroy();
     hotInstance = createTable(container, mergedRows, allHeaders, allColumns);
     attachHotHooks();
-    applyHiddenColumnsToHot();
     harvestRowsIntoVocab(mergedRows);
 
     
@@ -2343,7 +2354,6 @@ async function handleInsertOntologySave() {
     hotInstance.destroy();
     hotInstance = createTable(container, mergedRows, allHeaders, allColumns);
     attachHotHooks();
-    applyHiddenColumnsToHot();
     harvestRowsIntoVocab(mergedRows);
 
     
@@ -2825,7 +2835,7 @@ async function openImportsModal() {
   listContainer.innerHTML = "";
 
   // ensure cache is loaded
-  const settings = await getOntologySettingsAsync();
+  const settings = getOntologySettings();
   const imports = settings[w3cIRI.OWL_IMPORTS] || [];
   const importsMap = getImportsMap();
 
@@ -2950,56 +2960,31 @@ document.getElementById("remove-rows-btn").addEventListener("click", () => {
   showToast(`🗑️ ${n} row${n>1?'s':''} removed`, "info");
 });
 
-// This function saves the current column visibility settings from the Manage Predicates modal.
-// It reads the visibility checkboxes, persists the hidden names, applies them to the current Hands
-function saveManagePredicates() {
+// Save predicate management settings from modal
+// Called by 'Save' button in Manage Predicates modal
+async function saveManagePredicates() {
   try {
-    // Read visibility checkboxes and persist by name
-    const hiddenNames = [];
-    document
-      .querySelectorAll('#columns-toggle-list input[type="checkbox"]')
-      .forEach(cb => {
-        const name = cb.dataset.name;
-        if (!cb.checked) hiddenNames.push(name); // unchecked = hidden
-      });
+    // Persist the in-memory predicateValueModes map
+    await savePredicateValueModes();
 
-    saveHiddenColumnNames(hiddenNames);
-    applyHiddenColumnsByName();
-
-    // Close modal
+    showToast('✅ Predicate value modes saved', 'success');
     document.getElementById('manage-predicates-modal').style.display = 'none';
-    showToast('✅ Saved predicate management settings', 'success');
   } catch (e) {
     console.error('[ManagePredicates] saveManagePredicates failed', e);
-    showToast('❌ Failed to save predicate management settings', 'error');
-  }
-}
-
-/**
- * Helper function to find all column visibility checkboxes in the
- * 'Manage Predicates' modal and set their 'checked' state.
- * @param {boolean} isChecked - true to check all, false to uncheck all.
- */
-function setAllColumnVisibilityCheckboxes(isChecked) {
-  try {
-    const checkboxes = document.querySelectorAll('#columns-toggle-list input[type="checkbox"]');
-    if (checkboxes.length === 0) {
-      console.warn('[ColumnVisibility] No checkboxes found to update.');
-      return;
-    }
-    checkboxes.forEach(cb => {
-      cb.checked = isChecked;
-    });
-  } catch (e) {
-    console.error('[ColumnVisibility] Error updating checkboxes:', e);
+    showToast('❌ Failed to save predicate value modes', 'error');
   }
 }
 
 // Save button listener for Manage Predicates modal
-document.getElementById('manage-predicates-save-btn').addEventListener('click', () => {
-  saveManagePredicates(); // 👈 save visibility settings
-  document.getElementById('manage-predicates-modal').style.display = 'none';
-  })
+document.getElementById('manage-predicates-save-btn').addEventListener('click', async (ev) => {
+  const btn = ev.currentTarget;
+  btn.disabled = true;
+  try {
+    await saveManagePredicates(); // handles toast + closing
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // Cancel button listener for Manage Predicates modal
 document.getElementById('manage-predicates-cancel-btn').addEventListener('click', () => {
@@ -3038,24 +3023,11 @@ document.getElementById("ontologyImportsBtn").addEventListener("click", openImpo
 // Event Listeners for Predicate Management
 document.getElementById('managePredicatesBtn').addEventListener('click', () => {
   document.getElementById('predicate-iri').value = '';
-  // populateColumnsToggleUI();
-  renderCustomPredicateChecklist('custom-predicate-list', {
-    defaultChecked: true,                // start all checked
-    // prechecked: new Set(['rdfs:comment', BASE_COLS + 2]), // you can override specifics
-    labelize: (h) => iriToNiceLabel?.(h) || h,  // pretty CURIE if possible
-    onToggle: ({ index, header, checked }) => {
-      // Example: toggle visibility
-      const settings = hotInstance.getSettings();
-      const hidden = new Set(settings.hiddenColumns?.columns || []);
-      if (!checked) hidden.add(index); else hidden.delete(index);
-      hotInstance.updateSettings({
-        hiddenColumns: { columns: Array.from(hidden), indicators: true }
-      });
-    },
-  });
+  renderPredicateModesChecklist('predicate-modes-list');
   document.getElementById('manage-predicates-modal').style.display = 'block';
 });
 
+// Event Listener for Prefix Manager Button
 document.getElementById('managePrefixesBtn').addEventListener("click", function () {
   openPrefixManagerModal();
 });
