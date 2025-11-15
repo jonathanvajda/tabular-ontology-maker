@@ -2657,25 +2657,6 @@ document.getElementById('predicateSettingsModalAddPredicateBtn').addEventListene
     console.error("[predicate-settings] Failed to add predicate:", err);
     showToast("❌ Failed to add predicate", "error");
   }
-  // Update the checklist
-  try {renderCustomPredicateChecklist('custom-predicate-list', {
-    defaultChecked: true,                // start all checked
-    // prechecked: new Set(['rdfs:comment', BASE_COLS + 2]), // you can override specifics
-    labelize: (h) => iriToNiceLabel?.(h) || h,  // pretty CURIE if possible
-    onToggle: ({ index, header, checked }) => {
-      // Example: toggle visibility
-      const settings = hotInstance.getSettings();
-      const hidden = new Set(settings.hiddenColumns?.columns || []);
-      if (!checked) hidden.add(index); else hidden.delete(index);
-      hotInstance.updateSettings({
-        hiddenColumns: { columns: Array.from(hidden), indicators: true }
-      });
-    },
-  });}
-  catch (err) {
-    console.error("[predicate-settings] Failed to populate predicate table:", err);
-    showToast("❌ Failed to populate predicate table", "error"); 
-  }
   });
 
 
