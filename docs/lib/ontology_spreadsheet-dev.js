@@ -1160,7 +1160,7 @@ async function reloadSavedSession() {
     if (hotInstance) { try { hotInstance.destroy(); } catch(_) {} }
     hotInstance = createTable(container, finalRows, newHeaders, newColumns);
     attachHotHooks();
-    harvestRowsIntoVocab(finalRows);
+    harvestRowsIntoVocab?.(finalRows);
 
     showToast(`✅ Reloaded ${subjMap.size} subject${subjMap.size!==1?'s':''} from latest saved RDF`, 'success');
   } catch (e) {
@@ -1293,7 +1293,9 @@ function resolveToIri(value) {
   const maybeCode = v.includes("—") ? v.split("—").pop().trim() : v;
 
   // Already a full IRI? (accept any scheme, not just http)
-  if (/^[a-z][a-z0-9+.-]*:/i.test(maybeCode)) return maybeCode;
+  if (/^https?:\/\/\S+$/i.test(maybeCode) || /^urn:[^:\s]+:.+/i.test(maybeCode) || /^<[^>\s]+>$/.test(maybeCode)) {
+    return maybeCode.replace(/^<|>$/g, ''); // allow <IRI> form too
+  }
 
   // CURIE?
   if (maybeCode.includes(":")) {
@@ -1557,7 +1559,7 @@ function renderPredicateModesChecklist(containerOrId) {
 
   const thIRI = document.createElement('th');
   thIRI.textContent = 'Object is IRI?';
-  thIRI.style.textAlign = 'left';
+  thIRI.style.textAlign = 'center';
   thIRI.style.padding = '2px 4px';
   thIRI.style.borderBottom = '1px solid #ccc';
 
@@ -1737,7 +1739,7 @@ async function confirmAddPredicate() {
         hotInstance.destroy();
         hotInstance = createTable(container, cleanedRows, newHeaders, newColumns);
         attachHotHooks();
-        harvestRowsIntoVocab(cleanedRows);
+        harvestRowsIntoVocab?.(cleanedRows);
          // Refresh the modes UI if the modal is open
          try { renderPredicateModesChecklist('predicate-modes-list'); } catch (_) {}
       }
@@ -2182,7 +2184,7 @@ async function handleInsertDataSave() {
     hotInstance.destroy();
     hotInstance = createTable(container, mergedRows, allHeaders, allColumns);
     attachHotHooks();
-    harvestRowsIntoVocab(mergedRows);
+    harvestRowsIntoVocab?.(mergedRows);
 
     
     // Toast feedback
@@ -2388,7 +2390,7 @@ async function handleInsertOntologySave() {
     hotInstance.destroy();
     hotInstance = createTable(container, mergedRows, allHeaders, allColumns);
     attachHotHooks();
-    harvestRowsIntoVocab(mergedRows);
+    harvestRowsIntoVocab?.(mergedRows);
 
     
     // Toast feedback (this logic remains identical)
