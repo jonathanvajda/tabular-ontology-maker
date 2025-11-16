@@ -31,7 +31,6 @@ const iriPrefixes = {
   oboInOwl: 'http://www.geneontology.org/formats/oboInOwl#',
   cco2: 'https://www.commoncoreontologies.org/',
   cceo: 'http://www.ontologyrepository.com/CommonCoreOntologies/',
-  iofcore: 'https://spec.industrialontologies.org/ontology/core/',
   ex: 'http://example.org/'
 };
 
@@ -1541,9 +1540,8 @@ function renderPredicateModesChecklist(containerOrId) {
 
   // Build table
   const table = document.createElement('table');
-  table.style.width = '100%';
+  table.style.width = '80%';
   table.style.borderCollapse = 'collapse';
-  table.style.fontSize = 'smaller';
   table.style.padding = '0';
   table.style.margin = '0';
 
@@ -1593,7 +1591,7 @@ function renderPredicateModesChecklist(containerOrId) {
     const tdChk = document.createElement('td');
     tdChk.style.padding = '2px';
     tdChk.style.borderBottom = '1px solid #f0f0f0';
-    tdChk.style.textAlign = 'right';
+    tdChk.style.textAlign = 'center';
 
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
