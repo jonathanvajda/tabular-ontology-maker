@@ -1670,6 +1670,12 @@ async function confirmAddPredicate() {
       } else {
         customPredicates.push(finalIRI);
 
+         // Initialize value mode for this new predicate (once)
+         if (!getPredicateValueMode(finalIRI)) {
+           setPredicateValueMode(finalIRI, defaultModeForPredicate(finalIRI));
+           await savePredicateValueModes();
+         }
+
         // Rebuild table with new predicate column appended
         const newHeaders = getColumnHeaders(); // base + customs
         const newColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
@@ -1689,23 +1695,8 @@ async function confirmAddPredicate() {
         hotInstance = createTable(container, cleanedRows, newHeaders, newColumns);
         attachHotHooks();
         harvestRowsIntoVocab(cleanedRows);
-        try {
-            // existing: you pushed the new IRI into customPredicates and updated the table
-
-            // NEW: initialize value mode for this predicate (once)
-            if (!getPredicateValueMode(newPredicateIri)) {
-              setPredicateValueMode(newPredicateIri, defaultModeForPredicate(newPredicateIri));
-              await savePredicateValueModes();
-            }
-
-            // Refresh the list in the modal so the new predicate appears
-            try { renderPredicateModesChecklist('predicate-modes-list'); } catch(_) {}
-
-            showToast('✅ Predicate added', 'success');
-          } catch (e) {
-            console.error('[ManagePredicates] confirmAddPredicate failed', e);
-            showToast('❌ Failed to add predicate', 'error');
-          }
+         // Refresh the modes UI if the modal is open
+         try { renderPredicateModesChecklist('predicate-modes-list'); } catch (_) {}
       }
     }
 
