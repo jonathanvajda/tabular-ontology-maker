@@ -1617,7 +1617,7 @@ function renderPredicateModesChecklist(containerOrId) {
   });
 
   table.appendChild(tBody);
-  container.appendChild(tr);
+  container.appendChild(table);
 }
 
 
