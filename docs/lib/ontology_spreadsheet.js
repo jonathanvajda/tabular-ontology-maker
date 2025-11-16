@@ -1,34 +1,23 @@
 // Copyright 2025 Jonathan Vajda
 
-
 let customPredicates = [];
 let hotInstance = null;
+let hotInitDone = false;
 let currentImportFile = null;
-const container = document.getElementById('hot');
-const output = document.getElementById('rdfOutput');
+
 // Base spreadsheet columns (in order):
 // 0: iri, 1: label, 2: element type, 3: definition, 4: is a, 5: is curated in ontology
 const BASE_COLS = 6;
 
-function showToast(message, type = "success", duration = 3000) {
-  try {
-    const container = document.getElementById("toast-container");
-    const toast = document.createElement("div");
+const container = document.getElementById('hot');
+const output = document.getElementById('rdfOutput');
 
-    toast.classList.add("toast", type);
-    toast.textContent = message;
-
-    container.appendChild(toast);
-    setTimeout(() => toast.classList.add("show"), 200);
-
-    setTimeout(() => {
-      toast.classList.remove("show");
-      setTimeout(() => container.removeChild(toast), 1000);
-    }, duration);
-  } catch (error) {
-    console.error("Toast error:", error);
-  }
-}
+// --- Constants so you can rename easily ---
+const DB_NAME = 'TabularOntologyDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'rdfStore';
+let SETTINGS_CACHE = null;
+const SETTINGS_STORE = 'ontologySettingsStore';
 
 // Global prefix store (prepopulated)
 const iriPrefixes = {
@@ -42,7 +31,6 @@ const iriPrefixes = {
   oboInOwl: 'http://www.geneontology.org/formats/oboInOwl#',
   cco2: 'https://www.commoncoreontologies.org/',
   cceo: 'http://www.ontologyrepository.com/CommonCoreOntologies/',
-  iofcore: 'https://spec.industrialontologies.org/ontology/core/',
   ex: 'http://example.org/'
 };
 
@@ -57,17 +45,39 @@ const getElementTypes = () => {
   ];
 };
 
+const w3cIRI = {
+  RDF_TYPE: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
+  RDFS_LABEL: 'http://www.w3.org/2000/01/rdf-schema#label',
+  RDFS_SUBCLASS: 'http://www.w3.org/2000/01/rdf-schema#subClassOf',
+  RDFS_SUBPROP: 'http://www.w3.org/2000/01/rdf-schema#subPropertyOf',
+  OWL_ONTOLOGY: 'http://www.w3.org/2002/07/owl#Ontology',
+  OWL_CLASS: 'http://www.w3.org/2002/07/owl#Class',
+  OWL_NAMEDIND: 'http://www.w3.org/2002/07/owl#NamedIndividual',
+  OWL_OBJPROP: 'http://www.w3.org/2002/07/owl#ObjectProperty',
+  OWL_DATAPROP: 'http://www.w3.org/2002/07/owl#DataProperty',
+  OWL_ANNOPROP: 'http://www.w3.org/2002/07/owl#AnnotationProperty',
+  OWL_DATATYPE: 'http://www.w3.org/2002/07/owl#DatatypeProperty',
+  OWL_IMPORTS: 'http://www.w3.org/2002/07/owl#imports',
+  SKOS_DEFINITION: 'http://www.w3.org/2004/02/skos/core#definition',
+  CCO_CURATEDIN: 'https://www.commoncoreontologies.org/ont00001760',
+  DCTERMS_CREATOR: 'http://purl.org/dc/terms/creator',
+  DCTERMS_CREATED: 'http://purl.org/dc/terms/created',
+  DCTERMS_DESCRIPTION: 'http://purl.org/dc/terms/description',
+  DCTERMS_CITATION: 'http://purl.org/dc/terms/bibliographicCitation',
+  OBO_CURATION_STATUS: 'http://purl.obolibrary.org/obo/IAO_0000114',
+};
+
 const getIsAPredicate = (elementType) => {
   console.info('getIsAPredicate happened');
   switch (elementType) {
     case 'Class':
-      return 'rdfs:subClassOf';
+      return w3cIRI.RDFS_SUBCLASS ;
     case 'ObjectProperty':
     case 'DatatypeProperty':
     case 'AnnotationProperty':
-      return 'rdfs:subPropertyOf';
+      return w3cIRI.RDFS_SUBPROP;
     case 'NamedIndividual':
-      return 'rdf:type';
+      return w3cIRI.RDF_TYPE;
     default:
       return null;
   }
@@ -81,16 +91,82 @@ let vocabByLabelLC = new Map();
 
 /*
   These functions are used to manage ontology settings:
-    generateOntologySettings creates a default ontology settings object and saves it to localStorage.
-    loadOntologySettings retrieves the ontology settings from localStorage or generates default settings if none exist.
+    generateOntologySettings creates a default ontology settings object and saves it.
+    loadOntologySettings retrieves the ontology settings or generates default settings if none exist.
     openOntologySettingsModal opens a modal to edit the ontology settings.
-    saveOntologySettingsFromModal saves the edited ontology settings back to localStorage.
+    saveOntologySettingsFromModal saves the edited ontology settings back.
     openImportsModal opens a modal to manage ontology imports.
     handleImportFileUpload handles the upload of ontology import files and validates them.
     addImportIRI adds a new import IRI to the ontology settings.
     saveImportsAndClose saves the current imports and closes the modal.
     
 */
+
+// Read from IDB (or create defaults) and cache
+async function settingsLoad() {
+  const db = await ensureDb();
+  const tx = db.transaction(SETTINGS_STORE, 'readonly');
+  const rec = await idbRequest(tx.objectStore(SETTINGS_STORE).get('ontologySettings'));
+
+  if (rec && rec.value) {
+    SETTINGS_CACHE = rec.value;
+    return SETTINGS_CACHE;
+  }
+
+  // No record: create defaults and persist once
+  SETTINGS_CACHE = generateOntologySettings();
+  const wtx = db.transaction(SETTINGS_STORE, 'readwrite');
+  wtx.objectStore(SETTINGS_STORE).put({ key: 'ontologySettings', value: SETTINGS_CACHE, updatedAt: new Date().toISOString() });
+  await idbTransactionDone(wtx);
+  return SETTINGS_CACHE;
+}
+
+// Save to IDB and cache
+async function saveOntologySettings(next) {
+  SETTINGS_CACHE = next;
+  const db = await ensureDb();
+  const tx = db.transaction(SETTINGS_STORE, 'readwrite');
+  tx.objectStore(SETTINGS_STORE).put({ key: 'ontologySettings', value: SETTINGS_CACHE, updatedAt: new Date().toISOString() });
+  await idbTransactionDone(tx);
+  showToast('Ontology settings saved to database.', 'success');
+}
+
+// Synchronous accessor *after* settingsLoad() has run
+function getOntologySettings() {
+  if (!SETTINGS_CACHE) {
+    console.warn('[getOntologySettings] Cache empty — did you await settingsLoad() during init?');
+    // Last-resort fallback to keep UI from crashing:
+    return generateOntologySettings();
+  }
+  return SETTINGS_CACHE;
+}
+
+// === Predicate Value Modes =====================================
+// Store per-predicate value mode: 'iri' | 'literal' (default inferred)
+function getPredicateValueModes() {
+  const s = getOntologySettings();
+  s.predicateValueModes = s.predicateValueModes || {};
+  return s.predicateValueModes;
+}
+function getPredicateValueMode(iri) {
+  const m = getPredicateValueModes();
+  return m[iri] || null; // null => not set
+}
+function setPredicateValueMode(iri, mode) {
+  const s = getOntologySettings();
+  s.predicateValueModes = s.predicateValueModes || {};
+  s.predicateValueModes[iri] = mode; // 'iri' | 'literal'
+}
+async function savePredicateValueModes() {
+  await saveOntologySettings(getOntologySettings());
+}
+// A tiny default heuristic for new predicates (tweak later if you like)
+function defaultModeForPredicate(iri) {
+  // simple heuristic: assume object-like if ends with '#...Property' or contains 'sameAs'
+  if (/#.+Property$/.test(iri) || /sameAs$/i.test(iri)) return 'iri';
+  return 'literal';
+}
+
 
 function getSelectedDelimiter() {
   const selected = document.querySelector('input[name="base-iri-delimiter"]:checked');
@@ -105,7 +181,6 @@ function updateOntologyPreview() {
     const { year, month, day } = getCurrentDateParts();
     const normalizedLabel = toPascalCase(label);
 
-    // Only update the preview text — do NOT write to localStorage here.
     document.getElementById("version-iri-preview").textContent =
       `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`;
     document.getElementById("version-info-preview").textContent = `${year}-${month}-${day}`;
@@ -131,11 +206,11 @@ function generateOntologySettings(
 
   const settings = {
     iri: `${base}${delimiter}${normalizedLabel}`,
-    "owl:versionIRI": `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`,
-    "owl:versionInfo": `${year}-${month}-${day}`,
-    "rdfs:label": label,
-    "dcterms:creator": creator,
-    "dcterms:description": description,
+    "http://www.w3.org/2002/07/owl#versionIRI": `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`,
+    "http://www.w3.org/2002/07/owl#versionInfo": `${year}-${month}-${day}`,
+    "http://www.w3.org/2000/01/rdf-schema#label": label,
+    "http://purl.org/dc/terms/creator": creator,
+    "http://purl.org/dc/terms/description": description,
 
     // NEW:
     iriMode,
@@ -146,13 +221,11 @@ function generateOntologySettings(
     delimiter,     // keep delimiter explicitly too
     base           // store base, handy later
   };
-
-  localStorage.setItem("ontologySettings", JSON.stringify(settings));
   return settings;
 }
 
 function getEffectiveOntologySettings() {
-  const stored = loadOntologySettings() || {};
+  const stored = getOntologySettings() || {};
   const modal = document.getElementById("ontology-settings-modal");
 
   // If modal is open, prefer the values the user currently sees
@@ -203,21 +276,15 @@ function initializeIriModeToggles() {
   toggleIriModeOptions();
 }
 
-
-function loadOntologySettings() {
-  const stored = localStorage.getItem('ontologySettings');
-  return stored ? JSON.parse(stored) : generateOntologySettings();
-}
-
 function openOntologySettingsModal() {
   const modal = document.getElementById("ontology-settings-modal");
-  const s = loadOntologySettings();
+  const s = getOntologySettings();
 
   // existing fields
   document.getElementById("ontology-base-iri-input").value = (s.base || s.iri.split("/").slice(0, -1).join("/"));
-  document.getElementById("ontology-label-input").value = s["rdfs:label"] || "";
-  document.getElementById("ontology-creator-input").value = s["dcterms:creator"] || "";
-  document.getElementById("ontology-description-input").value = s["dcterms:description"] || "";
+  document.getElementById("ontology-label-input").value = s[w3cIRI.RDFS_LABEL] || "";
+  document.getElementById("ontology-creator-input").value = s[w3cIRI.DCTERMS_CREATOR] || "";
+  document.getElementById("ontology-description-input").value = s[w3cIRI.DCTERMS_DESCRIPTION] || "";
   toggleIriModeOptions();   // <- ensure sections reflect the currently checked mode
   document.getElementById("ontology-settings-modal").style.display = "block";
   updateOntologyPreview();
@@ -246,27 +313,54 @@ function openOntologySettingsModal() {
   updateOntologyPreview();
 }
 
-function saveOntologySettingsFromModal() {
+async function saveOntologySettingsFromModal() {
   const base = document.getElementById("ontology-base-iri-input").value.trim();
   const label = document.getElementById("ontology-label-input").value.trim();
   const creator = document.getElementById("ontology-creator-input").value.trim();
   const description = document.getElementById("ontology-description-input").value.trim();
-  const delimiter = getSelectedDelimiter();
+  const delimiter = document.querySelector('input[name="base-iri-delimiter"]:checked').value;
+  const iriMode = document.querySelector('input[name="iri-mode"]:checked').value;
+  const opaqueLeading = document.getElementById('opaque-leading').value;
+  const opaqueDigits  = +document.getElementById('opaque-digits').value;
+  const opaqueStart   = +document.getElementById('opaque-start').value;
+  const readableCase  = document.getElementById('readable-case').value;
 
-  // NEW:
-  const iriMode = document.querySelector('input[name="iri-mode"]:checked')?.value || "opaque";
-  const opaqueLeading = document.getElementById("opaque-leading").value.trim() || "ont";
-  const opaqueDigits  = Math.max(1, parseInt(document.getElementById("opaque-digits").value, 10) || 6);
-  const opaqueStart   = Math.max(1, parseInt(document.getElementById("opaque-start").value, 10) || 1);
-  const readableCase  = document.getElementById("readable-case").value || "PascalCase";
-
-  generateOntologySettings(
+  const next = generateOntologySettings(
     base, label, creator, description, delimiter,
     iriMode, opaqueLeading, opaqueDigits, opaqueStart, readableCase
   );
 
-  document.getElementById("ontology-settings-modal").style.display = "none";
+  await saveOntologySettings(next);
+  document.getElementById('ontology-settings-modal').style.display = 'none';
 }
+
+// On DOM ready
+document.addEventListener('DOMContentLoaded', async () => {
+  // 1) Ensure DB stores exist + load settings into cache
+  await settingsLoad(); // fills SETTINGS_CACHE
+
+  // 2) Build the table once
+  initHandsontable();
+
+  // 3) Populate settings UI
+  const s = getOntologySettings();
+  document.getElementById('ontology-label-input').value = s[w3cIRI.RDFS_LABEL] || '';
+  document.getElementById('ontology-creator-input').value = s[w3cIRI.DCTERMS_CREATOR] || '';
+  document.getElementById('ontology-description-input').value = s[w3cIRI.DCTERMS_DESCRIPTION] || '';
+  document.getElementById('ontology-base-iri-input').value = s.base || '';
+  document.querySelector(`input[name="base-iri-delimiter"][value="${s.delimiter || '/'}"]`).checked = true;
+  document.querySelector(`input[name="iri-mode"][value="${s.iriMode || 'opaque'}"]`).checked = true;
+  document.getElementById('opaque-leading').value = s.opaqueLeading || 'ont';
+  document.getElementById('opaque-digits').value = s.opaqueDigits || 6;
+  document.getElementById('opaque-start').value = s.opaqueStart || 1;
+  document.getElementById('readable-case').value = s.readableCase || 'PascalCase';
+
+  // 4) HOT-dependent post-init
+  setIsCuratedInForAllRows();
+
+  // 5) Any other startup (buttons, etc.)
+  updateReloadSessionButton();
+});
 
 
 function zeroPad(n, width) {
@@ -391,7 +485,7 @@ const getColumnDefinitions = () => {
         Handsontable.renderers.TextRenderer.apply(this, [instance, td, row, col, prop, text, cellProperties]);
       }
     },
-    { type: 'text' } // is curated in ontology
+    { type: 'text' }, // is curated in ontology
   ];
 };
 
@@ -399,7 +493,7 @@ const getColumnDefinitions = () => {
 const getInitialData = () => {
   console.info('getInitialData happened');
   return [
-    ["http://example.org/ont000001", "Person", "Class", "A human person.", "cco2:ont00001017", "http://example.org/ExampleOntology"],
+    ["http://example.org/ont000001", "Doctor", "Class", "A human person who has earned a doctorate.", "cco2:ont00001017", "http://example.org/ExampleOntology"],
     ["http://example.org/ont000002", "Bob", "NamedIndividual", "An instance of a Person.", "cco2:ont00001262", "http://example.org/ExampleOntology"],
     ["http://example.org/ont000003", "has vehicle", "ObjectProperty", "x hasVehicle y iff x possesses y and y is a Vehicle.", "ex:Owns", "http://example.org/ExampleOntology"],
     ["http://example.org/ont000004", "Automobile", "Class", "A ground vehicle that is designed to transport passengers.", "cco2:ont00000618", "http://example.org/ExampleOntology"],
@@ -407,11 +501,13 @@ const getInitialData = () => {
 ];
 };
 
+// Gets the column headers for the Handsontable instance.  
 const getColumnHeaders = () => {
   console.info('getColumnHeaders happened');
   return ["iri", "label", "element type", "definition", "is a", "is curated in ontology"].concat(customPredicates);
 };
 
+// Creates a Handsontable instance in the given container with the provided data and column definitions.
 const createTable = (container, data, colHeaders, columns) => {
   console.info('createTable happened');
   return new Handsontable(container, {
@@ -419,135 +515,66 @@ const createTable = (container, data, colHeaders, columns) => {
     data: data,
     colHeaders: colHeaders,
     columns: columns,
+    wordWrap: true,
+    stretchH: 'none',
     rowHeaders: true,
+    rowHeaderWidth: 28,
     contextMenu: true,
-    hiddenColumns: { columns: loadHiddenColumns(), indicators: true }, // little triangle indicator
-    licenseKey: 'non-commercial-and-evaluation'
+    manualColumnResize: true,
+    hiddenColumns: { columns: [], indicators: true }, // little triangle indicator
+    licenseKey: 'non-commercial-and-evaluation',
+
+    // inject validator for first column across all rows
+    cells: (row, col) => {
+      const cellProps = {};
+
+      // your existing per-column logic…
+
+      // For custom predicate columns, enforce IRI vs literal
+      if (col >= BASE_COLS) {
+        const predIri = customPredicates[col - BASE_COLS];
+        const mode = getPredicateValueMode(predIri) || defaultModeForPredicate(predIri);
+
+        if (mode === 'iri') {
+          // basic validator: must resolve to IRI (absolute or CURIE)
+          cellProps.validator = (value, cb) => {
+            if (value == null || String(value).trim() === '') return cb(true); // allow empty
+            const v = String(value).trim();
+            // already <IRI>
+            if (/^<[^>\s]+>$/.test(v)) return cb(true);
+            // absolute IRI
+            if (/^https?:\/\/\S+$/i.test(v)) return cb(true);
+            // curie
+            if (/^[A-Za-z][\w-]*:[\w.-]+$/.test(v) && curieToIri(v)) return cb(true);
+            cb(false);
+          };
+          // Optionally a nice tooltip:
+          cellProps.allowInvalid = false;
+        } else {
+          // 'literal' — no special validator (or add your own literal constraints)
+        }
+      }
+
+      return cellProps;
+    },
+    cells(row, col) {
+      const meta = {};
+      if (col === 0) {
+        meta.validator = (value, cb) => cb(Boolean(resolveToIri(value)));
+        meta.allowInvalid = true; // keep editable, just mark invalid
+      }
+      return meta;
+    }
+    
   });
 };
-
-//
-function saveHiddenColumns(indices) {
-  try {
-    localStorage.setItem('hiddenColumns', JSON.stringify(indices || []));
-    console.info('[ManageColumns] Saved hidden columns:', indices);
-  } catch (e) {
-    console.error('[ManageColumns] Failed saving hidden columns', e);
-  }
-}
-
-function loadHiddenColumns() {
-  try {
-    var raw = localStorage.getItem('hiddenColumns');
-    var arr = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(arr)) return [];
-    return arr;
-  } catch (e) {
-    console.error('[ManageColumns] Failed loading hidden columns', e);
-    return [];
-  }
-}
-
-function applyHiddenColumnsToHot() {
-  try {
-    var indices = loadHiddenColumns();
-    hotInstance.updateSettings({ hiddenColumns: { columns: indices, indicators: true } });
-    console.info('[ManageColumns] Applied hidden columns to table:', indices);
-  } catch (e) {
-    console.error('[ManageColumns] Failed applying hidden columns', e);
-  }
-}
-
-
-
-// Applies hidden columns to the current Handsontable instance
-function loadHiddenColumnNames() {
-  try {
-    const raw = localStorage.getItem('hiddenColumnNames');
-    const arr = raw ? JSON.parse(raw) : [];
-    return Array.isArray(arr) ? arr : [];
-  } catch (e) {
-    console.error('[ManagePredicates] loadHiddenColumnNames failed', e);
-    return [];
-  }
-}
-
-// Returns array of hidden column indices for current HOT instance
-function saveHiddenColumnNames(names) {
-  try {
-    localStorage.setItem('hiddenColumnNames', JSON.stringify(names || []));
-    console.info('[ManagePredicates] Saved hidden names:', names);
-  } catch (e) {
-    console.error('[ManagePredicates] saveHiddenColumnNames failed', e);
-  }
-}
-
-/** Apply hidden names to current HOT by mapping names -> indices */
-function applyHiddenColumnsByName() {
-  if (!hotInstance) return;
-  try {
-    const headers = hotInstance.getColHeader();
-    const hiddenNames = new Set(loadHiddenColumnNames());
-    const indices = [];
-    headers.forEach((h, i) => {
-      if (hiddenNames.has(String(h))) indices.push(i);
-    });
-    hotInstance.updateSettings({ hiddenColumns: { columns: indices, indicators: true }});
-    console.info('[ManagePredicates] Applied hidden columns:', indices, '(names=', [...hiddenNames], ')');
-  } catch (e) {
-    console.error('[ManagePredicates] applyHiddenColumnsByName failed', e);
-  }
-}
-
-// Applies hidden columns to current HOT instance
-function populateColumnsToggleUI() {
-  try {
-    const container = document.getElementById('columns-toggle-list');
-    if (!container) return;
-    const headers = hotInstance.getColHeader();
-    const hidden = new Set(loadHiddenColumnNames());
-
-    container.innerHTML = '';
-    headers.forEach((name, idx) => {
-      const safeId = 'colvis-' + btoa(String(name)).replace(/=/g, '');
-      const row = document.createElement('div');
-      row.style.display = 'flex';
-      row.style.alignItems = 'center';
-      row.style.gap = '8px';
-      row.style.margin = '4px 0';
-
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.id = safeId;
-      cb.dataset.name = String(name);
-      // checked = visible; unchecked = hidden
-      cb.checked = !hidden.has(String(name));
-
-      const label = document.createElement('label');
-      label.htmlFor = safeId;
-      label.textContent = String(name);
-
-      row.appendChild(cb);
-      row.appendChild(label);
-      container.appendChild(row);
-    });
-  } catch (e) {
-    console.error('[ManagePredicates] populateColumnsToggleUI failed', e);
-  }
-}
-
-// Initialize the Handsontable instance with initial data and column definitions
-hotInstance = createTable(container, getInitialData(), getColumnHeaders(), getColumnDefinitions());
-attachHotHooks();
-applyHiddenColumnsToHot();
-harvestRowsIntoVocab(getInitialData());
 
 /**
  * Sets cco2:ont00001760 ('is curated in ontology') value for rows with empty cells in that column,
  * using the ontology's IRI from ontology settings.
  */
 function setIsCuratedInForAllRows() {
-  const settings = JSON.parse(localStorage.getItem("ontologySettings") || "{}");
+  const settings = getOntologySettings();
   const ontologyIRI = settings["iri"];
 
   if (!ontologyIRI) {
@@ -577,7 +604,28 @@ function setIsCuratedInForAllRows() {
   console.info(`[setIsCuratedInForAllRows] Set for ${updatedCount} of ${totalRows} rows (only empty cells updated)`);
 }
 
-setIsCuratedInForAllRows(); // This uses the ontology IRI from localStorage
+/**
+ * Initialize Handsontable once
+ */
+function initHandsontable() {
+  if (hotInitDone) return;
+  if (hotInstance) { try { hotInstance.destroy(); } catch (_) {} }
+
+  // 1) Build rows/schema
+  const rows     = getInitialData();
+  const headers  = getColumnHeaders();
+  const columns  = getColumnDefinitions();
+  const settings = getOntologySettings(); // IndexedDB-backed cache
+
+  // 2) Create HOT using 4-arg createTable
+  hotInstance = createTable(container, rows, headers, columns);
+  attachHotHooks?.();
+
+  // 3) Finish init
+  harvestRowsIntoVocab?.(rows);
+  hotInitDone = true;
+}
+
 
 // This function checks if the element type is a predicate
 window.getIsAPredicateForRow = (rowIndex) => {
@@ -587,16 +635,22 @@ window.getIsAPredicateForRow = (rowIndex) => {
 };
 
 // This set of functions are used for outputting RDF.
-// getOntologyIRI retrieves the ontology IRI from localStorage or returns a default value.
+// getOntologyIRI retrieves the ontology IRI or returns a default value.
 // generateRdfString takes the rows of the Handsontable instance and converts them into an RDF string in the specified format.
 // handleExport generates the file
 
 function getOntologyIRI() {
-  const settings = JSON.parse(localStorage.getItem('ontologySettings') || '{}');
+  const settings = getOntologySettings();
   return settings.iri || "http://example.org/ExampleOntology";
 }
 
-const generateRdfString = (rows, format = 'ttl') => {
+/**
+ * Generates an RDF string from the given rows in the specified format.
+ * @param {*} rows
+ * @param {*} format 
+ * @returns 
+ */
+async function generateRdfString (rows, format = 'ttl') {
   console.info('generateRdfString happened');
   const formatMap = {
     ttl: 'Turtle',
@@ -607,33 +661,51 @@ const generateRdfString = (rows, format = 'ttl') => {
   };
   const writer = new N3.Writer({ prefixes: iriPrefixes, format: formatMap[format] || 'Turtle' });
 
-  const settings = loadOntologySettings();
+  const settings = getOntologySettings();
   const ontologyIRI = settings["iri"];
 
   writer.addQuad(
     N3.DataFactory.namedNode(ontologyIRI),
-    N3.DataFactory.namedNode('rdf:type'),
-    N3.DataFactory.namedNode('owl:Ontology')
+    N3.DataFactory.namedNode(w3cIRI.RDF_TYPE),
+    N3.DataFactory.namedNode(w3cIRI.OWL_ONTOLOGY)
   );
 
-  Object.entries(settings).forEach(([key, value]) => {
-    if (key === "iri") return; // already handled
-    if (key === "owl:imports" && Array.isArray(value)) {
-      value.forEach(importIRI => {
+  // helpers
+  const isAbsoluteIri = (s) => typeof s === 'string' && /^https?:\/\//i.test(s);
+  const resolvePredicate = (k) => {
+    if (isAbsoluteIri(k)) return k;
+    // optionally support CURIE keys in settings:
+    if (typeof k === 'string' && k.includes(':')) {
+      try { const iri = curieToIri(k); if (iri) return iri; } catch (_) {}
+    }
+    return null;
+  };
+
+  for (const [key, value] of Object.entries(settings)) {
+    if (key === 'iri') continue;                             // already handled
+    if (key === 'owlImportsLocal') continue;                 // app-internal cache: skip
+    if (key === w3cIRI.OWL_IMPORTS && Array.isArray(value)) { // emit imports as IRIs
+      for (const importIRI of value) {
         writer.addQuad(
           N3.DataFactory.namedNode(ontologyIRI),
-          N3.DataFactory.namedNode('owl:imports'),
+          N3.DataFactory.namedNode(w3cIRI.OWL_IMPORTS),
           N3.DataFactory.namedNode(importIRI)
         );
-      });
-    } else if (value) {
+      }
+      continue;
+    }
+
+    // Emit only if predicate is an IRI (or resolvable CURIE) and value is scalar
+    const pred = resolvePredicate(key);
+    const isScalar = ['string','number','boolean'].includes(typeof value);
+    if (pred && isScalar) {
       writer.addQuad(
         N3.DataFactory.namedNode(ontologyIRI),
-        N3.DataFactory.namedNode(key),
-        N3.DataFactory.literal(value)
+        N3.DataFactory.namedNode(pred),
+        N3.DataFactory.literal(String(value))
       );
     }
-  });
+  }
 
 
   rows.forEach((row) => {
@@ -641,18 +713,19 @@ const generateRdfString = (rows, format = 'ttl') => {
     if (!subject || !type) return;
 
     writer.addQuad(N3.DataFactory.namedNode(subject),
-      N3.DataFactory.namedNode('rdf:type'),
-      N3.DataFactory.namedNode(`owl:${type}`));
+      N3.DataFactory.namedNode(w3cIRI.RDF_TYPE),
+      N3.DataFactory.namedNode(`http://www.w3.org/2002/07/owl#${type}`)
+    );
 
     if (label) {
       writer.addQuad(N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode('rdfs:label'),
+        N3.DataFactory.namedNode(w3cIRI.RDFS_LABEL),
         N3.DataFactory.literal(label));
     }
 
     if (definition) {
       writer.addQuad(N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode('skos:definition'),
+        N3.DataFactory.namedNode(w3cIRI.SKOS_DEFINITION),
         N3.DataFactory.literal(definition));
     }
 
@@ -671,25 +744,48 @@ const generateRdfString = (rows, format = 'ttl') => {
       }
     }
 
-
+    // writer
     if (isCuratedInOntology) {
-      writer.addQuad(N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode('cco2:ont00001760'), // 'cco2:ont00001760' is curated in ontology
-        N3.DataFactory.literal(isCuratedInOntology));
+      const obj = asObjectTerm(isCuratedInOntology);
+      writer.addQuad(
+        N3.DataFactory.namedNode(subject),
+        N3.DataFactory.namedNode(w3cIRI.CCO_CURATEDIN),
+        obj
+      );
     }
 
     customPredicates.forEach((predicate, idx) => {
-    const colIndex = BASE_COLS + idx;  // start right after the 6 base columns
-    const cellValue = row[colIndex];
-    if (cellValue) {
-      writer.addQuad(
-        N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode(predicate),
-        N3.DataFactory.literal(cellValue)
-      );
-    }
-}); 
+      const colIndex = BASE_COLS + idx;
+      const cellValue = row[colIndex];
+      if (!cellValue) return;
 
+      const mode = getPredicateValueMode(predicate) || defaultModeForPredicate(predicate);
+
+      if (mode === 'iri') {
+        // Try to emit as resource (NamedNode); fallback to literal if not resolvable
+        const v = String(cellValue).trim();
+        let obj = null;
+        if (/^<[^>\s]+>$/.test(v)) obj = N3.DataFactory.namedNode(v.slice(1, -1));
+        else if (/^https?:\/\/\S+$/i.test(v)) obj = N3.DataFactory.namedNode(v);
+        else if (/^[A-Za-z][\w-]*:[\w.-]+$/.test(v)) {
+          const iri = curieToIri(v);
+          if (iri) obj = N3.DataFactory.namedNode(iri);
+        }
+
+        writer.addQuad(
+          N3.DataFactory.namedNode(subject),
+          N3.DataFactory.namedNode(predicate),
+          obj || N3.DataFactory.literal(v)
+        );
+      } else {
+        // literal mode
+        writer.addQuad(
+          N3.DataFactory.namedNode(subject),
+          N3.DataFactory.namedNode(predicate),
+          N3.DataFactory.literal(String(cellValue))
+        );
+      }
+    });
   });
 
   return new Promise((resolve, reject) => {
@@ -720,10 +816,34 @@ const extensions = {
   trig: 'trig'
 };
 
+function idbRequest(req) {
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function idbTransactionDone(tx) {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('Transaction failed'));
+    tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
+  });
+}
+
+// Delete (optional)
+async function clearOntologySettings() {
+  const db = await ensureDb();
+  const tx = db.transaction(SETTINGS_STORE, 'readwrite');
+  tx.objectStore(SETTINGS_STORE).delete('ontologySettings');
+  await idbTransactionDone(tx);
+  showToast('Ontology settings cleared from database.', 'info');
+}
+
 const handleExport = async (shouldDownload = false) => {
   console.info('handleExport happened');
   const rows = hotInstance.getData();
-  const format = document.getElementById('exportFormat').value;
+  const format = document.getElementById('exportFormat')?.value || 'ttl';
 
   try {
     const rdfString = await generateRdfString(rows, format);
@@ -745,7 +865,314 @@ const handleExport = async (shouldDownload = false) => {
   }
 };
 
-// This is called by generateOntologySettings to get the current date parts
+/**
+ * Saves the current RDF data to IndexedDB.
+ * Uses the idb library for IndexedDB operations.
+ * @params none
+ * @returns {Promise<void>}
+ */
+async function saveRDFtoIndexedDB() {
+  console.info('saveRDFtoIndexedDB happened');
+  const rows = hotInstance.getData();
+  // A <button> has no useful .value — read from the format <select>
+  const format = document.getElementById('exportFormat')?.value || 'ttl';
+
+  try {
+    const rdfString = await generateRdfString(rows, format);
+    output.value = rdfString;
+
+    const db = await ensureDb();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    store.add({ rdfData: rdfString, format, timestamp: new Date().toISOString() });
+    await idbTransactionDone(tx);
+
+    console.info('RDF data saved to IndexedDB successfully.');
+    showToast('RDF data saved to database successfully.', 'success');
+
+    updateReloadSessionButton(); // reflect availability immediately
+  } catch (e) {
+    console.error('saveRDFtoIndexedDB failed:', e);
+    showToast('Failed to save RDF data to database.', 'error');
+  }
+};
+
+/**
+ * Checks if there is a prior saved session in IndexedDB.
+ * @params none
+ * @returns {Promise<boolean>} 
+ */
+async function hasPriorSession() {
+  const db = await ensureDb();
+  const tx = db.transaction(STORE_NAME, 'readonly');
+  const store = tx.objectStore(STORE_NAME);
+  const count = await idbRequest(store.count());
+  await idbTransactionDone(tx);
+  return count > 0;
+}
+
+/**
+ * Ensures DB + object store exist; returns an IDBPDatabase instance
+ * @params none
+ * @returns {Promise<IDBPDatabase>}
+ */
+function ensureDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onupgradeneeded = (event) => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
+        db.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result); // <- IDBDatabase
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// Show/hide + enable/disable the button
+function setReloadBtnVisible(isVisible) {
+  const btn = document.getElementById('reloadSavedSessionBtn');
+  if (!btn) return;
+  btn.hidden = !isVisible;
+  btn.disabled = !isVisible;
+}
+// Check and update the button (call on load and after saves)
+async function updateReloadSessionButton() {
+  try {
+    console.info('updateReloadSessionButton happened');
+    const visible = await hasPriorSession();
+    setReloadBtnVisible(visible);
+  }
+    catch (e) {
+    console.warn('updateReloadSessionButton failed', e);}
+}
+
+/**
+ * Maps saved format strings to N3.Parser formats.
+ * @param {string} format
+ * @returns 
+ */
+function n3FormatForSaved(format) {
+  // Map your saved "format" (ttl|rdf|jsonld|nt|trig) to N3.Parser formats
+  const f = String(format || '').toLowerCase();
+  if (f === 'ttl' || f.includes('turtle')) return 'Turtle';
+  if (f === 'nt'  || f.includes('n-triple')) return 'N-Triples';
+  if (f === 'trig') return 'TriG';
+  // N3.Parser does not parse RDF/XML or JSON-LD. If you need those, convert before parse.
+  // For now, treat others as Turtle; you can extend later with rdfxml/jsonld conversions.
+  return 'Turtle';
+}
+
+function firstLiteral(objs) {
+  // pick the first literal string from an array of objects (already stringified below)
+  for (const o of objs) {
+    if (o.startsWith('"')) return o.replace(/^"(.*)"(?:@[\w-]+|\^\^<[^>]+>)?$/, '$1');
+  }
+  return '';
+}
+
+function iriFromObjects(objs) {
+  // pick the first IRI-looking object like <http://...>
+  for (const o of objs) {
+    const m = /^<([^>]+)>$/.exec(o);
+    if (m) return m[1];
+  }
+  return '';
+}
+
+function asObjectTerm(value) {
+  if (value == null) return null;
+  const v = String(value).trim();
+
+  // Already wrapped <IRI>
+  if (/^<[^>\s]+>$/.test(v)) {
+    return N3.DataFactory.namedNode(v.slice(1, -1));
+  }
+  // Absolute IRI
+  if (/^https?:\/\/\S+$/i.test(v)) {
+    return N3.DataFactory.namedNode(v);
+  }
+  // CURIE → IRI (uses your curieToIri)
+  if (/^[A-Za-z][\w-]*:[\w.-]+$/.test(v)) {
+    const iri = curieToIri(v);
+    if (iri) return N3.DataFactory.namedNode(iri);
+  }
+  // Fallback: literal
+  return N3.DataFactory.literal(v);
+}
+
+async function storeGetAll(store) {
+  if ('getAll' in store) return idbRequest(store.getAll());
+  const out = [];
+  await new Promise((resolve, reject) => {
+    const req = store.openCursor();
+    req.onsuccess = (e) => {
+      const c = e.target.result;
+      if (c) { out.push(c.value); c.continue(); } else resolve();
+    };
+    req.onerror = () => reject(req.error);
+  });
+  return out;
+}
+
+// Reloads the most recent saved session from IndexedDB
+async function reloadSavedSession() {
+  try {
+    const db = await ensureDb();
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+
+    // getAll is widely supported; cursor fallback shown below if you need it
+    let all = await storeGetAll(store);
+    await idbTransactionDone(tx);
+
+    if (!all || !all.length) {
+      console.warn('No prior session found in IndexedDB.');
+      showToast('No prior session found.', 'info');
+      return;
+    }
+
+    // Use the latest record
+    const { rdfData, format } = all[all.length - 1];
+
+    // Parse RDF → quads
+    const parser = new N3.Parser({ format: n3FormatForSaved(format) });
+    const quads = parser.parse(rdfData);
+
+    // Build subject → predicate→values map + set of all predicates
+    const subjMap = new Map();
+    const extraPreds = new Set();
+
+    for (const q of quads) {
+      const s = q.subject.termType === 'BlankNode' ? `_:${q.subject.value}` : q.subject.value;
+      const p = q.predicate.value;
+
+      let o;
+      if (q.object.termType === 'Literal') {
+        const lang = q.object.language ? `@${q.object.language}` : '';
+        const dt = q.object.datatype && q.object.datatype.value !== 'http://www.w3.org/2001/XMLSchema#string'
+          ? `^^<${q.object.datatype.value}>` : '';
+        o = `"${q.object.value}"${lang}${dt}`;
+      } else if (q.object.termType === 'BlankNode') {
+        o = `_:${q.object.value}`;
+      } else {
+        o = `<${q.object.value}>`;
+      }
+
+      if (!subjMap.has(s)) subjMap.set(s, new Map());
+      const pMap = subjMap.get(s);
+      if (!pMap.has(p)) pMap.set(p, new Set());
+      pMap.get(p).add(o);
+    }
+
+    const firstLiteral = (arr) =>
+      (arr || []).find(v => v.startsWith('"'))?.replace(/^"(.*)"(?:@[\w-]+|\^\^<[^>]+>)?$/, '$1') || '';
+
+    const iriFromObjects = (arr) => {
+      for (const o of arr || []) {
+        const m = /^<([^>]+)>$/.exec(o);
+        if (m) return m[1];
+      }
+      return '';
+    };
+
+    const ontologyIriFromSettings = getOntologyIRI();
+
+    const rowsTmp = [];
+    for (const [s, pMap] of subjMap.entries()) {
+
+      if (s === ontologyIriFromSettings) continue;
+      const rdfTypes = Array.from(pMap.get(w3cIRI.RDF_TYPE)?.values() || []);
+      const hasType = iri => rdfTypes.includes(`<${iri}>`);
+      if (hasType(w3cIRI.OWL_ONTOLOGY)) continue;
+
+      let elementType = '';
+      if (hasType(w3cIRI.OWL_CLASS))           elementType = 'Class';
+      else if (hasType(w3cIRI.OWL_OBJPROP))    elementType = 'ObjectProperty';
+      else if (hasType(w3cIRI.OWL_DATATYPE))   elementType = 'DatatypeProperty';
+      else if (hasType(w3cIRI.OWL_ANNOPROP))   elementType = 'AnnotationProperty';
+      else if (hasType(w3cIRI.OWL_NAMEDIND))   elementType = 'NamedIndividual';
+      else if (hasType(w3cIRI.OWL_ONTOLOGY))   elementType = 'Ontology'; // This is an outlier case, mostly for error handling
+      else if (rdfTypes.length)                elementType = 'NamedIndividual';
+
+      const label = firstLiteral(Array.from(pMap.get(w3cIRI.RDFS_LABEL)?.values() || []));
+      const definition = firstLiteral(Array.from(pMap.get(w3cIRI.SKOS_DEFINITION)?.values() || []));
+
+      let isA = '';
+      if (elementType === 'Class') {
+        isA = iriFromObjects(Array.from(pMap.get(w3cIRI.RDFS_SUBCLASS)?.values() || []));
+      } else if (elementType === 'ObjectProperty' || elementType === 'DatatypeProperty' || elementType === 'AnnotationProperty') {
+        isA = iriFromObjects(Array.from(pMap.get(w3cIRI.RDFS_SUBPROP)?.values() || []));
+      } else if (elementType === 'NamedIndividual') {
+        const classish = rdfTypes
+          .map(v => /^<([^>]+)>$/.exec(v)?.[1])
+          .filter(u => u && u !== w3cIRI.OWL_CLASS && u !== w3cIRI.OWL_OBJPROP && u !== w3cIRI.OWL_DATAPROP && u !== w3cIRI.OWL_ANNOPROP);
+        if (classish.length) isA = classish[0];
+      }
+
+      const curatedVals = Array.from(pMap.get(w3cIRI.CCO_CURATEDIN)?.values() || []);
+      const curatedIn = iriFromObjects(curatedVals) || firstLiteral(curatedVals);
+
+      // base row
+      const row = Array.from({ length: BASE_COLS }, () => '');
+      row[0] = s;
+      row[1] = label;
+      row[2] = elementType;
+      row[3] = definition;
+      row[4] = isA;
+      row[5] = curatedIn;
+
+      // gather extra predicates (not mapped to base columns)
+      for (const p of pMap.keys()) {
+        if (
+          p === w3cIRI.RDFS_LABEL || p === w3cIRI.SKOS_DEFINITION || p === w3cIRI.RDF_TYPE ||
+          p === w3cIRI.RDFS_SUBCLASS || p === w3cIRI.RDFS_SUBPROP || p === w3cIRI.CCO_CURATEDIN
+        ) continue;
+        extraPreds.add(p);
+      }
+
+      rowsTmp.push({ row, pMap });
+    }
+
+    // adopt discovered extra predicates as your custom columns (sorted for stability)
+    const extraList = Array.from(extraPreds).sort();
+    customPredicates.splice(0, customPredicates.length, ...extraList);
+
+    const finalRows = rowsTmp.map(({ row, pMap }) => {
+      const extended = row.concat(extraList.map(() => ''));
+      extraList.forEach((predIri, i) => {
+        const vals = Array.from(pMap.get(predIri)?.values() || []);
+        extended[BASE_COLS + i] = vals.join(' ; ');
+      });
+      return extended;
+    });
+
+    // Rebuild Handsontable
+    const newHeaders = getColumnHeaders(); // base + customPredicates
+    const newColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
+
+    if (hotInstance) { try { hotInstance.destroy(); } catch(_) {} }
+    hotInstance = createTable(container, finalRows, newHeaders, newColumns);
+    attachHotHooks();
+    harvestRowsIntoVocab?.(finalRows);
+
+    showToast(`✅ Reloaded ${subjMap.size} subject${subjMap.size!==1?'s':''} from latest saved RDF`, 'success');
+  } catch (e) {
+    console.error('[reloadSavedSession] failed:', e);
+    showToast('❌ Failed to reload prior session — see console', 'error');
+  }
+}
+
+/**
+ * Gets the current date parts (year, month, day) as zero-padded strings.
+ * @returns 
+ */
 function getCurrentDateParts() {
   const now = new Date();
   const year = now.getFullYear();
@@ -768,130 +1195,6 @@ function toPascalCase(str) {
     .replace(/[^a-z0-9]+(.)/g, (_, chr) => chr.toUpperCase()) // handle word boundaries
     .replace(/^./, chr => chr.toUpperCase()); // capitalize first letter
 }
-
-// This set of functions handle the prefixes
-
-// Prefix Manager Logic
-
-// Show Prefix Manager modal
-function showPrefixManagerModal() {
-  populatePrefixTable();
-  document.getElementById('prefix-manager-modal').style.display = 'block';
-}
-
-// Hide Prefix Manager modal
-function hidePrefixManagerModal() {
-  document.getElementById('prefix-manager-modal').style.display = 'none';
-}
-
-// Populate the prefix table
-function populatePrefixTable() {
-  const tableBody = document.querySelector('#prefix-table tbody');
-  tableBody.innerHTML = '';
-
-  Object.entries(iriPrefixes).forEach(([prefix, iri]) => {
-    const row = document.createElement('tr');
-
-    const prefixCell = document.createElement('td');
-    prefixCell.textContent = prefix;
-
-    const iriCell = document.createElement('td');
-    iriCell.textContent = iri;
-
-    const removeCell = document.createElement('td');
-    const removeBtn = document.createElement('button');
-    removeBtn.textContent = '❌';
-    removeBtn.onclick = () => {
-      delete iriPrefixes[prefix];
-      populatePrefixTable();
-    };
-    removeCell.appendChild(removeBtn);
-
-    row.appendChild(prefixCell);
-    row.appendChild(iriCell);
-    row.appendChild(removeCell);
-    tableBody.appendChild(row);
-  });
-}
-
-// Enable add button only if both inputs are filled
-function handlePrefixInputChange() {
-  const prefix = document.getElementById('new-prefix').value.trim();
-  const iri = document.getElementById('new-prefix-iri').value.trim();
-  const addBtn = document.getElementById('add-prefix-btn');
-  addBtn.disabled = !(prefix && iri);
-}
-
-// Add new prefix
-function handleAddPrefix() {
-  const prefix = document.getElementById('new-prefix').value.trim();
-  const iri = document.getElementById('new-prefix-iri').value.trim();
-
-  if (!prefix || !iri) return;
-  if (iriPrefixes[prefix]) {
-    alert('Prefix already exists!');
-    return;
-  }
-
-  iriPrefixes[prefix] = iri;
-  document.getElementById('new-prefix').value = '';
-  document.getElementById('new-prefix-iri').value = '';
-  document.getElementById('add-prefix-btn').disabled = true;
-
-  populatePrefixTable();
-}
-
-// Save prefixes and close modal
-function savePrefixesAndClose() {
-  console.info('[prefix-manager] Prefixes saved:', iriPrefixes);
-  hidePrefixManagerModal();
-}
-
-// Cancel and close without saving (no rollback necessary for in-memory edit)
-function cancelPrefixesModal() {
-  hidePrefixManagerModal();
-}
-
-/**
- * Opens the prefix manager modal and populates the table with current prefixes
- */
-function openPrefixManagerModal() {
-  try {
-    const tableBody = document.getElementById("prefix-table-body");
-    tableBody.innerHTML = ""; // Clear old rows
-
-    // Loop through iriPrefixes and create a row for each
-    Object.entries(iriPrefixes).forEach(([prefix, iri]) => {
-      const row = document.createElement("tr");
-
-      const prefixCell = document.createElement("td");
-      prefixCell.textContent = prefix;
-      row.appendChild(prefixCell);
-
-      const iriCell = document.createElement("td");
-      iriCell.textContent = iri;
-      row.appendChild(iriCell);
-
-      const removeCell = document.createElement("td");
-      const removeBtn = document.createElement("button");
-      removeBtn.textContent = "❌";
-      removeBtn.addEventListener("click", () => {
-        delete iriPrefixes[prefix];
-        openPrefixManagerModal(); // re-render the table
-      });
-      removeCell.appendChild(removeBtn);
-      row.appendChild(removeCell);
-
-      tableBody.appendChild(row);
-    });
-
-    document.getElementById("prefix-manager-modal").style.display = "block";
-  } catch (err) {
-    console.error("[openPrefixManagerModal] Failed to populate prefix table:", err);
-    showToast("❌ Failed to open prefix manager", "error");
-  }
-}
-
 
 /*
 * This set of functions are used to assist the user with a quick lookup service.
@@ -989,30 +1292,22 @@ function resolveToIri(value) {
   // If they picked from the dropdown, it may be "Label — CURIE"
   const maybeCode = v.includes("—") ? v.split("—").pop().trim() : v;
 
-  // Already a full IRI?
-  if (/^https?:\/\//i.test(maybeCode)) return maybeCode;
+  // Already a full IRI? (accept any scheme, not just http)
+  if (/^https?:\/\/\S+$/i.test(maybeCode) || /^urn:[^:\s]+:.+/i.test(maybeCode) || /^<[^>\s]+>$/.test(maybeCode)) {
+    return maybeCode.replace(/^<|>$/g, ''); // allow <IRI> form too
+  }
 
   // CURIE?
   if (maybeCode.includes(":")) {
     const [pfx, local] = maybeCode.split(":");
     const base = iriPrefixes[pfx];
     if (base) return base + local;
-    // Or look up by known curie
+
     const rec = vocabByCurie.get(maybeCode);
     if (rec) return rec.iri;
   }
-
-  // Label match (case-insensitive)
-  const byLabel = vocabByLabelLC.get(maybeCode.toLowerCase());
-  if (byLabel) return byLabel.iri;
-
-  // Last resort: if it looks like an IRI, return as-is
-  if (/^[a-z]+:/i.test(maybeCode)) return maybeCode;
-
-  return null;
+  return null; // not resolvable → invalid
 }
-
-
 
 // This function is used to harvest rows from a Handsontable instance into the vocabulary index.
 function harvestRowsIntoVocab(rows) {
@@ -1053,7 +1348,7 @@ function attachHotHooks() {
   // NEW: when rows are created, auto-assign IRIs
   hotInstance.addHook('afterCreateRow', (index, amount, source) => {
     try {
-      const s = loadOntologySettings();
+      const s = getOntologySettings();
       const mode = s.iriMode || 'opaque';
 
       if (mode === 'opaque') {
@@ -1081,7 +1376,7 @@ function attachHotHooks() {
   hotInstance.addHook('afterChange', (changes, source) => {
     if (!Array.isArray(changes) || source === 'LoadData') return;
     try {
-      const s = loadOntologySettings();
+      const s = getOntologySettings();
       if ((s.iriMode || 'opaque') !== 'readable') return;
 
       // gather existing iris for uniqueness checks
@@ -1119,6 +1414,7 @@ function attachHotHooks() {
   });
 }
 
+// This function backfills IRIs in the Handsontable instance based on the selected mode.
 function backfillIris() {
   try {
     if (!hotInstance) {
@@ -1179,85 +1475,6 @@ function backfillIris() {
   }
 }
 
-document.getElementById('backfillIRIsBtn')
-  .addEventListener('click', backfillIris);
-
-
-// This function opens the ontology imports modal and populates it with current imports.
-// It retrieves the imports from the ontology settings and displays them with their status.
-function openImportsModal() {
-  const modal = document.getElementById("ontology-imports-modal");
-  const listContainer = document.getElementById("import-list");
-  listContainer.innerHTML = "";
-
-  const settings = loadOntologySettings();
-  const imports = settings["owl:imports"] || [];
-
-  imports.forEach((iri) => {
-    const localKey = `import:${iri}`;
-    const isLoaded = !!localStorage.getItem(localKey);
-    const statusIcon = isLoaded ? "✅" : "❌";
-
-    const div = document.createElement("div");
-    div.innerHTML = `
-      <div style="margin-bottom:10px">
-        <strong>${iri}</strong> ${statusIcon}<br>
-        <input type="file" onchange="handleImportFileUpload(event, '${iri}')">
-        <span id="validation-${btoa(iri)}" style="color:red; display:none;"></span>
-      </div>`;
-    listContainer.appendChild(div);
-  });
-
-  modal.style.display = "block";
-}
-
-
-// This function handles the file upload for ontology imports.
-function handleImportFileUpload(event, iri) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    const content = e.target.result;
-    const validationMsg = document.getElementById(`validation-${btoa(iri)}`);
-
-    if (!isValidOntology(content)) {
-      validationMsg.textContent = "⚠️ Not a valid RDF/OWL file";
-      validationMsg.style.display = "inline";
-      console.warn(`Rejected file for ${iri}`);
-      return;
-    }
-
-    localStorage.setItem(`import:${iri}`, content);
-    validationMsg.style.display = "none";
-    console.info(`Loaded valid ontology for ${iri}`);
-    openImportsModal();
-  };
-  reader.readAsText(file);
-}
-
-// This function adds a new import IRI to the ontology settings.
-function addImportIRI() {
-  const iriInput = document.getElementById("new-import-iri");
-  const iri = iriInput.value.trim();
-  if (!iri) return;
-
-  const settings = loadOntologySettings();
-  settings["owl:imports"] = settings["owl:imports"] || [];
-  if (!settings["owl:imports"].includes(iri)) {
-    settings["owl:imports"].push(iri);
-    localStorage.setItem('ontologySettings', JSON.stringify(settings));
-  }
-
-  iriInput.value = "";
-  openImportsModal();
-}
-
-function saveImportsAndClose() {
-  document.getElementById("ontology-imports-modal").style.display = "none";
-}
-
 function isValidOntology(content) {
   return (
     typeof content === 'string' &&
@@ -1266,29 +1483,12 @@ function isValidOntology(content) {
   );
 }
 
-
 // Gets n rows to the bottom of the Handsontable instance.
 function getRowCountInput() {
   const n = parseInt(document.getElementById("row-count").value, 10);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-
-// Listeners for adding rows
-document.getElementById("add-rows-btn").addEventListener("click", () => {
-  const n = getRowCountInput();
-  if (!n) { showToast("Enter a valid row count.", "error"); return; }
-  addRowsToTable(n);
-  showToast(`✅ ${n} row${n>1?'s':''} added`, "success");
-});
-
-// Listeners for removing rows
-document.getElementById("remove-rows-btn").addEventListener("click", () => {
-  const n = getRowCountInput();
-  if (!n) { showToast("Enter a valid row count.", "error"); return; }
-  removeRowsFromBottom(n);
-  showToast(`🗑️ ${n} row${n>1?'s':''} removed`, "info");
-});
 
 // This function adds n blank rows to the bottom of the Handsontable instance.
 function addRowsToTable(n = 1) {
@@ -1308,12 +1508,199 @@ function removeRowsFromBottom(n = 1) {
 }
 
 
+
+/**
+ * Returns [ {index, header} ] for custom predicate columns (all columns after BASE_COLS).
+ */
+function getCustomPredicateColumns() {
+  if (!hotInstance) return [];
+  const headers = hotInstance.getColHeader(); // includes hidden columns
+  const out = [];
+  for (let c = BASE_COLS; c < headers.length; c++) {
+    out.push({ index: c, header: String(headers[c]) });
+  }
+  return out;
+}
+
+/**
+ * Build the predicate modes checklist (custom predicates only).
+ * containerOrId: element or element id where the list goes.
+ */
+function renderPredicateModesChecklist(containerOrId) {
+  const container = typeof containerOrId === 'string'
+    ? document.getElementById(containerOrId)
+    : containerOrId;
+  if (!container) return;
+
+  // Collect custom predicate IRIs from your known list
+  // You already track them in `customPredicates` and align by BASE_COLS.
+  const preds = Array.isArray(customPredicates) ? [...customPredicates] : [];
+  const modes = getPredicateValueModes();
+
+  // Clear container
+  container.innerHTML = '';
+
+  // Build table
+  const table = document.createElement('table');
+  table.style.width = '80%';
+  table.style.borderCollapse = 'collapse';
+  table.style.padding = '0';
+  table.style.margin = '0';
+
+  // Header
+  const tableHead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+
+  const thPredicate = document.createElement('th');
+  thPredicate.textContent = 'Predicate';
+  thPredicate.style.textAlign = 'left';
+  thPredicate.style.padding = '2px 4px';
+  thPredicate.style.borderBottom = '1px solid #ccc';
+
+  const thIRI = document.createElement('th');
+  thIRI.textContent = 'Object is IRI?';
+  thIRI.style.textAlign = 'center';
+  thIRI.style.padding = '2px 4px';
+  thIRI.style.borderBottom = '1px solid #ccc';
+
+  // Build DOM heirarchy
+  headerRow.appendChild(thPredicate);
+  headerRow.appendChild(thIRI);
+  tableHead.appendChild(headerRow);
+  table.appendChild(tableHead);
+
+  // Populate rows
+  const tBody = document.createElement('tbody');
+  
+
+  preds.forEach((iri, i) => {
+    const tr = document.createElement('tr');
+
+    // predicate label (left)
+    const tdLabel = document.createElement('td');
+    tdLabel.style.padding = '2px';
+    tdLabel.style.borderBottom = '1px solid #f0f0f0';
+
+    const nice = (typeof iriToNiceLabel === 'function' ? iriToNiceLabel(iri) : iri);
+    const label = document.createElement('label');
+    const checkboxId = `pred-mode-${i}`;
+    label.setAttribute('for', checkboxId);
+    label.textContent = nice;
+    label.title = iri; // hover shows full IRI
+    tdLabel.appendChild(label);
+
+    // checkbox (right)
+    const tdChk = document.createElement('td');
+    tdChk.style.padding = '2px';
+    tdChk.style.borderBottom = '1px solid #f0f0f0';
+    tdChk.style.textAlign = 'center';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = checkboxId;
+    checkbox.dataset.predicateIri = iri;
+
+    const current = modes[iri] || defaultModeForPredicate(iri);
+    checkbox.checked = (current === 'iri');
+
+    checkbox.addEventListener('change', (ev) => {
+      const pred = ev.currentTarget.dataset.predicateIri;
+      setPredicateValueMode(pred, ev.currentTarget.checked ? 'iri' : 'literal');
+      // no save here; your Save button calls savePredicateValueModes()
+    });
+
+    tdChk.appendChild(checkbox);
+
+    tr.appendChild(tdLabel);
+    tr.appendChild(tdChk);
+    tBody.appendChild(tr);
+  });
+
+  table.appendChild(tBody);
+  container.appendChild(table);
+}
+
+
+/**
+ * Render a checklist of custom predicates into a container.
+ *
+ * @param {string|HTMLElement} containerOrId  Element or element id of the container
+ * @param {Object} [opts]
+ * @param {Set<string>|Set<number>} [opts.prechecked]  Headers or indices to start checked
+ * @param {boolean} [opts.defaultChecked=false]        Checked state if not in `prechecked`
+ * @param {(info:{index:number, header:string, checked:boolean, event:Event})=>void} [opts.onToggle]
+ * @param {(h:string)=>string} [opts.labelize]         Optional fn to prettify labels (e.g., iriToNiceLabel)
+ */
+function renderCustomPredicateChecklist(containerOrId, opts = {}) {
+  const container = typeof containerOrId === 'string'
+    ? document.getElementById(containerOrId)
+    : containerOrId;
+  if (!container) {
+    console.warn('[renderCustomPredicateChecklist] container not found');
+    return;
+  }
+
+  const {
+    prechecked,
+    defaultChecked = false,
+    onToggle,
+    labelize = (h) => (typeof iriToNiceLabel === 'function' ? iriToNiceLabel(h) : h),
+  } = opts;
+
+  // Build list of items
+  const items = getCustomPredicateColumns();
+
+  // Clear and render
+  container.innerHTML = '';
+  const ul = document.createElement('ul');
+  ul.style.listStyle = 'none';
+  ul.style.padding = '0';
+  ul.style.margin = '0';
+
+  items.forEach(({ index, header }) => {
+    const id = `pred-${index}`;
+    const li = document.createElement('li');
+    li.style.display = 'flex';
+    li.style.alignItems = 'center';
+    li.style.gap = '8px';
+    li.style.margin = '6px 0';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = id;
+
+    // Determine initial checked state
+    let startChecked = defaultChecked;
+    if (prechecked instanceof Set) {
+      // Support either header names or indices in the set
+      startChecked = prechecked.has(header) || prechecked.has(index);
+    }
+    checkbox.checked = startChecked;
+
+    // (Optional) show if currently hidden in HOT
+    const hiddenBadge = hidden.includes(index) ? ' (hidden)' : '';
+
+    const label = document.createElement('label');
+    label.setAttribute('for', id);
+    label.textContent = `${labelize(header)}${hiddenBadge}`;
+
+    checkbox.addEventListener('change', (ev) => {
+      onToggle?.({ index, header, checked: ev.target.checked, event: ev });
+    });
+
+    li.appendChild(checkbox);
+    li.appendChild(label);
+    ul.appendChild(li);
+  });
+
+  container.appendChild(ul);
+}
+
 /*
   These functions are used to manage predicates:
     confirmAddPredicate adds a new predicate to the ontology spreadsheet.
 */
-
-function confirmAddPredicate() {
+async function confirmAddPredicate() {
   try {
     // 1) Handle add predicate (existing flow)
     const select = document.getElementById('predicate-select');
@@ -1327,6 +1714,12 @@ function confirmAddPredicate() {
         alert("Predicate already added.");
       } else {
         customPredicates.push(finalIRI);
+
+         // Initialize value mode for this new predicate (once)
+         if (!getPredicateValueMode(finalIRI)) {
+           setPredicateValueMode(finalIRI, defaultModeForPredicate(finalIRI));
+           //await savePredicateValueModes();
+         }
 
         // Rebuild table with new predicate column appended
         const newHeaders = getColumnHeaders(); // base + customs
@@ -1346,23 +1739,12 @@ function confirmAddPredicate() {
         hotInstance.destroy();
         hotInstance = createTable(container, cleanedRows, newHeaders, newColumns);
         attachHotHooks();
-        applyHiddenColumnsToHot();
-        harvestRowsIntoVocab(cleanedRows);
+        harvestRowsIntoVocab?.(cleanedRows);
+         // Refresh the modes UI if the modal is open
+         try { renderPredicateModesChecklist('predicate-modes-list'); } catch (_) {}
       }
     }
 
-    // 2) Read visibility checkboxes and persist
-    const hiddenNames = [];
-    document.querySelectorAll('#columns-toggle-list input[type="checkbox"]').forEach(cb => {
-      const name = cb.dataset.name;
-      if (!cb.checked) hiddenNames.push(name); // unchecked = hidden
-    });
-    saveHiddenColumnNames(hiddenNames);
-
-    // 3) Apply to HOT
-    applyHiddenColumnsByName();
-
-    // 4) Close modal
     showToast('✅ Predicates/columns updated', 'success');
   } catch (e) {
     console.error('[ManagePredicates] confirmAddPredicate failed', e);
@@ -1370,48 +1752,149 @@ function confirmAddPredicate() {
   }
 }
 
-// This function saves the current column visibility settings from the Manage Predicates modal.
-// It reads the visibility checkboxes, persists the hidden names, applies them to the current Hands
-function saveManagePredicates() {
-  try {
-    // Read visibility checkboxes and persist by name
-    const hiddenNames = [];
-    document
-      .querySelectorAll('#columns-toggle-list input[type="checkbox"]')
-      .forEach(cb => {
-        const name = cb.dataset.name;
-        if (!cb.checked) hiddenNames.push(name); // unchecked = hidden
-      });
-
-    saveHiddenColumnNames(hiddenNames);
-    applyHiddenColumnsByName();
-
-    // Close modal
-    document.getElementById('manage-predicates-modal').style.display = 'none';
-    showToast('✅ Saved predicate management settings', 'success');
-  } catch (e) {
-    console.error('[ManagePredicates] saveManagePredicates failed', e);
-    showToast('❌ Failed to save predicate management settings', 'error');
+// Try to resolve CURIE-like strings to IRIs; pass full IRIs through
+function curieToIri(maybe) {
+  if (!maybe) return null;
+  const v = String(maybe).trim();
+  if (/^https?:\/\//i.test(v)) return v;
+  if (v.includes(':')) {
+    const [pfx, local] = v.split(':');
+    const base = iriPrefixes?.[pfx];
+    if (base) return base + local;
   }
+  return null;
 }
 
-document.getElementById('manage-predicates-save-btn')
-  .addEventListener('click', () => {
-  saveManagePredicates(); // 👈 save visibility settings
-  document.getElementById('manage-predicates-modal').style.display = 'none';})
+// For UI labels: prefer CURIE if we can build one
+function iriToNiceLabel(iri) {
+  return iriToCurie?.(iri) || iri;
+}
 
-document.getElementById('manage-predicates-cancel-btn')
-  .addEventListener('click', () => {
-    document.getElementById('manage-predicates-modal').style.display = 'none';
-  });
+// base header map
+const BASE_HEADER_TO_PRED = new Map([
+  ['label',        w3cIRI.RDFS_LABEL],
+  ['definition',   w3cIRI.SKOS_DEFINITION],
+  ['element type', w3cIRI.RDF_TYPE],
+  ['is curated in ontology', w3cIRI.CCO_CURATEDIN],
+]);
 
-// When opening the modal, remember to rebuild the checkboxes:
-document.getElementById('managePredicatesBtn').addEventListener('click', () => {
-  document.getElementById('predicate-iri').value = '';
-  populateColumnsToggleUI(); // 👈 ensures the checkboxes reflect current table
-  document.getElementById('manage-predicates-modal').style.display = 'block';
-});
+// Expand a single header to one or more concrete predicate IRIs for curation rules
+// - Most headers map 1:1
+// - "is a" maps to three IRIs so users can choose requiredness per element-type case
+function headerToPredicateIrisForRules(header) {
+  const h = String(header || '').trim().toLowerCase();
+  if (BASE_HEADER_TO_PRED.has(h)) return [BASE_HEADER_TO_PRED.get(h)];
 
+  // Special: "is a" expands
+  if (h === 'is a') {
+    return [
+      w3cIRI.RDF_TYPE,
+      w3cIRI.RDFS_SUBCLASS,
+      w3cIRI.RDFS_SUBPROP,
+    ].filter(Boolean);
+  }
+
+  // If header itself is an IRI or CURIE, include it
+  const iri = curieToIri(header);
+  return iri ? [iri] : [];
+}
+
+// Build the predicate set from HOT headers (visible or hidden)
+function collectPredicateIrisFromHeaders() {
+  if (!hotInstance) return [];
+  const headers = hotInstance.getColHeader(); // includes hidden
+  const set = new Set();
+  for (const h of headers) set.add(p);
+  return Array.from(set);
+}
+
+// Is a value present (non-empty string after trim)?
+function hasValue(v) {
+  return v !== undefined && v !== null && String(v).trim().length > 0;
+}
+
+// Given a header name and a row, return the *predicate IRI* that header contributes to.
+// Special-case: "is a" column predicate depends on element type in that row.
+function predicateIriForHeader(header, row) {
+  const h = String(header || '').trim();
+
+  // 1) Direct base mappings
+  const base = BASE_HEADER_TO_PRED.get(h.toLowerCase());
+  if (base) return base;
+
+  // 2) Dynamic "is a"
+  if (h.toLowerCase() === 'is a') {
+    const elementType = row?.[2] || '';
+    // Use your existing logic for the *predicate* to use
+    const predCurie = getIsAPredicate(elementType); // returns rdfs:subClassOf | rdfs:subPropertyOf | rdf:type | null
+    if (!predCurie) return null;
+    return curieToIri(predCurie);
+  }
+
+  // 3) If the header itself is a full IRI or curie, use it
+  const iri = curieToIri(h);
+  if (iri) return iri;
+
+  // 4) Not a recognized predicate-bearing column
+  return null;
+}
+
+// Build a set of predicate IRIs that are "present" for this row (i.e., non-empty cells)
+function presentPredicatesForRow(row, headers) {
+  const present = new Set();
+
+  for (let col = 0; col < headers.length; col++) {
+    const header = headers[col];
+    const predIri = predicateIriForHeader(header, row);
+    if (!predIri) continue;
+
+    const cellVal = row[col];
+    if (hasValue(cellVal)) {
+      present.add(predIri);
+    }
+  }
+
+  // Note: For element type we store presence if column "element type" has a value.
+  // That column maps to rdf:type (as in your normative settings).
+  return present;
+}
+
+/**
+ * Gathers all IRIs/CURIEs used as predicates in the table columns
+ * (excluding utility columns like IRI, Label, Type).
+ * This relies on the globally available hotInstance and curieToIri.
+ * * @returns {Set<string>} A Set of unique predicate IRIs.
+ */
+function getAllTablePredicates() {
+    if (!hotInstance) return new Set();
+
+    const allPredicates = new Set();
+    const headers = hotInstance.getColHeader();
+    
+    // Adjust this based on where your first predicate column starts (e.g., 3 after IRI, Label, Type)
+    const PREDICATE_START_INDEX = BASE_COLS - 3; // Assuming first 3 of BASE_COLS are not predicates
+
+    for (let c = PREDICATE_START_INDEX; c < headers.length; c++) {
+        const header = headers[c];
+        let predicateIRI = header;
+
+        try {
+            // Attempt to resolve CURIEs in headers using your existing function
+            const resolvedIri = curieToIri(header);
+            if (resolvedIri) {
+                predicateIRI = resolvedIri;
+            }
+        } catch (e) {
+            // Header is neither a valid CURIE nor an IRI that can be resolved, ignore it.
+            continue;
+        }
+
+        // Add the resolved IRI to the set
+        allPredicates.add(predicateIRI);
+    }
+    
+    return allPredicates;
+}
 
 /*
   These functions are used for inserting data:
@@ -1501,13 +1984,22 @@ function preventDefaults(event) {
  * Shows/hides header row checkbox based on file type radio
  */
 function handleFileTypeChange() {
-  var fileType = document.querySelector('input[name="file-type"]:checked').value;
-  var checkboxContainer = document.getElementById("header-checkbox-container");
+  const fileType = document.querySelector('input[name="file-type"]:checked').value;
+  const headerCheckbox = document.getElementById('header-checkbox-container');
+
+  if (fileType === 'ontology') {
+    headerCheckbox.style.display = 'none';
+    console.info("[UI] Hiding header row checkbox");
+  } else {
+    headerCheckbox.style.display = 'block';
+    console.info("[UI] Showing header row checkbox");
+  }
+
   if (fileType === "spreadsheet") {
-    checkboxContainer.style.display = "block";
+    headerCheckbox.style.display = "block";
     console.info("[UI] Showing header row checkbox");
   } else {
-    checkboxContainer.style.display = "none";
+    headerCheckbox.style.display = "none";
     console.info("[UI] Hiding header row checkbox");
   }
 }
@@ -1692,8 +2184,7 @@ async function handleInsertDataSave() {
     hotInstance.destroy();
     hotInstance = createTable(container, mergedRows, allHeaders, allColumns);
     attachHotHooks();
-    applyHiddenColumnsToHot();
-    harvestRowsIntoVocab(mergedRows);
+    harvestRowsIntoVocab?.(mergedRows);
 
     
     // Toast feedback
@@ -1713,6 +2204,268 @@ async function handleInsertDataSave() {
   }
 }
 
+/**
+ * Parses an RDF file (Turtle, RDF/XML, JSON-LD, etc.) using N3.js.
+ * @param {File} file - The file object from the drag-and-drop area.
+ * @param {object} mimeTypes - Your mimeTypes constant.
+ * @param {function} guessMediaType - Your guessMediaType function.
+ * @param {function} parseFileExtension - Assumed function to get 'ttl', 'rdf', etc.
+ * @returns {Promise<Array>} A promise that resolves with an array of N3.js quads.
+ */
+function parseOntologyData(file, mimeTypes, guessMediaType, parseFileExtension) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (event) => {
+      try {
+        const fileContent = event.target.result;
+        const extension = parseFileExtension(file.name);
+        
+        // Try to get MIME type from extension, fall back to guessing from content
+        const mimeType = mimeTypes[extension] || guessMediaType(fileContent);
+
+        const parser = new N3.Parser({ format: mimeType });
+        const quads = [];
+
+        parser.parse(fileContent, (error, quad, prefixes) => {
+          if (error) {
+            // Reject the promise on a parsing error
+            return reject(new Error(`N3.js parsing error: ${error.message}`));
+          }
+          if (quad) {
+            // Add valid quads (triples) to the array
+            quads.push(quad);
+          } else {
+            // Parsing is complete (no quad, no error)
+            resolve(quads);
+          }
+        });
+      } catch (error) {
+        reject(new Error(`File reading or parser initialization error: ${error.message}`));
+      }
+    };
+
+    reader.onerror = () => {
+      reject(new Error('Failed to read the file.'));
+    };
+
+    // Start reading the file as text
+    reader.readAsText(file);
+  });
+}
+
+/**
+ * Helper function to pivot N3.js quads into a Handsontable-compatible row structure.
+ * It groups triples by subject and maps predicates to known table columns.
+ * @param {Array} quads - Array of quads from parseOntologyData.
+ * @param {Array<string>} knownPredicates - Array of column headers (e.g., ["IRI", "rdfs:label", ...])
+ * @returns {object} - An object { valid: true, cleanedRows: [...], errors: [] }
+ */
+function validateAndPivotOntologyData(quads, knownPredicates) {
+  const subjectData = new Map(); // Key: subject URI, Value: { predicate: object }
+  const errors = [];
+
+  // 1. Group quads by subject
+  for (const quad of quads) {
+    const s = quad.subject.value;
+    const p = quad.predicate.value;
+    const o = quad.object.value;
+
+    if (!subjectData.has(s)) {
+      subjectData.set(s, {});
+    }
+
+    const predicates = subjectData.get(s);
+    
+    // Check if this predicate is already a column
+    if (knownPredicates.includes(p)) {
+        // Handle multiple values for the same predicate (e.g., multiple rdfs:comment)
+        // This simple version joins with a comma. You could also create duplicate rows.
+        if (predicates[p]) {
+            predicates[p] += `, ${o}`;
+        } else {
+            predicates[p] = o;
+        }
+    }
+    // You could add an 'else' here to collect unrecognized predicates as an error/warning
+  }
+
+  // 2. Pivot the Map into an array of rows
+  const cleanedRows = [];
+  const subjectHeader = knownPredicates[0]; // Assumes first column is the Subject/IRI
+
+  for (const [subjectUri, predicates] of subjectData.entries()) {
+    // Create a new row array, initialized to null
+    const newRow = new Array(knownPredicates.length).fill(null);
+    
+    // Set the subject in the first column
+    newRow[0] = subjectUri;
+
+    // Map the predicates to their corresponding columns
+    for (const [predicateUri, objectValue] of Object.entries(predicates)) {
+      const colIndex = knownPredicates.indexOf(predicateUri);
+      if (colIndex > 0) { // colIndex 0 is subject, which we already set
+        newRow[colIndex] = objectValue;
+      }
+    }
+    cleanedRows.push(newRow);
+  }
+  
+  // For now, validation is simple. You could add more complex checks here.
+  if (cleanedRows.length === 0 && quads.length > 0) {
+      errors.push("Data was parsed, but no subjects matched the known table columns.");
+  }
+
+  return { valid: errors.length === 0, cleanedRows, errors };
+}
+
+/**
+ * Handles the Insert Data "Save" button click for ONTOLOGY data.
+ * This function mirrors the structure of handleInsertDataSave.
+ */
+async function handleInsertOntologySave() {
+  const selectedInsertMode = document.querySelector('input[name="insert-mode"]:checked')?.value;
+  try {
+    // Validate mode: only 'append' or 'replace'
+    const insertMode = selectedInsertMode;
+    if (!["append", "replace"].includes(insertMode)) {
+      console.warn("Invalid insert mode:", insertMode);
+      showToast("❌ Invalid insert mode selected", "error");
+      return;
+    }
+
+    if (!currentImportFile) {
+      console.warn("No file selected");
+      showToast("❌ Please select a file before saving", "error");
+      return;
+    }
+
+    // NOTE: The "hasHeader" checkbox is irrelevant for ontology data, so we skip it.
+
+    // Get all current column headers and definitions
+    const allHeaders = getColumnHeaders(); // already includes customs
+    const allColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
+
+    // The "known predicates" are all column headers.
+    // We assume the first header is the Subject (e.g., "IRI").
+    const knownPredicates = allHeaders;
+
+    // --- REPLACED BLOCK ---
+    // Instead of parsing a spreadsheet, parse the ontology file
+    const quads = await parseOntologyData(
+        currentImportFile, 
+        mimeTypes, 
+        guessMediaType, 
+        parseFileExtension // Pass in your helper functions
+    );
+
+    // Pivot the quads (S-P-O) into a tabular structure (Subject, Predicate1, Predicate2, ...)
+    const result = validateAndPivotOntologyData(quads, knownPredicates);
+    // --- END REPLACED BLOCK ---
+
+    if (!result.valid) {
+      console.warn("Validation failed", result.errors);
+      // Use a modal or toast instead of alert() if possible
+      showToast("Import failed:\n" + result.errors.join("\n"), "error");
+      return;
+    }
+    
+    if (result.cleanedRows.length === 0) {
+        showToast("ℹ️ No new data found matching the current table columns.", "info");
+        // Close modal and reset
+        document.getElementById("insert-data-modal").style.display = "none";
+        currentImportFile = null;
+        resetFileInput();
+        return;
+    }
+
+    // Merge clean data (this logic remains identical)
+    const { mergedRows, stats } = mergeTableData(
+      hotInstance.getData(),
+      result.cleanedRows,
+      insertMode
+    );
+
+    // Rebuild table with merged data (this logic remains identical)
+    hotInstance.destroy();
+    hotInstance = createTable(container, mergedRows, allHeaders, allColumns);
+    attachHotHooks();
+    harvestRowsIntoVocab?.(mergedRows);
+
+    
+    // Toast feedback (this logic remains identical)
+    showToast(
+      `✅ ${stats.appended} subjects loaded (${stats.total} total rows)`,
+      "success"
+    );
+
+    // Close modal (this logic remains identical)
+    document.getElementById("insert-data-modal").style.display = "none";
+    currentImportFile = null;
+    resetFileInput();
+
+  } catch (error) {
+    console.error("Import error:", error);
+    showToast(`❌ Error processing import: ${error.message}`, "error");
+  }
+}
+
+/**
+ * Primary save handler that delegates to the correct import function
+ * based on the selected radio button.
+ * * This should be called by your 'Save' button.
+ */
+async function handlePrimarySave() {
+  // Use 'file-type' which matches your HTML
+  const importType = document.querySelector('input[name="file-type"]:checked')?.value;
+
+  try {
+    if (importType === 'spreadsheet') {
+      // Calls your existing function for CSV/XLSX
+      await handleInsertDataSave(); 
+    } else if (importType === 'ontology') {
+      // Calls the new function for TTL, RDF, etc.
+      await handleInsertOntologySave(); 
+    } else {
+      showToast("❌ Please select a file type (Spreadsheet or Ontology)", "error");
+    }
+  } catch (error) {
+    // This provides a top-level catch in case the individual
+    // handlers fail in a way their own try/catch doesn't handle.
+    console.error("Primary save handler error:", error);
+    showToast("❌ A critical error occurred during save.", "error");
+  }
+}
+
+/**
+ * Auto-selects the file-type radio button based on the file's extension
+ * and shows/hides the header checkbox.
+ * * Call this from your file drop/select handler, passing the file object.
+ * e.g., autoSelectFileType(currentImportFile);
+ *
+ * @param {File} file The file that was just dropped or selected.
+ */
+function autoSelectFileType(file) {
+  if (!file) return;
+
+  const extension = parseFileExtension(file.name); // Your existing function
+  const headerCheckbox = document.getElementById('header-checkbox-container');
+  
+  // Your 'extensions' constant from the previous prompt
+  const ontologyExtensions = Object.values(extensions); // ['ttl', 'rdf', 'jsonld', 'nt', 'trig']
+  
+  if (ontologyExtensions.includes(extension)) {
+    // Select 'Ontology'
+    document.querySelector('input[name="file-type"][value="ontology"]').checked = true;
+    // Hide header row checkbox - it's not relevant for ontology
+    headerCheckbox.style.display = 'none';
+  } else {
+    // Default to 'Spreadsheet'
+    document.querySelector('input[name="file-type"][value="spreadsheet"]').checked = true;
+    // Show header row checkbox
+    headerCheckbox.style.display = 'block';
+  }
+}
 
 function resetFileInput() {
   const fileNameSpan = document.getElementById("file-input");
@@ -1745,21 +2498,35 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
   // Alias mapping to support variations in common headers
   const headerAliases = {
     "iri": "iri",
+    "IRI": "iri",
     "id": "iri",
     "label": "label",
     "rdfs:label": "label",
+    "http://www.w3.org/2000/01/rdf-schema#label": "label",
     "element type": "element type",
     "type": "element type",
     "rdf:type": "element type",
+    "http://www.w3.org/1999/02/22-rdf-syntax-ns#type": "element type",
     "definition": "definition",
+    "skos:definition": "definition",
+    "http://www.w3.org/2004/02/skos/core#definition": "definition",
     "is a": "is a",
     "subclass of": "is a",
-    "rdfs:subclassof": "is a",
+    "rdfs:subClassOf": "is a",
+    "http://www.w3.org/2000/01/rdf-schema#subClassOf": "is a",
+    "subproperty of": "is a",
+    "rdfs:subPropertyOf": "is a",
+    "http://www.w3.org/2000/01/rdf-schema#subPropertyOf": "is a",
     "is curated in": "is curated in",
     "is defined by": "is curated in",
     "is curated in ontology": "is curated in",
     "cco2:ont00001760": "is curated in",
+    "https://www.commoncoreontologies.org/ont00001760": "is curated in",
+    "has curation status": "has curation status",
+    "obo:IAO_0000114": "has curation status",
+    "http://purl.obolibrarry.org/obo/IAO_0000114": "has curation status",
     "cco2:ont00001753": "acronym",
+    "https://www.commoncoreontologies.org/ont00001753": "acronym",
     "cceo:acronym": "acronym"
     // Add more aliases as needed
   };
@@ -1878,7 +2645,387 @@ function mergeTableData(currentRows, newRows, mode) {
   }
 }
 
+// DOM HANDLERS
+// DOM HANDLERS
+// DOM HANDLERS
+// DOM HANDLERS
 
+/**
+ * Displays a toast notification.
+ * @param {*} message 
+ * @param {*} type 
+ * @param {*} duration 
+ */
+function showToast(message, type = "success", duration = 3000) {
+  try {
+    const container = document.getElementById("toast-container");
+    const toast = document.createElement("div");
+
+    toast.classList.add("toast", type);
+    toast.textContent = message;
+
+    container.appendChild(toast);
+    setTimeout(() => toast.classList.add("show"), 200);
+
+    setTimeout(() => {
+      toast.classList.remove("show");
+      setTimeout(() => container.removeChild(toast), 1000);
+    }, duration);
+  } catch (error) {
+    console.error("Toast error:", error);
+  }
+}
+
+// Attach event listener to the "Save to Database" button
+document.getElementById('saveToDatabaseBtn').addEventListener('click', saveRDFtoIndexedDB);
+
+// Ontology settings modal open/close/save
+document.getElementById('ontologySettingsModalSaveSettingsBtn').addEventListener('click', saveOntologySettingsFromModal);
+document.getElementById('ontologySettingsModalCancelSettingsBtn').addEventListener('click', () => {
+  document.getElementById('ontology-settings-modal').style.display='none'});
+document.getElementById('ontologySettingsModalResetSessionBtn').addEventListener('click', () => {
+  console.log('IndexedDB have been cleared!');
+  document.getElementById('ontology-settings-modal').style.display='none';
+});
+document.getElementById('backfillIRIsBtn').addEventListener('click', backfillIris);
+
+// Ontology imports modal open/close/save
+document.getElementById('importSettingsModalAddOntologyBtn').addEventListener('click', addImportIRI);
+document.getElementById('importSettingsModalSaveSettingsBtn').addEventListener('click', saveImportsAndClose);
+document.getElementById('importSettingsModalCancelSettingsBtn').addEventListener('click', () => {
+  document.getElementById('ontology-imports-modal').style.display='none'});
+
+// Predicate settings modal open/close/add
+document.getElementById('predicateSettingsModalAddPredicateBtn').addEventListener('click', confirmAddPredicate);
+
+
+// Optional: what happens when the user clicks "Reload Prior Session"
+document.getElementById('reloadSavedSessionBtn')?.addEventListener('click', reloadSavedSession);
+
+// Prefix Manager Logic. This set of functions handle the prefixes
+
+/**
+ * Opens the prefix manager modal and populates the table with current prefixes
+ */
+function openPrefixManagerModal() {
+  try {
+    const tableBody = document.getElementById("prefix-table-body");
+    tableBody.innerHTML = ""; // Clear old rows
+
+    // Loop through iriPrefixes and create a row for each
+    Object.entries(iriPrefixes).forEach(([prefix, iri]) => {
+      const row = document.createElement("tr");
+
+      const prefixCell = document.createElement("td");
+      prefixCell.textContent = prefix;
+      row.appendChild(prefixCell);
+
+      const iriCell = document.createElement("td");
+      iriCell.textContent = iri;
+      row.appendChild(iriCell);
+
+      const removeCell = document.createElement("td");
+      const removeBtn = document.createElement("button");
+      removeBtn.textContent = "❌";
+      removeBtn.addEventListener("click", () => {
+        delete iriPrefixes[prefix];
+        openPrefixManagerModal(); // re-render the table
+      });
+      removeCell.appendChild(removeBtn);
+      row.appendChild(removeCell);
+
+      tableBody.appendChild(row);
+    });
+
+    document.getElementById("prefix-manager-modal").style.display = "block";
+  } catch (err) {
+    console.error("[openPrefixManagerModal] Failed to populate prefix table:", err);
+    showToast("❌ Failed to open prefix manager", "error");
+  }
+}
+
+
+// Hide Prefix Manager modal
+function hidePrefixManagerModal() {
+  document.getElementById('prefix-manager-modal').style.display = 'none';
+}
+
+// Populate the prefix table
+function populatePrefixTable() {
+  const tableBody = document.querySelector('#prefix-table tbody');
+  tableBody.innerHTML = '';
+
+  Object.entries(iriPrefixes).forEach(([prefix, iri]) => {
+    const row = document.createElement('tr');
+
+    const prefixCell = document.createElement('td');
+    prefixCell.textContent = prefix;
+
+    const iriCell = document.createElement('td');
+    iriCell.textContent = iri;
+
+    const removeCell = document.createElement('td');
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = '❌';
+    removeBtn.onclick = () => {
+      delete iriPrefixes[prefix];
+      populatePrefixTable();
+    };
+    removeCell.appendChild(removeBtn);
+
+    row.appendChild(prefixCell);
+    row.appendChild(iriCell);
+    row.appendChild(removeCell);
+    tableBody.appendChild(row);
+  });
+}
+
+// Enable add button only if both inputs are filled
+function handlePrefixInputChange() {
+  const prefix = document.getElementById('new-prefix').value.trim();
+  const iri = document.getElementById('new-prefix-iri').value.trim();
+  const addBtn = document.getElementById('add-prefix-btn');
+  addBtn.disabled = !(prefix && iri);
+}
+
+// Add new prefix
+function handleAddPrefix() {
+  const prefix = document.getElementById('new-prefix').value.trim();
+  const iri = document.getElementById('new-prefix-iri').value.trim();
+
+  if (!prefix || !iri) return;
+  if (iriPrefixes[prefix]) {
+    alert('Prefix already exists!');
+    return;
+  }
+
+  iriPrefixes[prefix] = iri;
+  document.getElementById('new-prefix').value = '';
+  document.getElementById('new-prefix-iri').value = '';
+  document.getElementById('add-prefix-btn').disabled = true;
+
+  populatePrefixTable();
+}
+
+// Save prefixes and close modal
+function savePrefixesAndClose() {
+  console.info('[prefix-manager] Prefixes saved:', iriPrefixes);
+  hidePrefixManagerModal();
+}
+
+// Cancel and close without saving (no rollback necessary for in-memory edit)
+function cancelPrefixesModal() {
+  hidePrefixManagerModal();
+}
+
+
+// Ontology Imports Logic
+function getImportsMap() {
+  const settings = getOntologySettings();
+  // local cache lives here
+  settings.owlImportsLocal = settings.owlImportsLocal || {};
+  return settings.owlImportsLocal;
+}
+
+// Check if a local import exists for the given IRI
+function hasLocalImport(iri) {
+  return !!getImportsMap()[iri]?.content;
+}
+
+// Save local import content for a given IRI
+async function setLocalImport(iri, { content, mediaType }) {
+  const settings = getOntologySettings();
+
+  // Ensure owl:imports list exists and includes the IRI
+  settings[w3cIRI.OWL_IMPORTS] = settings[w3cIRI.OWL_IMPORTS] || [];
+  if (!settings[w3cIRI.OWL_IMPORTS].includes(iri)) {
+    settings[w3cIRI.OWL_IMPORTS].push(iri);
+  }
+
+  // Store local cache under a separate key
+  settings.owlImportsLocal = settings.owlImportsLocal || {};
+  settings.owlImportsLocal[iri] = {
+    content,
+    mediaType: mediaType || guessMediaType(content),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await saveOntologySettings(settings);
+}
+
+// Simple media type guessing based on content
+function guessMediaType(text) {
+  // super-lightweight; expand if you like
+  if (/^\s*@prefix\b|@base\b|:\s/.test(text)) return "text/turtle";
+  if (/<rdf:RDF\b/.test(text)) return "application/rdf+xml";
+  if (/"@context"\s*:/.test(text)) return "application/ld+json";
+  if (/^\s*<[^>]+>\s+<[^>]+>\s+/.test(text)) return "application/n-triples";
+  return "text/plain";
+}
+
+// This function opens the ontology imports modal and populates it with current imports.
+// It retrieves the imports from the ontology settings and displays them with their status.
+async function openImportsModal() {
+  const modal = document.getElementById("ontology-imports-modal");
+  const listContainer = document.getElementById("import-list");
+  listContainer.innerHTML = "";
+
+  // ensure cache is loaded
+  const settings = getOntologySettings();
+  const imports = settings[w3cIRI.OWL_IMPORTS] || [];
+  const importsMap = getImportsMap();
+
+  imports.forEach((iri) => {
+    const loaded = !!importsMap[iri]?.content;
+    const statusIcon = loaded ? "✅" : "❌";
+    const row = document.createElement("div");
+    row.style.marginBottom = "10px";
+
+    const safeKey = btoa(iri).replace(/=/g, "");
+    row.innerHTML = `
+      <div>
+        <strong>${iri}</strong> ${statusIcon}
+        <div style="margin-top:6px">
+          <input type="file" id="file-${safeKey}">
+          <span id="validation-${safeKey}" style="color:red; display:none;"></span>
+        </div>
+        ${loaded ? `<div style="color:#666; font-size:12px; margin-top:4px">
+          Stored ${importsMap[iri].mediaType || ""} at ${importsMap[iri].updatedAt}
+        </div>` : ""}
+      </div>
+    `;
+
+    // wire up handler
+    row.querySelector(`#file-${safeKey}`).addEventListener("change", (ev) => {
+      handleImportFileUpload(ev, iri);
+    });
+
+    listContainer.appendChild(row);
+  });
+
+  modal.style.display = "block";
+}
+
+
+// This function handles the file upload for ontology imports.
+async function handleImportFileUpload(event, iri) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  const safeKey = btoa(iri).replace(/=/g, "");
+  const validationMsg = document.getElementById(`validation-${safeKey}`);
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const content = e.target.result;
+
+    if (!isValidOntology(content)) {
+      validationMsg.textContent = "⚠️ Not a valid RDF/OWL text";
+      validationMsg.style.display = "inline";
+      return;
+    }
+    validationMsg.style.display = "none";
+
+    const settings = getOntologySettings();
+    const ext = parseFileExtension(file.name);
+    const mediaType = mimeTypes[ext] || "text/plain";
+
+    // Ensure owl:imports ARRAY exists and includes this IRI
+    settings[w3cIRI.OWL_IMPORTS] = settings[w3cIRI.OWL_IMPORTS] || [];
+    if (!settings[w3cIRI.OWL_IMPORTS].includes(iri)) {
+      settings[w3cIRI.OWL_IMPORTS].push(iri);
+    }
+
+    // Save the local cached content in a separate MAP
+    settings.owlImportsLocal = settings.owlImportsLocal || {};
+    settings.owlImportsLocal[iri] = {
+      content,
+      ext,
+      mediaType,
+      updatedAt: new Date().toISOString()
+    };
+
+    await saveOntologySettings(settings);
+    showToast("✅ Ontology import saved", "success");
+    openImportsModal(); // refresh
+  };
+  reader.readAsText(file);
+}
+
+// This function retrieves the local import content for a given IRI from the ontology settings.
+function getLocalImportContent(iri) {
+  const s = getOntologySettings();
+  return s.owlImportsLocal?.[iri]?.content || null;
+}
+
+// This function adds a new import IRI to the ontology settings.
+async function addImportIRI() {
+  const iriInput = document.getElementById("new-import-iri");
+  const iri = iriInput.value.trim();
+  if (!iri) return;
+
+  const settings = getOntologySettings();
+  settings[w3cIRI.OWL_IMPORTS] = settings[w3cIRI.OWL_IMPORTS] || [];
+  if (!settings[w3cIRI.OWL_IMPORTS].includes(iri)) {
+    settings[w3cIRI.OWL_IMPORTS].push(iri);
+    await saveOntologySettings(settings);
+  }
+
+  iriInput.value = "";
+  openImportsModal();
+}
+
+// This function saves the ontology imports and closes the modal.
+function saveImportsAndClose() {
+  document.getElementById("ontology-imports-modal").style.display = "none";
+}
+
+// Listeners for adding rows
+document.getElementById("add-rows-btn").addEventListener("click", () => {
+  const n = getRowCountInput();
+  if (!n) { showToast("Enter a valid row count.", "error"); return; }
+  addRowsToTable(n);
+  showToast(`✅ ${n} row${n>1?'s':''} added`, "success");
+});
+
+// Listeners for removing rows
+document.getElementById("remove-rows-btn").addEventListener("click", () => {
+  const n = getRowCountInput();
+  if (!n) { showToast("Enter a valid row count.", "error"); return; }
+  removeRowsFromBottom(n);
+  showToast(`🗑️ ${n} row${n>1?'s':''} removed`, "info");
+});
+
+// Save predicate management settings from modal
+// Called by 'Save' button in Manage Predicates modal
+async function saveManagePredicates() {
+  try {
+    // Persist the in-memory predicateValueModes map
+    await savePredicateValueModes();
+
+    showToast('✅ Predicate value modes saved', 'success');
+    document.getElementById('manage-predicates-modal').style.display = 'none';
+  } catch (e) {
+    console.error('[ManagePredicates] saveManagePredicates failed', e);
+    showToast('❌ Failed to save predicate value modes', 'error');
+  }
+}
+
+// Save button listener for Manage Predicates modal
+document.getElementById('manage-predicates-save-btn').addEventListener('click', async (ev) => {
+  const btn = ev.currentTarget;
+  btn.disabled = true;
+  try {
+    await saveManagePredicates(); // handles toast + closing
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// Cancel button listener for Manage Predicates modal
+document.getElementById('manage-predicates-cancel-btn').addEventListener('click', () => {
+    document.getElementById('manage-predicates-modal').style.display = 'none';
+  });
 
 /**
  * Registers all modal UI event listeners
@@ -1895,7 +3042,7 @@ document.querySelectorAll('input[name="base-iri-delimiter"]').forEach(radio => {
   initializeIriModeToggles()
 });
 
-  // Event Listeners for Prefix Management
+// Event Listeners for Prefix Management
 function initializePrefixManagerListeners() {
   document.getElementById('new-prefix').addEventListener('input', handlePrefixInputChange);
   document.getElementById('new-prefix-iri').addEventListener('input', handlePrefixInputChange);
@@ -1912,19 +3059,21 @@ document.getElementById("ontologyImportsBtn").addEventListener("click", openImpo
 // Event Listeners for Predicate Management
 document.getElementById('managePredicatesBtn').addEventListener('click', () => {
   document.getElementById('predicate-iri').value = '';
-  populateColumnsToggleUI();
+  renderPredicateModesChecklist('predicate-modes-list');
   document.getElementById('manage-predicates-modal').style.display = 'block';
-  });
-document.getElementById("managePrefixesBtn").addEventListener("click", function () {
+});
+
+// Event Listener for Prefix Manager Button
+document.getElementById('managePrefixesBtn').addEventListener("click", function () {
   openPrefixManagerModal();
 });
 
-
+// Event Listeners for Insert Data Modal
 function setupInsertDataModalListeners() {
   // Open/close buttons
   document.getElementById("importBtn").addEventListener("click", openInsertDataModal);
   document.getElementById('file-input').addEventListener('change', handleFileInputChange);
-  document.getElementById("insert-data-save-btn").addEventListener("click", handleInsertDataSave);
+  document.getElementById("insert-data-save-btn").addEventListener("click", handlePrimarySave);
   document.getElementById("insert-data-cancel-btn").addEventListener("click", closeInsertDataModal);
   document.getElementById("remove-file-btn").addEventListener("click", resetFileSelection);
 
@@ -1942,11 +3091,7 @@ function setupInsertDataModalListeners() {
   var radios = document.querySelectorAll('input[name="file-type"]');
   for (var i = 0; i < radios.length; i++) {
     radios[i].addEventListener("change", handleFileTypeChange);
-  }
-
-  // Default state
-  handleFileTypeChange();
-  }
+  }};
 
 
 document.getElementById('previewRdfBtn').addEventListener('click', () => handleExport(false));
