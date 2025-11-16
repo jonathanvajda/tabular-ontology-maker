@@ -3,12 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#5d799c">
   <title>Tabular Ontology Maker</title>
+  <meta name="description" content="TOM (Tabular Ontology Maker) is a web application for creating simple ontologies using a spreadsheet-like interface. It allows users to define classes, properties, and individuals in a tabular format and export the ontology in various RDF formats." />
+  <meta name="author" content="Jonathan Vajda" />
+  <meta name="dcterms.creator" content="Jonathan Vajda" />
+  <meta name="dcterms.rightsHolder" content="Jonathan Vajda" />
+  <meta name="license" content="CC BY 4.0" />
+  <meta link rel="license" href="https://creativecommons.org/licenses/by/4.0/" />
+  <meta name="dcterms.license" content="https://creativecommons.org/licenses/by/4.0/" />
+  <meta name="version" content="0.2.0" />
   <link rel="shortcut icon" href="favicon.ico">
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#5d799c">
-  <link rel="stylesheet" href="lib/ontology_spreadsheet_styles.css" />
   <link rel="stylesheet" href="lib/handsontable.full.css" />
+  <link rel="stylesheet" href="lib/ontology_spreadsheet_styles.css" />
 </head>
 <body>
 <nav style="margin-bottom:8px;">
@@ -214,9 +222,6 @@
   </div>
 
 
-
-
-
   <!-- Insert Data Modal -->
   <div id="insert-data-modal" style="display:none; position:fixed; top:10%; left:25%; width:50%; z-index:1000; background:white; border:1px solid #ccc; padding:20px; box-shadow: 0 0 10px rgba(0,0,0,0.3);">
 
@@ -266,7 +271,7 @@
   <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
   <footer>
-    <details><summary><b>User Data Notice</b></summary>Data that a user inputs stays local to the user's computer. This site does not receive data from a user, and therefore no user data is stored on the site. Consequently, reloading the page effectively wipes anything not saved (ontology settings are saved locally across sessions), and users are encouraged to export progress since it cannot be otherwise recovered.</details><br />
+    <details><summary><b>Important User Data Notice</b></summary>Data that a user inputs stays local to the user's computer, by design. Ontology settings and data can be saved in the browser ('Save Session' button), but users are encouraged to export progress ('Download RDF' button) since it <i>cannot</i> be otherwise recovered. This is on purpose.<br /> This site does not receive data from a user, and therefore no user data is stored remotely on the host site. If you are interested in storing data on the cloud (on a server), please contact me (jonathan.vajda [at] gmail.com) so I know about your interest and so I can notify you if/when I add that feature.</details><br />
     <span style="text-align:right"><small>Copyright 2025, Jonathan Vajda</small></span>
   </footer>
 
@@ -274,7 +279,6 @@
   <script src="lib/xlsx.full.min.js"></script>
   <script src="lib/n3.min.js"></script>
   <script src="lib/ontology_spreadsheet-dev.js"></script>
-  <script src="lib/tom-dom-handlers.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
