@@ -1534,45 +1534,90 @@ function renderPredicateModesChecklist(containerOrId) {
   // Collect custom predicate IRIs from your known list
   // You already track them in `customPredicates` and align by BASE_COLS.
   const preds = Array.isArray(customPredicates) ? [...customPredicates] : [];
-
   const modes = getPredicateValueModes();
+
+  // Clear container
   container.innerHTML = '';
 
-  const ul = document.createElement('ul');
-  ul.style.listStyle = 'none';
-  ul.style.padding = '0';
-  ul.style.margin = '0';
+  // Build table
+  const table = document.createElement('table');
+  table.style.width = '100%';
+  table.style.borderCollapse = 'collapse';
+  table.style.fontSize = 'smaller';
+  table.style.padding = '0';
+  table.style.margin = '0';
+
+  // Header
+  const tableHead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+
+  const thPredicate = document.createElement('th');
+  thPredicate.textContent = 'Predicate';
+  thPredicate.style.textAlign = 'left';
+  thPredicate.style.padding = '2px 4px';
+  thPredicate.style.borderBottom = '1px solid #ccc';
+
+  const thIRI = document.createElement('th');
+  thIRI.textContent = 'Object is IRI?';
+  thIRI.style.textAlign = 'left';
+  thIRI.style.padding = '2px 4px';
+  thIRI.style.borderBottom = '1px solid #ccc';
+
+  // Build DOM heirarchy
+  headerRow.appendChild(thPredicate);
+  headerRow.appendChild(thIRI);
+  tableHead.appendChild(headerRow);
+  table.appendChild(tableHead);
+
+  // Populate rows
+  const tBody = document.createElement('tbody');
+  
 
   preds.forEach((iri, i) => {
-    const id = `pred-mode-${i}`;
-    const li = document.createElement('li');
-    li.style.display = 'flex';
-    li.style.alignItems = 'center';
-    li.style.gap = '10px';
-    li.style.margin = '6px 0';
+    const tr = document.createElement('tr');
+
+    // predicate label (left)
+    const tdLabel = document.createElement('td');
+    tdLabel.style.padding = '2px';
+    tdLabel.style.borderBottom = '1px solid #f0f0f0';
+
+    const nice = (typeof iriToNiceLabel === 'function' ? iriToNiceLabel(iri) : iri);
+    const label = document.createElement('label');
+    const checkboxId = `pred-mode-${i}`;
+    label.setAttribute('for', checkboxId);
+    label.textContent = nice;
+    label.title = iri; // hover shows full IRI
+    tdLabel.appendChild(label);
+
+    // checkbox (right)
+    const tdChk = document.createElement('td');
+    tdChk.style.padding = '2px';
+    tdChk.style.borderBottom = '1px solid #f0f0f0';
+    tdChk.style.textAlign = 'right';
 
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
-    checkbox.id = id;
+    checkbox.id = checkboxId;
+    checkbox.dataset.predicateIri = iri;
 
-    // checked => treat values as IRI
     const current = modes[iri] || defaultModeForPredicate(iri);
     checkbox.checked = (current === 'iri');
 
-    const label = document.createElement('label');
-    label.setAttribute('for', id);
-    label.textContent = (typeof iriToNiceLabel === 'function' ? iriToNiceLabel(iri) : iri);
-
     checkbox.addEventListener('change', (ev) => {
-      setPredicateValueMode(iri, ev.target.checked ? 'iri' : 'literal');
+      const pred = ev.currentTarget.dataset.predicateIri;
+      setPredicateValueMode(pred, ev.currentTarget.checked ? 'iri' : 'literal');
+      // no save here; your Save button calls savePredicateValueModes()
     });
 
-    li.appendChild(checkbox);
-    li.appendChild(label);
-    ul.appendChild(li);
+    tdChk.appendChild(checkbox);
+
+    tr.appendChild(tdLabel);
+    tr.appendChild(tdChk);
+    tBody.appendChild(tr);
   });
 
-  container.appendChild(ul);
+  table.appendChild(tBody);
+  container.appendChild(tr);
 }
 
 
