@@ -1673,7 +1673,7 @@ async function confirmAddPredicate() {
          // Initialize value mode for this new predicate (once)
          if (!getPredicateValueMode(finalIRI)) {
            setPredicateValueMode(finalIRI, defaultModeForPredicate(finalIRI));
-           await savePredicateValueModes();
+           //await savePredicateValueModes();
          }
 
         // Rebuild table with new predicate column appended
@@ -3046,11 +3046,7 @@ function setupInsertDataModalListeners() {
   var radios = document.querySelectorAll('input[name="file-type"]');
   for (var i = 0; i < radios.length; i++) {
     radios[i].addEventListener("change", handleFileTypeChange);
-  }
-
-  // Default state
-  handleFileTypeChange();
-  }
+  }};
 
 
 document.getElementById('previewRdfBtn').addEventListener('click', () => handleExport(false));
