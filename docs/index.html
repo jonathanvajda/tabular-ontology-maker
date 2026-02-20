@@ -15,100 +15,108 @@
   <meta name="version" content="0.2.0" />
   <link rel="shortcut icon" href="favicon.ico">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="lib/handsontable.full.css" />
-  <link rel="stylesheet" href="lib/ontology_spreadsheet_styles.css" />
+  <!-- Public CSS -->
+  <link rel="stylesheet" href="./styles/skeleton.css" />
+  <!-- Vendor CSS -->
+  <link rel="stylesheet" href="./styles/handsontable.full.css" />
+  <!-- App Global CSS -->
+  <link rel="stylesheet" href="./styles/app-base.css" />
+  <link rel="stylesheet" href="./styles/site-header.css" />
+  <!-- App Local CSS -->
+  <link rel="stylesheet" href="./styles/ontology_spreadsheet_styles.css" />
 </head>
-<body>
-<nav style="margin-bottom:8px;">
-  <div style="display:flex; align-items:center; gap:16px;">
-        <div style="display:flex; align-items:left;">
-          <img src="images/tom-black.svg" width="90">
-        </div>
-        <h1 style="margin:0; font-size:3rem; font-weight:700; line-height:1;">
-      TOM — Tabular Ontology Maker</h1>
-    </div>  
-  </nav>
+<body data-page-id="tom">
+  <header id="siteHeader" class="sitehdr-root" role="banner" aria-label="Site header"></header>
 
-  <div id="toolbar">
-    <button id="ontologySettingsBtn">Ontology Settings</button>
-    <button id="managePrefixesBtn">Manage Prefixes</button>
-    <button id="ontologyImportsBtn">Ontology Imports</button>
-    <button id="managePredicatesBtn">Manage Predicates</button>
-    <button id="importBtn">Insert Data from File</button>
-    <button id="reloadSavedSessionBtn" disabled>Reload Saved Session</button>
-    <button id="previewRdfBtn">Preview RDF</button>
-    <button id="saveToDatabaseBtn">Save Session</button>
-    <select id="exportFormat">
-      <option value="ttl">Turtle (.ttl)</option>
-      <!-- Not Supported Yet <option value="rdf">RDF/XML (.rdf)</option> -->
-      <!-- Not Supported Yet <option value="jsonld">JSON-LD (.jsonld)</option> -->
-      <option value="nt">N-Triples (.nt)</option>
-      <option value="trig">TriG (.trig)</option>
-    </select>
-    <button id="exportBtn">Download RDF</button>
-  </div>
+  <main style="margin: 1em;">
+    <div id="toolbar">
+      <button id="ontologySettingsBtn">Ontology Settings</button>
+      <button id="managePrefixesBtn">Manage Prefixes</button>
+      <button id="ontologyImportsBtn">Ontology Imports</button>
+      <button id="managePredicatesBtn">Manage Predicates</button>
+      <button id="importBtn">Insert Data from File</button>
+      <button id="reloadSavedSessionBtn" disabled>Reload Saved Session</button>
+      <button id="previewRdfBtn">Preview RDF</button>
+      <button id="saveToDatabaseBtn">Save Session</button>
+      <select id="exportFormat">
+        <option value="ttl">Turtle (.ttl)</option>
+        <!-- Not Supported Yet <option value="rdf">RDF/XML (.rdf)</option> -->
+        <!-- Not Supported Yet <option value="jsonld">JSON-LD (.jsonld)</option> -->
+        <option value="nt">N-Triples (.nt)</option>
+        <option value="trig">TriG (.trig)</option>
+      </select>
+      <button id="exportBtn">Download RDF</button>
+    </div>
 
-  <div id="hot"></div>
+    <div id="hot"></div>
 
-  <!-- Change Number of Rows -->
-  <div id="row-controls" style="margin: 1em 0; display:flex; align-items:center; gap:10px;">
-    <label for="row-count" style="margin-right:.5em;">Rows:</label>
-    <input type="number" id="row-count" min="1" value="1" style="width:70px;" />
-    <button id="add-rows-btn">Add</button>
-    <button id="remove-rows-btn">Remove</button>
-  </div>
+    <!-- Change Number of Rows -->
+    <div id="row-controls" style="margin: 1em 0; display:flex; align-items:center; gap:10px;">
+      <label for="row-count" style="margin-right:.5em;">Rows:</label>
+      <input type="number" id="row-count" min="1" value="1" style="width:70px;" />
+      <button id="add-rows-btn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Add</button>
+      <button id="remove-rows-btn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Remove</button>
+    </div>
 
 
-  <h3>Generated RDF</h3>
-  <textarea id="rdfOutput" readonly></textarea>
+    <h3>Generated RDF</h3>
+    <textarea id="rdfOutput" readonly></textarea>
+  </main>
 
   <!-- Ontology Settings Modal -->
-  <div id="ontology-settings-modal" style="display:none; position:fixed; background:white; border:1px solid gray; padding:20px; z-index:1000; top:20%; left:30%; width:40%;">
+  <div id="ontology-settings-modal">
     <h2>Ontology Settings</h2>
-    <label for="ontology-label-input">Ontology Label (rdfs:label):</label><br>
-    <input type="text" id="ontology-label-input" style="width:100%"><br><br>
+    <div>
+      <label class="tom-modal-label" for="ontology-label-input">Ontology Label (rdfs:label):</label>
+      <input type="text" class="tom-modal-input" id="ontology-label-input"><br>
 
-    <label for="ontology-creator-input">Ontology Creator (dcterms:creator)</label><br>
-    <input type="text" id="ontology-creator-input" style="width:100%"><br><br>
+      <label class="tom-modal-label" for="ontology-creator-input">Ontology Creator (dcterms:creator)</label>
+      <input type="text" class="tom-modal-input" id="ontology-creator-input"><br>
 
-    <label for="ontology-description-input">Ontology Description (dcterms:description)</label><br>
-    <input type="text" id="ontology-description-input" style="width:100%"><br><br>
+      <label class="tom-modal-label" for="ontology-description-input">Ontology Description (dcterms:description)</label>
+      <input type="text" class="tom-modal-input" id="ontology-description-input"><br>
 
-    <label for="ontology-base-iri-input">Base IRI:</label><br>
-    <input type="text" id="ontology-base-iri-input" style="width:100%"><br><br>
-
+      <label class="tom-modal-label" for="ontology-base-iri-input">Base IRI:</label>
+      <input type="text" class="tom-modal-input" id="ontology-base-iri-input">
+      <br>
+    </div>
     <!-- base IRI delimiter -->
-    <div style="margin-bottom:1em;">
-      <p>Base IRI Delimiter:
-      <label><input type="radio" name="base-iri-delimiter" value="/" checked> / </label>
-      <label><input type="radio" name="base-iri-delimiter" value="#"> # </label></p>
+    <div style="display: inline-flex">
+      Base IRI Delimiter:
+      &nbsp;&nbsp;
+      <label><input type="radio" name="base-iri-delimiter" value="/" checked style="margin-bottom: 0rem;"> / </label>
+      &nbsp;&nbsp;&nbsp;&nbsp;
+      <label><input type="radio" name="base-iri-delimiter" value="#"style="margin-bottom: 0rem;"> # </label>
     </div>
 
     <!-- IRI Generation -->
-    <hr>
+    <hr style="margin-top: 1.5rem; margin-bottom: 1.5rem;">
     <h3>IRI Generation</h3>
-
-    <div style="margin-bottom:0.75em;">
-      <label><input type="radio" name="iri-mode" value="opaque" checked> Opaque (sequential)</label>
-      &nbsp;&nbsp;
-      <label><input type="radio" name="iri-mode" value="readable"> Human-readable (from label)</label>
+    <div style="display: inline-flex">
+      <label class="tom-modal-label">
+        <input type="radio" name="iri-mode" value="opaque" checked style="margin-bottom: 0rem;"> Opaque (sequential)</label>
+        &nbsp;&nbsp;&nbsp;
+      <label class="tom-modal-label">
+        <input type="radio" name="iri-mode" value="readable" style="margin-bottom: 0rem;"> Human-readable (from label)</label>
     </div>
 
     <!-- Opaque options -->
-    <div id="opaque-opts" style="display:block; margin-bottom:1em;">
-      <label>Leading text: <input id="opaque-leading" type="text" value="ont" style="width:10em;"></label>
+    <div id="opaque-opts" style="display: inline-flex;">
+      <label class="tom-modal-label">Leading text:
+        <input id="opaque-leading" type="text" class="tom-modal-input"  value="ont" style="width: 10em; height: 2em; margin-left: 1rem;">
+      </label>
       &nbsp;&nbsp;
-      <label>Digits: <input id="opaque-digits" type="number" min="1" max="12" value="6" style="width:6em;"></label>
+      <label class="tom-modal-label">Digits: <input id="opaque-digits" type="number" class="tom-modal-input"  min="1" max="12" value="6" style="width: 5em; height: 2em; margin-left: 1rem;"></label>
       &nbsp;&nbsp;
-      <label>Starting #: <input id="opaque-start" type="number" min="1" value="1" style="width:8em;"></label>
+      <label class="tom-modal-label">Starting #: <input id="opaque-start" type="number" class="tom-modal-input"  min="1" value="1" style="width: 5em; height: 2em; margin-left: 1rem;"></label>
       <div style="color:#666; font-size:12px; margin-top:4px;">
         Example: <code>http://example.org#ont000042</code>
       </div>
     </div>
 
     <!-- Human-readable options -->
-    <div id="readable-opts" style="display:none; margin-bottom:1em;">
-      <label>Label case:
+    <div id="readable-opts" style="display:inline-flex">
+      <label class="tom-modal-label">Label case:
         <select id="readable-case" style="width:12em;">
           <option value="PascalCase" selected>PascalCase</option>
           <option value="camelCase">camelCase</option>
@@ -121,7 +129,7 @@
     </div>
     <!-- Backfill -->
     <div style="margin: 0.75em 0 1em 0;">
-      <button id="backfillIRIsBtn" type="button">Backfill IRIs</button>
+      <button id="backfillIRIsBtn" type="button" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Backfill IRIs</button>
       <span id="backfill-iris-note" style="font-size:12px; color:#666; margin-left:8px;">
         Fills only blank IRIs using current settings.
       </span>
@@ -129,13 +137,15 @@
 
     <!-- Preview -->
     <div style="margin-bottom:1em;">
-      <strong>Version IRI:</strong> <span id="version-iri-preview">[auto-generated]</span><br>
-      <strong>Version Info:</strong> <span id="version-info-preview">[auto-generated]</span>
+      <label for="version-iri-preview" style="display: inline;">Version IRI:</label>
+        <span id="version-iri-preview">[auto-generated]</span><br>
+      <label for="version-info-preview" style="display: inline;">Version Info:</label>
+        <span id="version-info-preview">[auto-generated]</span>
     </div>
 
-    <button id="ontologySettingsModalSaveSettingsBtn">Save & Close</button>
-    <button id="ontologySettingsModalCancelSettingsBtn">Close</button>
-    <button id="ontologySettingsModalResetSessionBtn" style="float:right">Reset Session</button>
+    <button class="modal-window" id="ontologySettingsModalSaveSettingsBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Save & Close</button>
+    <button class="modal-window" id="ontologySettingsModalCancelSettingsBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Close</button>
+    <button class="modal-window" id="ontologySettingsModalResetSessionBtn" style="float:right; height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Reset Session</button>
   </div>
 
   <!-- Ontology Imports Modal -->
@@ -145,9 +155,9 @@
 
     <label for="new-import-iri">Add new import IRI:</label><br>
     <input type="text" id="new-import-iri" style="width:100%" placeholder="http://example.org/ontology"><br>
-    <button id="importSettingsModalAddOntologyBtn">Add Ontology</button><br><br>
-    <button id="importSettingsModalSaveSettingsBtn">Save Imports</button>
-    <button id="importSettingsModalCancelSettingsBtn">Cancel</button>
+    <button class="modal-window" id="importSettingsModalAddOntologyBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Add Ontology</button><br><br>
+    <button class="modal-window" id="importSettingsModalSaveSettingsBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Save Imports</button>
+    <button class="modal-window" id="importSettingsModalCancelSettingsBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Cancel</button>
   </div>
 
   <!-- Prefix Manager Modal -->
@@ -173,13 +183,13 @@
     <div style="margin-bottom:1.5em;">
       <input type="text" id="new-prefix" placeholder="Prefix" style="width:30%; margin-right:10px;" />
       <input type="text" id="new-prefix-iri" placeholder="IRI" style="width:50%; margin-right:10px;" />
-      <button id="add-prefix-btn" disabled>Add Prefix</button>
+      <button id="add-prefix-btn" disabled style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Add Prefix</button>
     </div>
 
     <!-- Action Buttons -->
     <div style="text-align:right;">
-      <button id="save-prefixes-btn">Save</button>
-      <button id="cancel-prefixes-btn">Close</button>
+      <button id="save-prefixes-btn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Save</button>
+      <button id="cancel-prefixes-btn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Close</button>
     </div>
   </div>
 
@@ -190,9 +200,6 @@
 
     <label for="predicate-select">Select a common predicate:</label><br>
     <select id="predicate-select" style="width:100%">
-      <option value="rdfs:comment">comment (rdfs:comment)</option>
-      <option value="rdfs:seeAlso">see also (rdfs:seeAlso)</option>
-      <option value="rdfs:isDefinedBy">is defined by (rdfs:isDefinedBy)</option>
       <option value="skos:altLabel">alternative label (skos:altLabel)</option>
       <option value="skos:prefLabel">preferred label (skos:prefLabel)</option>
       <option value="skos:example">example (skos:example)</option>
@@ -200,6 +207,9 @@
       <option value="skos:editorialNote">editorial note (skos:editorialNote)</option>
       <option value="cco2:ont00001753">acronym (cco2:ont00001753)</option>
       <option value="obo:IAO_0000114"> has curation status (OBO:IAO_0000114)</option>
+      <option value="rdfs:comment">comment (rdfs:comment)</option>
+      <option value="rdfs:seeAlso">see also (rdfs:seeAlso)</option>
+      <option value="rdfs:isDefinedBy">is defined by (rdfs:isDefinedBy)</option>
       <option value="dcterms:bibliographicCitation">citation (dcterms:bibliographicCitation)</option>
       <option value="dcterms:source">source (dcterms:source)</option>
       <option value="dcterms:creator">creator (dcterms:creator)</option>
@@ -210,14 +220,14 @@
 
     <label for="predicate-iri">Or enter a custom IRI:</label><br>
     <input type="text" id="predicate-iri" style="width:100%" placeholder="e.g. http://example.org/myPredicate"><br><br>
-    <button id="predicateSettingsModalAddPredicateBtn">Add</button>
+    <button id="predicateSettingsModalAddPredicateBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Add</button>
 
     <hr>
     <div id="predicate-modes-list"></div>
 
     <div style="margin-top:12px; text-align:right;">
-      <button id="manage-predicates-save-btn">Save & Close</button>
-      <button id="manage-predicates-cancel-btn">Cancel</button>
+      <button id="manage-predicates-save-btn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Save & Close</button>
+      <button id="manage-predicates-cancel-btn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Cancel</button>
     </div>
   </div>
 
@@ -239,7 +249,7 @@
     <!-- Filename display -->
     <div id="filename-display" style="margin-bottom:1em; display:none;">
       <span id="filename-text" style="font-weight:bold;"></span>
-      <button id="remove-file-btn" style="margin-left:10px;">❌</button>
+      <button id="remove-file-btn" style="margin-left:10px; height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">❌</button>
     </div>
 
     <!-- File type radio -->
@@ -261,8 +271,8 @@
 
     <!-- Action buttons -->
     <div style="text-align:right;">
-      <button id="insert-data-save-btn">Save</button>
-      <button id="insert-data-cancel-btn">Close</button>
+      <button id="insert-data-save-btn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Save</button>
+      <button id="insert-data-cancel-btn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Close</button>
     </div>
   </div>
 
@@ -270,61 +280,63 @@
   <!-- Toast container -->
   <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-  <footer>
+  <footer style="margin: 1em;">
     <details><summary><b>Important User Data Notice</b></summary>By design, any data that a user inputs stays <i>local</i> to the user's device. Ontology settings and data can be saved in the browser ('Save Session' button), but users are encouraged to export their work ('Download RDF' button), since it <i>cannot</i> be otherwise recovered. This is on purpose: I do not harvest your data or process your data. This site does not receive data from a user, and therefore no user data is stored anywhere except locally. If you are interested in storing data on the cloud (on a server), please contact me (jonathan.vajda [at] gmail.com) so I know about your interest and so I can notify you if/when I add that feature.</details><br />
-    <span style="text-align:right"><small>Copyright 2025, Jonathan Vajda</small></span>
+    <span style="text-align:right"><small>Copyright 2026, Jonathan Vajda</small></span>
   </footer>
 
-  <script src="lib/handsontable.full.js"></script>
-  <script src="lib/xlsx.full.min.js"></script>
-  <script src="lib/n3.min.js"></script>
-  <script src="lib/ontology_spreadsheet.js"></script>
+  <script src="./app/handsontable.full.js"></script>
+  <script src="./app/xlsx.full.min.js"></script>
+  <script src="./app/n3.min.js"></script>
+
+  <script src="./app/site-header.js"></script>
+  <script src="./app/ontology_spreadsheet.js"></script>
   <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', async () => {
-          try {
-            const reg = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', async () => {
+        try {
+          const reg = await navigator.serviceWorker.register('./sw.js', { scope: './' });
 
-            // Detect updates and prompt user
-            function offerRefresh(sw) {
-              // your UI: toast/dialog; when user confirms:
-              sw.postMessage('SKIP_WAITING');
-            }
+          // Detect updates and prompt user
+          function offerRefresh(sw) {
+            // your UI: toast/dialog; when user confirms:
+            sw.postMessage('SKIP_WAITING');
+          }
 
-            // A new SW is waiting to activate
-            if (reg.waiting) offerRefresh(reg.waiting);
+          // A new SW is waiting to activate
+          if (reg.waiting) offerRefresh(reg.waiting);
 
-            // A new SW is installed but not yet waiting (it’s in installing state)
-            reg.addEventListener('updatefound', () => {
-              const newSW = reg.installing;
-              if (!newSW) return;
-              newSW.addEventListener('statechange', () => {
-                if (newSW.state === 'installed' && reg.waiting) {
-                  offerRefresh(reg.waiting);
-                }
-              });
-            });
-
-            // Page reload when the new SW takes control
-            let refreshing = false;
-            navigator.serviceWorker.addEventListener('controllerchange', () => {
-              if (refreshing) return;
-              refreshing = true;
-              window.location.reload();
-            });
-
-            // Example: react to JSON updates pushed from the SW
-            navigator.serviceWorker.addEventListener('message', (e) => {
-              if (e.data?.type === 'json-updated') {
-                console.info('[PWA] JSON updated:', e.data.url);
-                // Option: hot-reload specific panels, or show a toast “Data updated”
+          // A new SW is installed but not yet waiting (it’s in installing state)
+          reg.addEventListener('updatefound', () => {
+            const newSW = reg.installing;
+            if (!newSW) return;
+            newSW.addEventListener('statechange', () => {
+              if (newSW.state === 'installed' && reg.waiting) {
+                offerRefresh(reg.waiting);
               }
             });
-          } catch (err) {
-            console.error('SW registration failed', err);
-          }
-        });
-      }
-      </script>
+          });
+
+          // Page reload when the new SW takes control
+          let refreshing = false;
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (refreshing) return;
+            refreshing = true;
+            window.location.reload();
+          });
+
+          // Example: react to JSON updates pushed from the SW
+          navigator.serviceWorker.addEventListener('message', (e) => {
+            if (e.data?.type === 'json-updated') {
+              console.info('[PWA] JSON updated:', e.data.url);
+              // Option: hot-reload specific panels, or show a toast “Data updated”
+            }
+          });
+        } catch (err) {
+          console.error('SW registration failed', err);
+        }
+      });
+    }
+    </script>
 </body>
 </html>

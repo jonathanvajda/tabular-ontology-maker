@@ -1,0 +1,22 @@
+:root {
+  --ont-bg: #f8fafc;
+  --ont-panel-bg: #ffffff;
+  --ont-border: #d0d7de;
+
+  --ont-text: #1f2937;          /* near-black */
+  --ont-muted: #4b5563;         /* accessible muted text */
+
+  --ont-accent: #2563eb;        /* cool blue */
+  --ont-accent-soft: #e0e7ff;
+
+  --ont-pill-bg: #eef2ff;
+  --ont-pill-text: #1e3a8a;
+
+  --ont-focus: #2563eb;
+
+  --ont-radius: 6px;
+  --ont-gap: 1rem;
+
+  --ont-font-body: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  --ont-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}

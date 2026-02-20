@@ -1,26 +1,101 @@
 /* Copyright 2025 Jonathan Vajda */
 
-body {
-  font-family: sans-serif;
-  margin: 1em;
+h2 {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+h3 {
+  font-size: 2.5rem;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
 }
 
 #toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: 0.5em;
   margin-bottom: 0.75em;
   font-size: 0.85rem;
+  line-height: normal;
 }
 
 #toolbar button {
+  height: 3.5em;
   padding: 4px 8px;
   font-size: 0.85rem;
+  line-height: normal;
+}
+
+#toolbar select {
+  height: 3rem;
+  padding: 4px 8px;
+  font-size: 1.25rem;
+  line-height: normal;
 }
 
 #previewRdfBtn {
   margin-left: auto;
+}
+
+
+
+
+
+#ontology-settings-modal {
+  display: none;
+  position: fixed;
+  background:white;
+  border: 1px solid gray;
+  padding: 20px;
+  z-index: 1000;
+  top: 10%;
+  left: 25%;
+  width: 50%;
+}
+
+.tom-modal-label {
+  display: inline-flex;
+  font-weight: bold;
+  font-size: 1.25rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.tom-modal-input {
+  width: 60%;
+  font-size: 1.2rem;
+  height: 28px;
+  margin-bottom: 0.75rem;
+}
+
+.prefix-table-cell {
+  font-size: 1.25rem;
+}
+
+.prefix-table-cell td {
+    padding-top: 1px;
+    padding-bottom: 1px;
+    padding-left: 5px;
+    padding-right: 1px;
+    height: 20px;
+  }
+
+.prefix-table-cell button {
+    line-height: 20px;
+    height: 20px;
+    padding-top: 0px;
+    padding-bottom: 0px;
+    padding-left: 0px;
+    padding-right: 0px;
+    margin-bottom: 0px;
+  }
+
+.modal-window button {
+    height: 3.5em;
+    padding: 4px 8px;
+    font-size: 0.85rem;
+    line-height: normal;
 }
 
 #hot {
@@ -71,47 +146,6 @@ input.htFocusCatcher {
   overflow: hidden !important;
   position: absolute !important;
   left: -9999px !important;
-}
-
-/* put this in your stylesheet */
-.curation-table tr.changed-row {
-  background: #fff7d6;         /* soft yellow */
-  outline: 1px solid #f7d08a;  /* subtle edge so it pops on white UIs */
-  transition: background .15s ease-in-out, outline-color .15s ease-in-out;
-}
-
-/* Only the fixed-left clone contains row headers */
-.ht_clone_left .curation-bulb-th {
-  text-align: center !important;
-  width: 22px;                /* adjust to taste */
-  padding: 0 !important;
-}
-
-.ht_clone_left .curation-bulb {
-  display: inline-block;
-  width: 1.1em;
-  line-height: 1.1em;
-  text-align: center;
-  user-select: none;
-  font-weight: 600;
-}
-
-/* Handsontable adds .htInvalid to failing cells */
-.htInvalid {
-  background-color: #ffecec !important; /* very light red */
-}
-
-/* Colors per status */
-.curation-bulb.metadata_complete   { color: #16a34a; } /* green */
-.curation-bulb.metadata_incomplete { color: #ea580c; } /* orange */
-.curation-bulb.uncurated           { color: #6b7280; } /* gray  */
-
-
-/* Keep the header compact; no visual change to your bulb classes */
-.ht_clone_left .curation-bulb-th {
-  text-align: center !important;
-  width: 22px;
-  padding: 0 !important;
 }
 
 

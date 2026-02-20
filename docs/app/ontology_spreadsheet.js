@@ -2715,7 +2715,15 @@ function openPrefixManagerModal() {
     // Loop through iriPrefixes and create a row for each
     Object.entries(iriPrefixes).forEach(([prefix, iri]) => {
       const row = document.createElement("tr");
-
+      row.classList.add('prefix-table-cell');
+      Object.assign(row.style, {
+          height: "30px",
+          paddingLeft: "5px",
+          paddingRight: "5px",
+          paddingTop: "0px",
+          paddingBottom: "0px"
+      });
+      
       const prefixCell = document.createElement("td");
       prefixCell.textContent = prefix;
       row.appendChild(prefixCell);
@@ -2766,7 +2774,13 @@ function populatePrefixTable() {
 
     const removeCell = document.createElement('td');
     const removeBtn = document.createElement('button');
-    removeBtn.textContent = '❌';
+    Object.assign(removeBtn.style, {
+        paddingLeft: "5px",
+        paddingRight: "5px",
+        paddingTop: "0px",
+        paddingBottom: "0px"
+    });
+
     removeBtn.onclick = () => {
       delete iriPrefixes[prefix];
       populatePrefixTable();
