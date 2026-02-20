@@ -1,0 +1,128 @@
+.sitehdr-root {
+  width: 100%;
+}
+
+.sitehdr {
+  border-bottom: 1px solid rgba(0,0,0,0.10);
+}
+
+/* One banner row */
+.sitehdr-bar {
+  width: 98%;
+  margin: 0 auto;
+  padding: 0.75rem 1rem;
+
+  display: inline-flex;
+  background: var(--ont-bg);
+  align-items: flex-start;
+  gap: 1rem;
+
+  flex-wrap: nowrap;   /* keep menu to the right on wide screens */
+}
+
+/* Left: main logo */
+.sitehdr-brand {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: flex-start;
+  text-decoration: none;
+}
+
+.sitehdr-brand__main {
+  display: inline-flex;
+  height: 130px;   /* adjust to taste */
+  width: auto;
+}
+
+/* Next: tool logo */
+.sitehdr-tool {
+  flex: 0 0 auto;
+  width: 378px;
+  display: inline-flex;
+  background: var(--ont-bg);
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.sitehdr-tool__img {
+  display: inline-flex;
+  height: 130px;   /* match main logo height */
+  width: auto;
+  max-width: 160px;
+}
+
+.sitehdr-tool__title {
+  align-content: center;
+  height: 130px;   /* match main logo height */
+  width: auto;
+  font-size: 3rem;
+  font-weight: 650;
+  padding-right: 4rem;
+}
+
+/* Right: section columns container */
+.sitehdr-sections {
+  flex: 1 1 auto;    /* take remaining width */
+  min-height: 130px;
+  min-width: 0;      /* allow shrinking instead of forcing wrap below */
+
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(180px, max-content);
+  gap: 1.5rem;
+
+  overflow-x: auto;  /* if too many sections, scroll horizontally */
+  padding-bottom: 0rem;
+}
+
+/* Each section column */
+.sitehdr-section__title {
+  margin: 0 0 0.35rem;
+  font-size: 1.9rem;
+  font-weight: 650;
+  opacity: 0.90;
+  white-space: nowrap;
+}
+
+.sitehdr-section__list {
+  list-style: none;
+  margin: 0;
+  margin-left: .5rem;
+  margin-bottom: -0.5rem;
+  padding: 0;
+  display: grid;
+  gap: 0rem;
+}
+
+.sitehdr-section__list li {
+  margin-bottom: -0.25rem;
+}
+
+.sitehdr-link {
+  text-decoration: none;
+  color: inherit;
+  display: inline-block;
+  font-size: 1.25rem;
+  padding: 0.1rem 0;
+}
+
+.sitehdr-link:hover {
+  text-decoration: underline;
+}
+
+.sitehdr-link.is-active {
+  font-weight: 700;
+  font-style: italic;
+}
+
+/* Small screens: allow wrap so sections drop under logos */
+@media (max-width: 900px) {
+  .sitehdr-bar {
+    flex-wrap: wrap;
+    row-gap: 0.75rem;
+  }
+
+  .sitehdr-sections {
+    flex: 1 1 100%;
+  }
+}
