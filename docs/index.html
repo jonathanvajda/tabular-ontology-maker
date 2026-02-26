@@ -20,8 +20,96 @@
   <!-- Vendor CSS -->
   <link rel="stylesheet" href="./styles/handsontable.full.css" />
   <!-- App Global CSS -->
-  <link rel="stylesheet" href="./styles/app-base.css" />
-  <link rel="stylesheet" href="./styles/site-header.css" />
+  <script>
+    (function () {
+      const APPBASE_CSS_SOURCES = [
+        /*"./styles/app-base.css",  local dev copy first */
+        "https://jonathanvajda.github.io/OntoEagle/styles/app-base.css",
+        "https://jonathanvajda.github.io/table-nova/styles/app-base.css",
+      ];
+
+      function loadCss(href) {
+        return new Promise((resolve, reject) => {
+          const link = document.createElement("link");
+          link.rel = "stylesheet";
+          link.href = href;
+
+          link.onload = () => resolve(href);
+          link.onerror = () => reject(new Error("CSS failed: " + href));
+
+          document.head.appendChild(link);
+        });
+      }
+
+      function showFailure(msg) {
+        console.error(msg);
+        // Optional user-visible banner
+        const style = document.createElement("style");
+        style.textContent =
+          ".asset-fail-banner{position:fixed;left:0;right:0;top:0;z-index:9999;" +
+          "padding:.5rem .75rem;font:14px system-ui;background:#ffe8e8;color:#400;" +
+          "border-bottom:1px solid rgba(0,0,0,.2)}";
+        document.head.appendChild(style);
+
+        const div = document.createElement("div");
+        div.className = "asset-fail-banner";
+        div.textContent = msg;
+        document.body ? document.body.prepend(div) : document.addEventListener("DOMContentLoaded", () => document.body.prepend(div));
+      }
+
+      (async () => {
+        for (const href of APPBASE_CSS_SOURCES) {
+          try { await loadCss(href); return; } catch (_) {}
+        }
+        showFailure("Failed to load app base CSS from all sources.");
+      })();
+    })();
+  </script>
+  <script>
+    (function () {
+      const HEADER_CSS_SOURCES = [
+        /*"./styles/site-header.css",  local dev copy first */
+        "https://jonathanvajda.github.io/OntoEagle/styles/site-header.css",
+        "https://jonathanvajda.github.io/table-nova/styles/site-header.css",
+      ];
+
+      function loadCss(href) {
+        return new Promise((resolve, reject) => {
+          const link = document.createElement("link");
+          link.rel = "stylesheet";
+          link.href = href;
+
+          link.onload = () => resolve(href);
+          link.onerror = () => reject(new Error("CSS failed: " + href));
+
+          document.head.appendChild(link);
+        });
+      }
+
+      function showFailure(msg) {
+        console.error(msg);
+        // Optional user-visible banner
+        const style = document.createElement("style");
+        style.textContent =
+          ".asset-fail-banner{position:fixed;left:0;right:0;top:0;z-index:9999;" +
+          "padding:.5rem .75rem;font:14px system-ui;background:#ffe8e8;color:#400;" +
+          "border-bottom:1px solid rgba(0,0,0,.2)}";
+        document.head.appendChild(style);
+
+        const div = document.createElement("div");
+        div.className = "asset-fail-banner";
+        div.textContent = msg;
+        document.body ? document.body.prepend(div) : document.addEventListener("DOMContentLoaded", () => document.body.prepend(div));
+      }
+
+      (async () => {
+        for (const href of HEADER_CSS_SOURCES) {
+          try { await loadCss(href); return; } catch (_) {}
+        }
+        showFailure("Failed to load header CSS from all sources.");
+      })();
+    })();
+  </script>
   <!-- App Local CSS -->
   <link rel="stylesheet" href="./styles/ontology_spreadsheet_styles.css" />
 </head>
@@ -64,7 +152,7 @@
   </main>
 
   <!-- Ontology Settings Modal -->
-  <div id="ontology-settings-modal">
+  <div id="ontology-settings-modal" style="display:none; position:fixed; background: var(--ont-bg); border:1px solid gray; padding:20px; z-index:1000; top:20%; left:30%; width:40%;">
     <h2>Ontology Settings</h2>
     <div>
       <label class="tom-modal-label" for="ontology-label-input">Ontology Label (rdfs:label):</label>
@@ -149,7 +237,7 @@
   </div>
 
   <!-- Ontology Imports Modal -->
-  <div id="ontology-imports-modal" style="display:none; position:fixed; background:white; border:1px solid gray; padding:20px; z-index:1000; top:20%; left:30%; width:40%;">
+  <div id="ontology-imports-modal" style="display:none; position:fixed; background: var(--ont-bg); border:1px solid gray; padding:20px; z-index:1000; top:20%; left:30%; width:40%;">
     <h2>Ontology Imports</h2>
     <div id="import-list" style="max-height:200px; overflow:auto; border:1px solid #ccc; padding:10px;"></div>
 
@@ -161,7 +249,7 @@
   </div>
 
   <!-- Prefix Manager Modal -->
-  <div id="prefix-manager-modal" style="display:none; position:fixed; top:10%; left:25%; width:50%; z-index:1000; background:white; border:1px solid #ccc; padding:20px; box-shadow: 0 0 10px rgba(0,0,0,0.3);">
+  <div id="prefix-manager-modal" style="display:none; position:fixed; top:10%; left:25%; width:50%; z-index:1000; background: var(--ont-bg); border:1px solid #ccc; padding:20px; box-shadow: 0 0 10px rgba(0,0,0,0.3);">
 
     <h2>Manage IRI Prefixes</h2>
 
@@ -195,7 +283,7 @@
 
 
   <!-- Manage Predicate Modal -->
-  <div id="manage-predicates-modal" style="display:none; position:fixed; background:white; border:1px solid gray; padding:20px; z-index:1000; top:25%; left:30%; width:40%;">
+  <div id="manage-predicates-modal" style="display:none; position:fixed; background: var(--ont-bg); border:1px solid gray; padding:20px; z-index:1000; top:25%; left:30%; width:40%;">
     <h2>Add Predicate Column</h2>
 
     <label for="predicate-select">Select a common predicate:</label><br>
@@ -233,7 +321,7 @@
 
 
   <!-- Insert Data Modal -->
-  <div id="insert-data-modal" style="display:none; position:fixed; top:10%; left:25%; width:50%; z-index:1000; background:white; border:1px solid #ccc; padding:20px; box-shadow: 0 0 10px rgba(0,0,0,0.3);">
+  <div id="insert-data-modal" style="display:none; position:fixed; top:10%; left:25%; width:50%; z-index:1000; background: var(--ont-bg); border:1px solid #ccc; padding:20px; box-shadow: 0 0 10px rgba(0,0,0,0.3);">
 
     <h2>Insert Data</h2>
 
@@ -289,7 +377,46 @@
   <script src="./app/xlsx.full.min.js"></script>
   <script src="./app/n3.min.js"></script>
 
-  <script src="./app/site-header.js"></script>
+  <script>
+    (function () {
+      const JS_SOURCES = [
+        /*"./app/site-header.js",  local dev copy first */
+        "https://jonathanvajda.github.io/OntoEagle/app/site-header.js",
+        "https://jonathanvajda.github.io/table-nova/app/site-header.js",
+      ];
+
+      function loadScript(src) {
+        return new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = src;
+          s.defer = true;
+
+          s.onload = () => resolve(src);
+          s.onerror = () => reject(new Error("JS failed: " + src));
+
+          document.head.appendChild(s);
+        });
+      }
+
+      function showFailure(msg) {
+        console.error(msg);
+        const div = document.createElement("div");
+        div.style.cssText =
+          "position:fixed;left:0;right:0;bottom:0;z-index:9999;" +
+          "padding:.5rem .75rem;font:14px system-ui;background:#ffe8e8;color:#400;" +
+          "border-top:1px solid rgba(0,0,0,.2)";
+        div.textContent = msg;
+        document.body ? document.body.appendChild(div) : document.addEventListener("DOMContentLoaded", () => document.body.appendChild(div));
+      }
+
+      (async () => {
+        for (const src of JS_SOURCES) {
+          try { await loadScript(src); return; } catch (_) {}
+        }
+        showFailure("Failed to load header JavaScript from all sources.");
+      })();
+    })();
+  </script>
   <script src="./app/ontology_spreadsheet.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
