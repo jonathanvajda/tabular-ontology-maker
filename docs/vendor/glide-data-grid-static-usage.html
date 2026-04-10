@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Glide Data Grid Static Example</title>
+  <link rel="stylesheet" href="./glide-data-grid.min.css" />
+  <style>
+    body { font-family: Georgia, serif; margin: 24px; }
+    #app { height: 480px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <h1>Glide Data Grid Static Example</h1>
+  <div id="app"></div>
+
+  <script src="./glide-data-grid.min.js"></script>
+  <script>
+    const { React, ReactDOM, DataEditor, GridCellKind } = window.GlideDataGrid;
+
+    const columns = [
+      { id: "name", title: "Name", width: 180 },
+      { id: "type", title: "Type", width: 140 },
+      { id: "definition", title: "Definition", width: 320 },
+    ];
+
+    const rows = [
+      ["Doctor", "Class", "A human person who has earned a doctorate."],
+      ["Bob", "NamedIndividual", "An instance of a Person."],
+      ["has vehicle", "ObjectProperty", "x hasVehicle y iff x possesses y and y is a Vehicle."],
+    ];
+
+    function App() {
+      return React.createElement(DataEditor, {
+        columns,
+        rows: rows.length,
+        rowMarkers: "both",
+        getCellContent: ([col, row]) => ({
+          kind: GridCellKind.Text,
+          allowOverlay: true,
+          data: rows[row][col],
+          displayData: rows[row][col],
+        }),
+        width: "100%",
+        height: 480,
+      });
+    }
+
+    ReactDOM.createRoot(document.getElementById("app")).render(React.createElement(App));
+  </script>
+</body>
+</html>

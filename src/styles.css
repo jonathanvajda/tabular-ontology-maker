@@ -1,0 +1,195 @@
+:root {
+  color: #1f2b3a;
+  background: #eef2f6;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(93, 121, 156, 0.18), transparent 32%),
+    linear-gradient(180deg, #f6f8fb 0%, #e9eef3 100%);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.tom-app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.tom-header {
+  padding: 1rem 1.5rem 0.5rem;
+}
+
+.tom-brand {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.tom-brand h1 {
+  margin: 0;
+  font-size: 2.4rem;
+  line-height: 1;
+}
+
+.tom-main {
+  padding: 1rem 1.5rem 2rem;
+}
+
+.tom-toolbar,
+.tom-row-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+
+.tom-toolbar button,
+.tom-row-controls button,
+.tom-modal button {
+  border: 1px solid #8ba0b8;
+  border-radius: 999px;
+  background: white;
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+}
+
+.tom-grid-shell {
+  border: 1px solid rgba(31, 43, 58, 0.15);
+  border-radius: 16px;
+  overflow: hidden;
+  background: white;
+  box-shadow: 0 16px 32px rgba(30, 52, 79, 0.08);
+}
+
+.tom-rdf-output h3 {
+  margin-bottom: 0.5rem;
+}
+
+.tom-rdf-output textarea {
+  width: 100%;
+  min-height: 180px;
+}
+
+.tom-footer {
+  margin-top: auto;
+  padding: 1rem 1.5rem 2rem;
+}
+
+.tom-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(18, 29, 43, 0.4);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.tom-modal {
+  width: min(760px, 92vw);
+  max-height: 88vh;
+  overflow: auto;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 24px 48px rgba(12, 23, 38, 0.22);
+}
+
+.tom-modal-header,
+.tom-modal-footer {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(31, 43, 58, 0.08);
+}
+
+.tom-modal-footer {
+  border-bottom: 0;
+  border-top: 1px solid rgba(31, 43, 58, 0.08);
+}
+
+.tom-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tom-modal-body {
+  padding: 1rem 1.25rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.tom-modal-body label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.tom-modal-body input,
+.tom-modal-body select,
+.tom-modal-body textarea {
+  border: 1px solid #bbc9d7;
+  border-radius: 12px;
+  padding: 0.6rem 0.75rem;
+}
+
+.tom-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.tom-preview {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.75rem;
+  border-radius: 14px;
+  background: #f5f8fb;
+}
+
+.tom-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tom-table th,
+.tom-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid rgba(31, 43, 58, 0.08);
+  text-align: left;
+}
+
+.tom-predicate-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.tom-predicate-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+@media (max-width: 720px) {
+  .tom-brand {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .tom-brand h1 {
+    font-size: 1.8rem;
+  }
+}
