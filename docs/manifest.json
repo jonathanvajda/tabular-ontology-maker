@@ -1,13 +1,13 @@
 {
   "name": "Tabular Ontology Maker",
   "short_name": "TOM",
-  "start_url": "/index.html",
-  "scope": "/",
+  "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#5d799c",
   "icons": [
-    { "src": "/favicon.ico", "sizes": "16x16", "type": "image/ico" },
-    { "src": "/images/tom.svg", "sizes": "512x512", "type": "image/svg" }
+    { "src": "./favicon.ico", "sizes": "16x16", "type": "image/ico" },
+    { "src": "./images/tom.svg", "sizes": "512x512", "type": "image/svg" }
   ]
 }

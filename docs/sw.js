@@ -1,6 +1,6 @@
 /* sw.js */
 // --- Tune these names when you deploy a new version ---
-const APP_VERSION = 'v0.1.2';                  // bump on each release
+const APP_VERSION = 'v0.2.0';                  // bump on each release
 const PRECACHE_NAME = `precache-${APP_VERSION}`;
 const RUNTIME_NAME  = `runtime-${APP_VERSION}`;
 const JSON_CACHE    = `json-${APP_VERSION}`;
@@ -11,15 +11,16 @@ const JSON_CACHE    = `json-${APP_VERSION}`;
 const PRECACHE_MANIFEST = [
   { url: './',                                revision: 'static' },
   { url: './offline.html',                    revision: 'static' },
-  { url: './styles/handsontable.full.css',    revision: 'static' },
-  { url: './app/handsontable.full.js',        revision: 'static' },
+  { url: './styles/glide-data-grid.min.css',  revision: 'v0.2.0' },
+  { url: './app/glide-data-grid.min.js',      revision: 'v0.2.0' },
   { url: './app/n3.min.js',                   revision: 'static' },
   { url: './app/xlsx.full.min.js',            revision: 'static' },
-  // libraries you ship locally:
-  { url: './app/site-header.js',              revision: 'v0.1.2' },
-  { url: './app/ontology_spreadsheet.js',     revision: 'v0.1.2' },
-  { url: './index.html',                      revision: 'v0.1.2' },
-  { url: './index-dev.html',                  revision: 'v0.1.2' },
+  { url: './app/tom-grid-glide.js',           revision: 'v0.2.0' },
+  { url: './app/tom-core.js',                 revision: 'v0.2.0' },
+  { url: './app/tom-ui.js',                   revision: 'v0.2.0' },
+  { url: './app/ontology_spreadsheet.js',     revision: 'v0.2.0' },
+  { url: './index.html',                      revision: 'v0.2.0' },
+  { url: './index-dev.html',                  revision: 'v0.2.0' },
   { url: './favicon.ico',                     revision: 'v0.1.1' },
   { url: './images/tom.svg',                  revision: 'v0.1.1' },
   { url: './template.csv',                    revision: 'v0.1.1' },
