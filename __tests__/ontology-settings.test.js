@@ -1,16 +1,13 @@
-import {
-  getCurrentDateParts,
-  toCamelCase,
+const {
+  ONTOLOGY_KEYS,
+  fromLabelWithCase,
   generateOntologySettings,
-  loadOntologySettings,
-  isValidOntology
-} from '../src/ontology-settings.js';
-
-// Mock localStorage
-beforeEach(() => {
-  localStorage.clear();
-  jest.resetModules();
-});
+  getCurrentDateParts,
+  isLikelyOntology,
+  toCamelCase,
+  toPascalCase,
+  toSnakeCase,
+} = require("../docs/app/ontology_spreadsheet_helpers.js");
 
 describe('getCurrentDateParts', () => {
   it('should return year, month, and day as strings', () => {
@@ -29,32 +26,46 @@ describe('toCamelCase', () => {
   });
 });
 
-describe('generateOntologySettings and loadOntologySettings', () => {
-  it('should generate and store settings in localStorage', () => {
-    const baseIRI = "http://example.org";
-    const label = "My Ontology";
-
-    const settings = generateOntologySettings(baseIRI, label);
-    expect(settings["iri"]).toContain("myOntology");
-    expect(settings["rdfs:label"]).toBe("My Ontology");
-
-    const stored = JSON.parse(localStorage.getItem('ontologySettings'));
-    expect(stored).toEqual(settings);
-  });
-
-  it('should load settings from localStorage', () => {
-    const expected = { test: "value" };
-    localStorage.setItem('ontologySettings', JSON.stringify(expected));
-    expect(loadOntologySettings()).toEqual(expected);
+describe("case helpers", () => {
+  it("should support pascal and snake case generation", () => {
+    expect(toPascalCase("example ontology")).toBe("ExampleOntology");
+    expect(toSnakeCase("Example Ontology")).toBe("example_ontology");
+    expect(fromLabelWithCase("Example Ontology", "camelCase")).toBe("exampleOntology");
   });
 });
 
-describe('isValidOntology', () => {
-  it('should detect valid RDF or OWL strings', () => {
-    expect(isValidOntology("@prefix ex: <http://example.org/> .")).toBe(true);
-    expect(isValidOntology("<rdf:RDF></rdf:RDF>")).toBe(true);
-    expect(isValidOntology("<owl:Ontology rdf:about='...'></owl:Ontology>")).toBe(true);
-    expect(isValidOntology("")).toBe(false);
-    expect(isValidOntology("not a valid rdf")).toBe(false);
+describe("generateOntologySettings", () => {
+  it("should generate ontology metadata with stable IRI keys", () => {
+    const settings = generateOntologySettings(
+      "http://example.org",
+      "My Ontology",
+      "Ada Lovelace",
+      "A test ontology",
+      "#",
+      "readable",
+      "ont",
+      8,
+      10,
+      "snake_case"
+    );
+
+    expect(settings.iri).toBe("http://example.org#MyOntology");
+    expect(settings[ONTOLOGY_KEYS.label]).toBe("My Ontology");
+    expect(settings[ONTOLOGY_KEYS.creator]).toBe("Ada Lovelace");
+    expect(settings[ONTOLOGY_KEYS.description]).toBe("A test ontology");
+    expect(settings[ONTOLOGY_KEYS.versionIri]).toContain("http://example.org/");
+    expect(settings[ONTOLOGY_KEYS.versionInfo]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(settings.readableCase).toBe("snake_case");
+    expect(settings.delimiter).toBe("#");
+  });
+});
+
+describe("isLikelyOntology", () => {
+  it("should detect valid RDF or OWL strings", () => {
+    expect(isLikelyOntology("@prefix ex: <http://example.org/> .")).toBe(true);
+    expect(isLikelyOntology("<rdf:RDF></rdf:RDF>")).toBe(true);
+    expect(isLikelyOntology("<owl:Ontology rdf:about='...'></owl:Ontology>")).toBe(true);
+    expect(isLikelyOntology("")).toBe(false);
+    expect(isLikelyOntology("not a valid rdf")).toBe(false);
   });
 });

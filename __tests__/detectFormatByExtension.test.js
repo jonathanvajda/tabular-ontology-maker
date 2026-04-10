@@ -1,4 +1,4 @@
-const { detectFormatByExtension } = require('../path/to/your/module');
+const { detectFormatByExtension } = require("../docs/app/ontology_spreadsheet_helpers.js");
 
 describe('detectFormatByExtension', () => {
   test("recognizes 'csv' as spreadsheet", () => {

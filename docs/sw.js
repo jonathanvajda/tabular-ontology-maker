@@ -1,6 +1,6 @@
 /* sw.js */
 // --- Tune these names when you deploy a new version ---
-const APP_VERSION = 'v0.1.2';                  // bump on each release
+const APP_VERSION = 'v0.2.0';                  // bump on each release
 const PRECACHE_NAME = `precache-${APP_VERSION}`;
 const RUNTIME_NAME  = `runtime-${APP_VERSION}`;
 const JSON_CACHE    = `json-${APP_VERSION}`;
@@ -11,23 +11,25 @@ const JSON_CACHE    = `json-${APP_VERSION}`;
 const PRECACHE_MANIFEST = [
   { url: './',                                revision: 'static' },
   { url: './offline.html',                    revision: 'static' },
-  { url: './styles/handsontable.full.css',    revision: 'static' },
-  { url: './app/handsontable.full.js',        revision: 'static' },
+  { url: './manifest.json',                   revision: 'v0.2.0' },
+  { url: './styles/skeleton.css',             revision: 'v0.2.0' },
+  { url: './styles/tabulator.min.css',        revision: 'v0.2.0' },
+  { url: './styles/ontology_spreadsheet_styles.css', revision: 'v0.2.0' },
+  { url: './app/tabulator.min.js',            revision: 'v0.2.0' },
   { url: './app/n3.min.js',                   revision: 'static' },
   { url: './app/xlsx.full.min.js',            revision: 'static' },
-  // libraries you ship locally:
-  { url: './app/site-header.js',              revision: 'v0.1.2' },
-  { url: './app/ontology_spreadsheet.js',     revision: 'v0.1.2' },
-  { url: './index.html',                      revision: 'v0.1.2' },
-  { url: './index-dev.html',                  revision: 'v0.1.2' },
+  { url: './app/ontology_spreadsheet_helpers.js', revision: 'v0.2.0' },
+  { url: './app/ontology_spreadsheet.js',     revision: 'v0.2.0' },
+  { url: './index.html',                      revision: 'v0.2.0' },
+  { url: './index-dev.html',                  revision: 'v0.2.0' },
   { url: './favicon.ico',                     revision: 'v0.1.1' },
+  { url: './images/tom-black.svg',            revision: 'v0.2.0' },
   { url: './images/tom.svg',                  revision: 'v0.1.1' },
   { url: './template.csv',                    revision: 'v0.1.1' },
   { url: './template.xlsx',                   revision: 'v0.1.1' },
   { url: './json/bfo-cco-lookup.json',        revision: 'v0.1.1' },
   { url: './json/bfo-lookup.json',            revision: 'v0.1.1' },
   { url: './json/cco-lookup.json',            revision: 'v0.1.1' },
-  { url: './json/bfo-lookup.json',            revision: 'v0.1.1' },
 ];
 
 /**

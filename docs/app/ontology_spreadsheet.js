@@ -11,6 +11,23 @@ const BASE_COLS = 6;
 
 const container = document.getElementById('hot');
 const output = document.getElementById('rdfOutput');
+const SpreadsheetHelpers = window.OntologySpreadsheetHelpers || {};
+const TABLE_BASE_FIELDS = SpreadsheetHelpers.BASE_FIELDS || [
+  'iri',
+  'label',
+  'elementType',
+  'definition',
+  'isA',
+  'isCuratedInOntology',
+];
+const TABLE_BASE_HEADERS = SpreadsheetHelpers.BASE_HEADERS || [
+  'iri',
+  'label',
+  'element type',
+  'definition',
+  'is a',
+  'is curated in ontology',
+];
 
 // --- Constants so you can rename easily ---
 const DB_NAME = 'TabularOntologyDB';
@@ -201,27 +218,18 @@ function generateOntologySettings(
   opaqueStart = 1,
   readableCase = "PascalCase"         // "PascalCase" | "camelCase" | "snake_case"
 ) {
-  const { year, month, day } = getCurrentDateParts();
-  const normalizedLabel = toPascalCase(label);
-
-  const settings = {
-    iri: `${base}${delimiter}${normalizedLabel}`,
-    "http://www.w3.org/2002/07/owl#versionIRI": `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`,
-    "http://www.w3.org/2002/07/owl#versionInfo": `${year}-${month}-${day}`,
-    "http://www.w3.org/2000/01/rdf-schema#label": label,
-    "http://purl.org/dc/terms/creator": creator,
-    "http://purl.org/dc/terms/description": description,
-
-    // NEW:
+  return SpreadsheetHelpers.generateOntologySettings(
+    base,
+    label,
+    creator,
+    description,
+    delimiter,
     iriMode,
     opaqueLeading,
     opaqueDigits,
     opaqueStart,
-    readableCase,
-    delimiter,     // keep delimiter explicitly too
-    base           // store base, handy later
-  };
-  return settings;
+    readableCase
+  );
 }
 
 function getEffectiveOntologySettings() {
@@ -364,34 +372,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 function zeroPad(n, width) {
-  const s = String(Math.max(0, n|0));
-  return s.length >= width ? s : '0'.repeat(width - s.length) + s;
+  return SpreadsheetHelpers.zeroPad(n, width);
 }
 
 function toSnakeCase(str) {
-  return String(str || '')
-    .trim()
-    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .toLowerCase();
+  return SpreadsheetHelpers.toSnakeCase(str);
 }
 
 function fromLabelWithCase(label, caseStyle) {
-  const raw = String(label || '').trim();
-  switch (caseStyle) {
-    case 'camelCase':   return toCamelCase(raw);
-    case 'snake_case':  return toSnakeCase(raw);
-    case 'PascalCase':
-    default:            return toPascalCase(raw);
-  }
+  return SpreadsheetHelpers.fromLabelWithCase(label, caseStyle);
 }
 
 // Returns { base, delimiter } where base excludes trailing delimiter
 function getBaseAndDelimiter(settings) {
-  const base = (settings.base || '').replace(/[\/#]+$/,'') || 'http://example.org';
-  const delimiter = settings.delimiter || '/';
-  return { base, delimiter };
+  return SpreadsheetHelpers.getBaseAndDelimiter(settings);
 }
 
 
@@ -405,7 +399,7 @@ function findMaxOpaqueNumber(hot, settings) {
   const re = new RegExp('^' + iriPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d{' + digits + '})$');
 
   let max = (settings.opaqueStart ? settings.opaqueStart - 1 : 0);
-  const rows = hot.getData();
+  const rows = hot?.getData ? tableDataToArrayRows(hot.getData()) : (Array.isArray(hot) ? hot : []);
   for (const row of rows) {
     const iri = row?.[0] || '';
     const m = re.exec(String(iri));
@@ -418,75 +412,374 @@ function findMaxOpaqueNumber(hot, settings) {
 }
 
 function buildOpaqueIri(nextNum, settings) {
-  const { base, delimiter } = getBaseAndDelimiter(settings);
-  const lead   = settings.opaqueLeading || 'ont';
-  const digits = Math.max(1, settings.opaqueDigits || 6);
-  return `${base}${delimiter}${lead}${zeroPad(nextNum, digits)}`;
+  return SpreadsheetHelpers.buildOpaqueIri(nextNum, settings);
 }
 
 function buildReadableIri(label, settings, existingIris = new Set()) {
-  const { base, delimiter } = getBaseAndDelimiter(settings);
-  const style = settings.readableCase || 'PascalCase';
+  return SpreadsheetHelpers.buildReadableIri(label, settings, existingIris);
+}
 
-  let local = fromLabelWithCase(label, style) || 'Unnamed';
-  let candidate = `${base}${delimiter}${local}`;
+let nextRowId = 1;
 
-  // Ensure uniqueness within current table
-  let i = 2;
-  while (existingIris.has(candidate)) {
-    candidate = `${base}${delimiter}${local}_${i++}`;
+function getPredicateMeta() {
+  return SpreadsheetHelpers.buildPredicateMeta(customPredicates);
+}
+
+function materializeRowIdentity(row) {
+  const next = { ...(row || {}) };
+  if (!next.__rowId) {
+    next.__rowId = `row_${nextRowId++}`;
   }
-  return candidate;
+  return next;
+}
+
+function arrayRowsToTableData(rows) {
+  return SpreadsheetHelpers
+    .rowsToObjects(rows || [], getPredicateMeta())
+    .map(materializeRowIdentity);
+}
+
+function tableDataToArrayRows(rows) {
+  return SpreadsheetHelpers.rowsToArrays(rows || [], getPredicateMeta());
+}
+
+function createBlankRowObject() {
+  return materializeRowIdentity(SpreadsheetHelpers.createBlankRow(getPredicateMeta()));
+}
+
+function getTableData() {
+  return hotInstance ? hotInstance.getData() : [];
+}
+
+function getTableDataAsArrays() {
+  return tableDataToArrayRows(getTableData());
+}
+
+function getTableRows() {
+  return hotInstance ? hotInstance.getRows() : [];
+}
+
+function getRowDataAtIndex(rowIndex) {
+  const row = getTableRows()[rowIndex];
+  return row ? row.getData() : null;
+}
+
+function getFieldForColumnIndex(columnIndex) {
+  if (columnIndex < TABLE_BASE_FIELDS.length) {
+    return TABLE_BASE_FIELDS[columnIndex];
+  }
+
+  const predicateMeta = getPredicateMeta();
+  return predicateMeta[columnIndex - TABLE_BASE_FIELDS.length]?.field || null;
+}
+
+function getColumnIndexForField(field) {
+  const baseIndex = TABLE_BASE_FIELDS.indexOf(field);
+  if (baseIndex >= 0) {
+    return baseIndex;
+  }
+
+  const predicateMeta = getPredicateMeta();
+  const predicateIndex = predicateMeta.findIndex((meta) => meta.field === field);
+  return predicateIndex >= 0 ? TABLE_BASE_FIELDS.length + predicateIndex : -1;
+}
+
+function getCellValueAt(rowIndex, columnIndex) {
+  const rowData = getRowDataAtIndex(rowIndex);
+  const field = getFieldForColumnIndex(columnIndex);
+  return rowData && field ? rowData[field] : null;
+}
+
+function setCellValueAt(rowIndex, columnIndex, value) {
+  const row = getTableRows()[rowIndex];
+  const field = getFieldForColumnIndex(columnIndex);
+  if (row && field) {
+    row.update({ [field]: value });
+  }
+}
+
+function replaceTableData(arrayRows, shouldRefreshColumns = false) {
+  const nextRows = arrayRowsToTableData(arrayRows);
+
+  if (!hotInstance) {
+    hotInstance = createTable(container, arrayRows);
+    attachHotHooks();
+  } else {
+    if (shouldRefreshColumns) {
+      hotInstance.setColumns(getColumnDefinitions());
+    }
+    hotInstance.setData(nextRows);
+  }
+
+  harvestRowsIntoVocab?.(arrayRows);
+  setIsCuratedInForAllRows();
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function wrapDisplayValue(value) {
+  return `<div class="tom-cell-wrap">${escapeHtml(value ?? '')}</div>`;
+}
+
+function displayValueForIriLike(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+
+  const record = vocabByIri.get(raw) || vocabByIri.get(resolveToIri(raw) || '');
+  return record ? displayLabelAndCurie(record) : raw;
+}
+
+function wrappedTextFormatter(cell) {
+  return wrapDisplayValue(cell.getValue());
+}
+
+function iriAwareFormatter(cell) {
+  return wrapDisplayValue(displayValueForIriLike(cell.getValue()));
+}
+
+function iriAwareSorter(a, b) {
+  return displayValueForIriLike(a).localeCompare(displayValueForIriLike(b));
+}
+
+function isResolvableIriValue(value) {
+  if (value == null || String(value).trim() === '') {
+    return true;
+  }
+
+  const text = String(value).trim();
+  if (/^<[^>\s]+>$/.test(text)) return true;
+  if (/^https?:\/\/\S+$/i.test(text)) return true;
+  if (/^[A-Za-z][\w-]*:[\w.-]+$/.test(text) && curieToIri(text)) return true;
+  return false;
+}
+
+function iriValidator(_cell, value) {
+  return !value || Boolean(resolveToIri(value));
+}
+
+function predicateValidator(predicateIri) {
+  return function (_cell, value) {
+    const mode = getPredicateValueMode(predicateIri) || defaultModeForPredicate(predicateIri);
+    return mode === 'iri' ? isResolvableIriValue(value) : true;
+  };
+}
+
+function normalizeResolvableValue(value) {
+  const iri = resolveToIri(value);
+  return iri || value;
+}
+
+function getIsAEditorValues(cell, term) {
+  try {
+    const rowData = cell.getRow().getData();
+    const elType = rowData?.elementType;
+    let typeHint = null;
+    if (elType === 'Class' || elType === 'NamedIndividual') typeHint = 'Class';
+    else if (elType === 'ObjectProperty') typeHint = 'ObjectProperty';
+    else if (elType === 'DatatypeProperty') typeHint = 'DatatypeProperty';
+
+    return searchVocab(term, { typeHint, max: 50 }).map(displayLabelAndCurie);
+  } catch (error) {
+    console.error('[IsA] values lookup failed', error);
+    return [];
+  }
+}
+
+function buildHeaderMenu() {
+  return [
+    {
+      label: 'Hide Column',
+      action: function (_e, column) {
+        if (column.getField()) {
+          column.hide();
+        }
+      },
+    },
+    {
+      label: 'Show All Columns',
+      action: function () {
+        hotInstance?.getColumns().forEach((column) => {
+          if (column.getField()) {
+            column.show();
+          }
+        });
+      },
+    },
+    {
+      label: 'Reset Width',
+      action: function (_e, column) {
+        const definition = column.getDefinition();
+        if (Object.prototype.hasOwnProperty.call(definition, 'width')) {
+          delete definition.width;
+        }
+        column.updateDefinition(definition);
+      },
+    },
+  ];
+}
+
+function insertBlankRowsAt(rowIndex, count = 1) {
+  const currentRows = getTableDataAsArrays();
+  const settings = getOntologySettings();
+  let nextOpaque = findMaxOpaqueNumber(hotInstance || currentRows, settings);
+  const blanks = Array.from({ length: count }, () => {
+    const blank = SpreadsheetHelpers.rowArrayFromObject(createBlankRowObject(), getPredicateMeta());
+    if (settings.iri) {
+      blank[5] = settings.iri;
+    }
+    if ((settings.iriMode || 'opaque') === 'opaque') {
+      nextOpaque += 1;
+      blank[0] = buildOpaqueIri(nextOpaque, settings);
+    }
+    return blank;
+  });
+  currentRows.splice(rowIndex, 0, ...blanks);
+  replaceTableData(currentRows, false);
+}
+
+function buildRowContextMenu() {
+  return [
+    {
+      label: 'Add Row Above',
+      action: function (_e, row) {
+        const rowIndex = getTableRows().indexOf(row);
+        insertBlankRowsAt(Math.max(rowIndex, 0), 1);
+      },
+    },
+    {
+      label: 'Add Row Below',
+      action: function (_e, row) {
+        const rowIndex = getTableRows().indexOf(row);
+        insertBlankRowsAt(Math.max(rowIndex + 1, 0), 1);
+      },
+    },
+    {
+      label: 'Delete Row',
+      action: function (_e, row) {
+        row.delete();
+      },
+    },
+  ];
 }
 
 
 
 // Gets the columns definitions for the Handsontable instance.
 const getColumnDefinitions = () => {
-  return [
-    { type: 'text' }, // IRI
-    { type: 'text' }, // Label
+  const baseColumns = [
     {
-      type: 'dropdown',
-      source: getElementTypes(),
-      strict: true,
-      allowInvalid: false
-    },                // Element Type
-    { type: 'text' }, // Definition
-    {
-      // "Is A" with smart lookup
-      editor: 'autocomplete',
-      strict: false,
-      filter: false,
-      allowInvalid: true,
-      source: function (query, callback) {
-        try {
-          // infer type constraints from the row's Element Type
-          const row = this.row;
-          const elType = hotInstance.getDataAtCell(row, 2); // "element type"
-          let typeHint = null;
-          if (elType === 'Class' || elType === 'NamedIndividual') typeHint = 'Class';
-          else if (elType === 'ObjectProperty') typeHint = 'ObjectProperty';
-          else if (elType === 'DatatypeProperty') typeHint = 'DatatypeProperty';
-
-          const results = searchVocab(query, { typeHint, max: 50 });
-          callback(results.map(displayLabelAndCurie));
-        } catch (e) {
-          console.error('[IsA] source failed', e);
-          callback([]);
-        }
-      },
-      // Render a nice label in the cell even if we store an IRI
-      renderer: function (instance, td, row, col, prop, value, cellProperties) {
-        let text = value || '';
-        // If the cell stores an IRI, show a friendly label
-        const rec = vocabByIri.get(String(value).trim());
-        if (rec) text = displayLabelAndCurie(rec);
-        Handsontable.renderers.TextRenderer.apply(this, [instance, td, row, col, prop, text, cellProperties]);
-      }
+      title: 'iri',
+      field: 'iri',
+      editor: 'textarea',
+      formatter: wrappedTextFormatter,
+      validator: iriValidator,
+      headerFilter: 'input',
+      sorter: 'string',
+      cssClass: 'tom-wrap-cell',
+      minWidth: 220,
+      headerMenu: buildHeaderMenu,
     },
-    { type: 'text' }, // is curated in ontology
+    {
+      title: 'label',
+      field: 'label',
+      editor: 'textarea',
+      formatter: wrappedTextFormatter,
+      headerFilter: 'input',
+      sorter: 'string',
+      cssClass: 'tom-wrap-cell',
+      minWidth: 180,
+      headerMenu: buildHeaderMenu,
+    },
+    {
+      title: 'element type',
+      field: 'elementType',
+      editor: 'list',
+      editorParams: {
+        values: getElementTypes(),
+        autocomplete: true,
+        listOnEmpty: true,
+        clearable: true,
+      },
+      validator: function (_cell, value) {
+        return !value || getElementTypes().includes(value);
+      },
+      headerFilter: 'input',
+      sorter: 'string',
+      minWidth: 160,
+      headerMenu: buildHeaderMenu,
+    },
+    {
+      title: 'definition',
+      field: 'definition',
+      editor: 'textarea',
+      formatter: wrappedTextFormatter,
+      headerFilter: 'input',
+      sorter: 'string',
+      cssClass: 'tom-wrap-cell',
+      minWidth: 240,
+      headerMenu: buildHeaderMenu,
+    },
+    {
+      title: 'is a',
+      field: 'isA',
+      editor: 'list',
+      editorParams: function (cell) {
+        return {
+          autocomplete: true,
+          listOnEmpty: true,
+          clearable: true,
+          valuesLookup: function (_lookupCell, term) {
+            return getIsAEditorValues(cell, term);
+          },
+        };
+      },
+      mutatorEdit: normalizeResolvableValue,
+      formatter: iriAwareFormatter,
+      headerFilter: 'input',
+      sorter: iriAwareSorter,
+      cssClass: 'tom-wrap-cell',
+      minWidth: 200,
+      headerMenu: buildHeaderMenu,
+    },
+    {
+      title: 'is curated in ontology',
+      field: 'isCuratedInOntology',
+      editor: 'textarea',
+      formatter: wrappedTextFormatter,
+      headerFilter: 'input',
+      sorter: 'string',
+      cssClass: 'tom-wrap-cell',
+      minWidth: 220,
+      headerMenu: buildHeaderMenu,
+    },
   ];
+
+  const predicateColumns = getPredicateMeta().map((meta) => {
+    const mode = getPredicateValueMode(meta.predicateIri) || defaultModeForPredicate(meta.predicateIri);
+    return {
+      title: iriToNiceLabel(meta.predicateIri),
+      field: meta.field,
+      editor: 'textarea',
+      formatter: mode === 'iri' ? iriAwareFormatter : wrappedTextFormatter,
+      validator: predicateValidator(meta.predicateIri),
+      mutatorEdit: mode === 'iri' ? normalizeResolvableValue : undefined,
+      headerFilter: 'input',
+      sorter: mode === 'iri' ? iriAwareSorter : 'string',
+      cssClass: 'tom-wrap-cell',
+      minWidth: 180,
+      headerMenu: buildHeaderMenu,
+      tooltip: meta.predicateIri,
+    };
+  });
+
+  return baseColumns.concat(predicateColumns);
 };
 
 
@@ -504,68 +797,34 @@ const getInitialData = () => {
 // Gets the column headers for the Handsontable instance.  
 const getColumnHeaders = () => {
   console.info('getColumnHeaders happened');
-  return ["iri", "label", "element type", "definition", "is a", "is curated in ontology"].concat(customPredicates);
+  return TABLE_BASE_HEADERS.concat(customPredicates);
 };
 
-// Creates a Handsontable instance in the given container with the provided data and column definitions.
-const createTable = (container, data, colHeaders, columns) => {
+// Creates a Tabulator instance in the given container.
+const createTable = (container, data) => {
   console.info('createTable happened');
-  return new Handsontable(container, {
-    
-    data: data,
-    colHeaders: colHeaders,
-    columns: columns,
-    wordWrap: true,
-    stretchH: 'none',
-    rowHeaders: true,
-    rowHeaderWidth: 28,
-    contextMenu: true,
-    manualColumnResize: true,
-    hiddenColumns: { columns: [], indicators: true }, // little triangle indicator
-    licenseKey: 'non-commercial-and-evaluation',
-
-    // inject validator for first column across all rows
-    cells: (row, col) => {
-      const cellProps = {};
-
-      // your existing per-column logic…
-
-      // For custom predicate columns, enforce IRI vs literal
-      if (col >= BASE_COLS) {
-        const predIri = customPredicates[col - BASE_COLS];
-        const mode = getPredicateValueMode(predIri) || defaultModeForPredicate(predIri);
-
-        if (mode === 'iri') {
-          // basic validator: must resolve to IRI (absolute or CURIE)
-          cellProps.validator = (value, cb) => {
-            if (value == null || String(value).trim() === '') return cb(true); // allow empty
-            const v = String(value).trim();
-            // already <IRI>
-            if (/^<[^>\s]+>$/.test(v)) return cb(true);
-            // absolute IRI
-            if (/^https?:\/\/\S+$/i.test(v)) return cb(true);
-            // curie
-            if (/^[A-Za-z][\w-]*:[\w.-]+$/.test(v) && curieToIri(v)) return cb(true);
-            cb(false);
-          };
-          // Optionally a nice tooltip:
-          cellProps.allowInvalid = false;
-        } else {
-          // 'literal' — no special validator (or add your own literal constraints)
-        }
-      }
-
-      return cellProps;
+  container.innerHTML = '';
+  return new Tabulator(container, {
+    data: arrayRowsToTableData(data),
+    index: '__rowId',
+    layout: 'fitDataFill',
+    resizableColumns: true,
+    validationMode: 'highlight',
+    rowContextMenu: buildRowContextMenu(),
+    rowHeader: {
+      formatter: 'rownum',
+      headerSort: false,
+      hozAlign: 'center',
+      cssClass: 'tom-row-header',
+      width: 44,
+      resizable: false,
     },
-    cells(row, col) {
-      const meta = {};
-      if (col === 0) {
-        meta.validator = (value, cb) => cb(Boolean(resolveToIri(value)));
-        meta.allowInvalid = true; // keep editable, just mark invalid
-      }
-      return meta;
-    }
-    
+    columnDefaults: {
+      headerSort: true,
+      headerWordWrap: true,
+      variableHeight: true,
+    },
+    columns: getColumnDefinitions(),
   });
 };
 
@@ -582,26 +841,18 @@ function setIsCuratedInForAllRows() {
     return;
   }
 
-  const headers = hotInstance.getColHeader();
-  const columnIndex = headers.indexOf("is curated in ontology");
-
-  if (columnIndex === -1) {
-    console.warn("[setIsCuratedInForAllRows] 'cco2:ont00001760' column not found in table");
-    return;
-  }
-
-  const totalRows = hotInstance.countRows();
+  const rows = getTableRows();
   let updatedCount = 0;
 
-  for (let row = 0; row < totalRows; row++) {
-    const currentValue = hotInstance.getDataAtCell(row, columnIndex);
+  rows.forEach((row) => {
+    const currentValue = row.getData()?.isCuratedInOntology;
     if (currentValue === null || currentValue === "") {
-      hotInstance.setDataAtCell(row, columnIndex, ontologyIRI);
+      row.update({ isCuratedInOntology: ontologyIRI });
       updatedCount++;
     }
-  }
+  });
 
-  console.info(`[setIsCuratedInForAllRows] Set for ${updatedCount} of ${totalRows} rows (only empty cells updated)`);
+  console.info(`[setIsCuratedInForAllRows] Set for ${updatedCount} of ${rows.length} rows (only empty cells updated)`);
 }
 
 /**
@@ -612,13 +863,11 @@ function initHandsontable() {
   if (hotInstance) { try { hotInstance.destroy(); } catch (_) {} }
 
   // 1) Build rows/schema
-  const rows     = getInitialData();
-  const headers  = getColumnHeaders();
-  const columns  = getColumnDefinitions();
-  const settings = getOntologySettings(); // IndexedDB-backed cache
+  const rows = getInitialData();
+  getOntologySettings();
 
-  // 2) Create HOT using 4-arg createTable
-  hotInstance = createTable(container, rows, headers, columns);
+  // 2) Create table
+  hotInstance = createTable(container, rows);
   attachHotHooks?.();
 
   // 3) Finish init
@@ -629,8 +878,8 @@ function initHandsontable() {
 
 // This function checks if the element type is a predicate
 window.getIsAPredicateForRow = (rowIndex) => {
-  const row = hotInstance.getSourceDataAtRow(rowIndex);
-  const elementType = row ? row[2] : null;
+  const row = getRowDataAtIndex(rowIndex);
+  const elementType = row ? row.elementType : null;
   return getIsAPredicate(elementType);
 };
 
@@ -842,7 +1091,7 @@ async function clearOntologySettings() {
 
 const handleExport = async (shouldDownload = false) => {
   console.info('handleExport happened');
-  const rows = hotInstance.getData();
+  const rows = getTableDataAsArrays();
   const format = document.getElementById('exportFormat')?.value || 'ttl';
 
   try {
@@ -873,7 +1122,7 @@ const handleExport = async (shouldDownload = false) => {
  */
 async function saveRDFtoIndexedDB() {
   console.info('saveRDFtoIndexedDB happened');
-  const rows = hotInstance.getData();
+  const rows = getTableDataAsArrays();
   // A <button> has no useful .value — read from the format <select>
   const format = document.getElementById('exportFormat')?.value || 'ttl';
 
@@ -1153,14 +1402,8 @@ async function reloadSavedSession() {
       return extended;
     });
 
-    // Rebuild Handsontable
-    const newHeaders = getColumnHeaders(); // base + customPredicates
-    const newColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
-
-    if (hotInstance) { try { hotInstance.destroy(); } catch(_) {} }
-    hotInstance = createTable(container, finalRows, newHeaders, newColumns);
-    attachHotHooks();
-    harvestRowsIntoVocab?.(finalRows);
+    // Refresh the table schema and data
+    replaceTableData(finalRows, true);
 
     showToast(`✅ Reloaded ${subjMap.size} subject${subjMap.size!==1?'s':''} from latest saved RDF`, 'success');
   } catch (e) {
@@ -1174,26 +1417,17 @@ async function reloadSavedSession() {
  * @returns 
  */
 function getCurrentDateParts() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return { year, month, day };
+  return SpreadsheetHelpers.getCurrentDateParts();
 }
 
 // This is called by generateOntologySettings to get the camelCase version of the label
 function toCamelCase(str) {
-  return str
-    .toLowerCase()
-    .replace(/[^a-z0-9]+(.)/g, (_, chr) => chr.toUpperCase());
+  return SpreadsheetHelpers.toCamelCase(str);
 }
 
 // Converts a string to PascalCase (e.g., "example term" → "ExampleTerm")
 function toPascalCase(str) {
-  return str
-    .toLowerCase()
-    .replace(/[^a-z0-9]+(.)/g, (_, chr) => chr.toUpperCase()) // handle word boundaries
-    .replace(/^./, chr => chr.toUpperCase()); // capitalize first letter
+  return SpreadsheetHelpers.toPascalCase(str);
 }
 
 /*
@@ -1203,6 +1437,9 @@ function toPascalCase(str) {
 // Add entries to the index
 function addToVocabIndex(entries, source = "External") {
   for (const e of entries) {
+    if (!e?.iri || vocabByIri.has(e.iri)) {
+      continue;
+    }
     const rec = {
       iri: e.iri,
       curie: e.curie || iriToCurie(e.iri),
@@ -1326,90 +1563,56 @@ function harvestRowsIntoVocab(rows) {
 
 // This function normalizes "Is A" edits by resolving them to IRIs.
 function normalizeIsAEdits(changes) {
-  if (!Array.isArray(changes)) return;
-  for (const ch of changes) {
-    // [row, prop(or col index), oldValue, newValue]
-    const row = ch[0];
-    const prop = ch[1];
-    const newVal = ch[3];
-
-    // Resolve prop to column index
-    const col = (typeof prop === 'number') ? prop : hotInstance.propToCol(prop);
-    if (col !== 4) continue; // only "Is A" column
-
-    const iri = resolveToIri(newVal);
-    if (iri) ch[3] = iri; // overwrite with IRI to store canonically
-  }
+  return changes;
 }
 
 function attachHotHooks() {
-  hotInstance.addHook('beforeChange', normalizeIsAEdits);
+  if (!hotInstance) return;
 
-  // NEW: when rows are created, auto-assign IRIs
-  hotInstance.addHook('afterCreateRow', (index, amount, source) => {
+  hotInstance.on('rowAdded', (row) => {
     try {
-      const s = getOntologySettings();
-      const mode = s.iriMode || 'opaque';
+      const rowData = row.getData();
+      const settings = getOntologySettings();
 
-      if (mode === 'opaque') {
-        let maxNum = findMaxOpaqueNumber(hotInstance, s);
-        for (let r = 0; r < amount; r++) {
-          const rowIndex = index + r;
-          maxNum += 1;
-          const iri = buildOpaqueIri(maxNum, s);
-          hotInstance.setDataAtCell(rowIndex, 0, iri); // col 0 = IRI
-        }
-      } else {
-        // readable: we’ll fill when/if label appears (see afterChange)
-        for (let r = 0; r < amount; r++) {
-          const rowIndex = index + r;
-          // leave IRI blank for now
-          hotInstance.setDataAtCell(rowIndex, 0, '');
-        }
+      if (!rowData.isCuratedInOntology && settings.iri) {
+        row.update({ isCuratedInOntology: settings.iri });
       }
-    } catch (e) {
-      console.error('[IRI] afterCreateRow failed', e);
+
+      if (!rowData.iri && (settings.iriMode || 'opaque') === 'opaque') {
+        const nextIri = buildOpaqueIri(findMaxOpaqueNumber(hotInstance, settings) + 1, settings);
+        row.update({ iri: nextIri });
+      }
+    } catch (error) {
+      console.error('[IRI] rowAdded sync failed', error);
     }
   });
 
-  // NEW: when label changes in readable mode, (re)build IRI if empty or previously auto-generated
-  hotInstance.addHook('afterChange', (changes, source) => {
-    if (!Array.isArray(changes) || source === 'LoadData') return;
+  hotInstance.on('cellEdited', (cell) => {
     try {
-      const s = getOntologySettings();
-      if ((s.iriMode || 'opaque') !== 'readable') return;
+      const field = cell.getField();
+      if (field !== 'label') return;
 
-      // gather existing iris for uniqueness checks
-      const allIris = new Set(hotInstance.getData().map(r => String(r?.[0] || '')));
+      const settings = getOntologySettings();
+      if ((settings.iriMode || 'opaque') !== 'readable') return;
 
-      for (const ch of changes) {
-        const row = ch[0];
-        const col = (typeof ch[1] === 'number') ? ch[1] : hotInstance.propToCol(ch[1]);
-        const newVal = ch[3];
+      const row = cell.getRow();
+      const rowData = row.getData();
+      const label = String(rowData.label || '').trim();
+      if (!label) return;
 
-        // Column 1 = label
-        if (col === 1) {
-          const currentIri = String(hotInstance.getDataAtCell(row, 0) || '');
-          const label = String(newVal || '').trim();
-          if (!label) continue;
+      const { base, delimiter } = getBaseAndDelimiter(settings);
+      const currentIri = String(rowData.iri || '');
+      const looksAuto = currentIri.startsWith(`${base}${delimiter}`);
 
-          // Rebuild if IRI is blank OR was previously auto-generated (matches our base+delimiter)
-          const { base, delimiter } = getBaseAndDelimiter(s);
-          const looksAuto = currentIri.startsWith(`${base}${delimiter}`);
+      if (!currentIri || looksAuto) {
+        const allIris = new Set(getTableDataAsArrays().map((entry) => String(entry?.[0] || '')));
+        if (currentIri) allIris.delete(currentIri);
 
-          if (!currentIri || looksAuto) {
-            // Temporarily exclude our own current IRI to avoid self-collision logic
-            if (currentIri) allIris.delete(currentIri);
-
-            const iri = buildReadableIri(label, s, allIris);
-            hotInstance.setDataAtCell(row, 0, iri);
-
-            allIris.add(iri); // reserve
-          }
-        }
+        const nextIri = buildReadableIri(label, settings, allIris);
+        row.update({ iri: nextIri });
       }
-    } catch (e) {
-      console.error('[IRI] afterChange label→IRI sync failed', e);
+    } catch (error) {
+      console.error('[IRI] cellEdited sync failed', error);
     }
   });
 }
@@ -1419,19 +1622,18 @@ function backfillIris() {
   try {
     if (!hotInstance) {
       console.warn('[IRI] No table instance');
-      showToast('⚠️ Table not ready', 'error');
+      showToast('Table not ready', 'error');
       return;
     }
 
-    const s = getEffectiveOntologySettings();
-    const mode = s.iriMode || 'opaque';
-
-    const total = hotInstance.countRows();
-
-    // collect already-used IRIs to ensure uniqueness
+    const settings = getEffectiveOntologySettings();
+    const mode = settings.iriMode || 'opaque';
+    const rows = getTableDataAsArrays();
+    const total = rows.length;
     const existing = new Set();
-    for (let r = 0; r < total; r++) {
-      const iri = String(hotInstance.getDataAtCell(r, 0) || '').trim();
+
+    for (let rowIndex = 0; rowIndex < total; rowIndex += 1) {
+      const iri = String(rows[rowIndex]?.[0] || '').trim();
       if (iri) existing.add(iri);
     }
 
@@ -1439,48 +1641,49 @@ function backfillIris() {
     let skipped = 0;
 
     if (mode === 'opaque') {
-      // start at max seen (or start-1), then fill blanks
-      let next = Math.max(findMaxOpaqueNumber(hotInstance, s), (s.opaqueStart || 1) - 1);
+      let next = Math.max(findMaxOpaqueNumber(hotInstance, settings), (settings.opaqueStart || 1) - 1);
 
-      for (let r = 0; r < total; r++) {
-        const iri = String(hotInstance.getDataAtCell(r, 0) || '').trim();
-        if (!iri) {
-          // advance until unique
-          do { next += 1; } while (existing.has(buildOpaqueIri(next, s)));
-          const newIri = buildOpaqueIri(next, s);
-          hotInstance.setDataAtCell(r, 0, newIri);
-          existing.add(newIri);
-          filled++;
-        }
+      for (let rowIndex = 0; rowIndex < total; rowIndex += 1) {
+        const iri = String(rows[rowIndex]?.[0] || '').trim();
+        if (iri) continue;
+
+        do {
+          next += 1;
+        } while (existing.has(buildOpaqueIri(next, settings)));
+
+        const newIri = buildOpaqueIri(next, settings);
+        rows[rowIndex][0] = newIri;
+        existing.add(newIri);
+        filled += 1;
       }
     } else {
-      // human-readable: derive from label when present
-      for (let r = 0; r < total; r++) {
-        const iri = String(hotInstance.getDataAtCell(r, 0) || '').trim();
-        if (!iri) {
-          const label = String(hotInstance.getDataAtCell(r, 1) || '').trim();
-          if (!label) { skipped++; continue; }
-          const newIri = buildReadableIri(label, s, existing);
-          hotInstance.setDataAtCell(r, 0, newIri);
-          existing.add(newIri);
-          filled++;
+      for (let rowIndex = 0; rowIndex < total; rowIndex += 1) {
+        const iri = String(rows[rowIndex]?.[0] || '').trim();
+        if (iri) continue;
+
+        const label = String(rows[rowIndex]?.[1] || '').trim();
+        if (!label) {
+          skipped += 1;
+          continue;
         }
+
+        const newIri = buildReadableIri(label, settings, existing);
+        rows[rowIndex][0] = newIri;
+        existing.add(newIri);
+        filled += 1;
       }
     }
 
-    showToast(`✅ Backfilled ${filled} IRI${filled!==1?'s':''}` + (skipped ? ` (skipped ${skipped} unlabeled row${skipped!==1?'s':''})` : ''), 'success');
-  } catch (e) {
-    console.error('[IRI] Backfill failed', e);
-    showToast('❌ Backfill failed — see console', 'error');
+    replaceTableData(rows, false);
+    showToast(`Backfilled ${filled} IRI${filled !== 1 ? 's' : ''}` + (skipped ? ` (skipped ${skipped} unlabeled row${skipped !== 1 ? 's' : ''})` : ''), 'success');
+  } catch (error) {
+    console.error('[IRI] Backfill failed', error);
+    showToast('Backfill failed - see console', 'error');
   }
 }
 
 function isValidOntology(content) {
-  return (
-    typeof content === 'string' &&
-    content.length > 0 &&
-    /rdf:RDF|@prefix|owl:Ontology/.test(content)
-  );
+  return SpreadsheetHelpers.isLikelyOntology(content);
 }
 
 // Gets n rows to the bottom of the Handsontable instance.
@@ -1493,18 +1696,18 @@ function getRowCountInput() {
 // This function adds n blank rows to the bottom of the Handsontable instance.
 function addRowsToTable(n = 1) {
   if (!hotInstance || n < 1) return;
-  const blankRow = getColumnHeaders().map(() => "");
-  const newRows = Array.from({ length: n }, () => [...blankRow]);
-  const current = hotInstance.getData();
-  hotInstance.loadData([...current, ...newRows]);
+  insertBlankRowsAt(getTableDataAsArrays().length, n);
 }
 
 // This function deletes n rows from the bottom of the Handsontable instance.
 function removeRowsFromBottom(n = 1) {
   if (!hotInstance || n < 1) return;
-  const total = hotInstance.countRows();
+  const rows = getTableRows();
+  const total = rows.length;
   const toRemove = Math.min(n, total);
-  if (toRemove > 0) hotInstance.alter("remove_row", total - toRemove, toRemove);
+  if (toRemove > 0) {
+    rows.slice(total - toRemove).forEach((row) => row.delete());
+  }
 }
 
 
@@ -1513,13 +1716,11 @@ function removeRowsFromBottom(n = 1) {
  * Returns [ {index, header} ] for custom predicate columns (all columns after BASE_COLS).
  */
 function getCustomPredicateColumns() {
-  if (!hotInstance) return [];
-  const headers = hotInstance.getColHeader(); // includes hidden columns
-  const out = [];
-  for (let c = BASE_COLS; c < headers.length; c++) {
-    out.push({ index: c, header: String(headers[c]) });
-  }
-  return out;
+  return getPredicateMeta().map((meta, index) => ({
+    index: BASE_COLS + index,
+    header: meta.predicateIri,
+    field: meta.field,
+  }));
 }
 
 /**
@@ -1677,12 +1878,9 @@ function renderCustomPredicateChecklist(containerOrId, opts = {}) {
     }
     checkbox.checked = startChecked;
 
-    // (Optional) show if currently hidden in HOT
-    const hiddenBadge = hidden.includes(index) ? ' (hidden)' : '';
-
     const label = document.createElement('label');
     label.setAttribute('for', id);
-    label.textContent = `${labelize(header)}${hiddenBadge}`;
+    label.textContent = `${labelize(header)}`;
 
     checkbox.addEventListener('change', (ev) => {
       onToggle?.({ index, header, checked: ev.target.checked, event: ev });
@@ -1721,10 +1919,8 @@ async function confirmAddPredicate() {
            //await savePredicateValueModes();
          }
 
-        // Rebuild table with new predicate column appended
-        const newHeaders = getColumnHeaders(); // base + customs
-        const newColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
-        const oldData = hotInstance.getData();
+        // Refresh table schema with the new predicate column appended
+        const oldData = getTableDataAsArrays();
         const validTypes = getElementTypes();
 
         const cleanedRows = oldData.map(row => {
@@ -1736,10 +1932,7 @@ async function confirmAddPredicate() {
           return fixed;
         });
 
-        hotInstance.destroy();
-        hotInstance = createTable(container, cleanedRows, newHeaders, newColumns);
-        attachHotHooks();
-        harvestRowsIntoVocab?.(cleanedRows);
+        replaceTableData(cleanedRows, true);
          // Refresh the modes UI if the modal is open
          try { renderPredicateModesChecklist('predicate-modes-list'); } catch (_) {}
       }
@@ -1801,10 +1994,12 @@ function headerToPredicateIrisForRules(header) {
 
 // Build the predicate set from HOT headers (visible or hidden)
 function collectPredicateIrisFromHeaders() {
-  if (!hotInstance) return [];
-  const headers = hotInstance.getColHeader(); // includes hidden
+  const headers = getColumnHeaders();
   const set = new Set();
-  for (const h of headers) set.add(p);
+  for (const h of headers) {
+    const iris = headerToPredicateIrisForRules(h);
+    iris.forEach((iri) => set.add(iri));
+  }
   return Array.from(set);
 }
 
@@ -1866,34 +2061,7 @@ function presentPredicatesForRow(row, headers) {
  * * @returns {Set<string>} A Set of unique predicate IRIs.
  */
 function getAllTablePredicates() {
-    if (!hotInstance) return new Set();
-
-    const allPredicates = new Set();
-    const headers = hotInstance.getColHeader();
-    
-    // Adjust this based on where your first predicate column starts (e.g., 3 after IRI, Label, Type)
-    const PREDICATE_START_INDEX = BASE_COLS - 3; // Assuming first 3 of BASE_COLS are not predicates
-
-    for (let c = PREDICATE_START_INDEX; c < headers.length; c++) {
-        const header = headers[c];
-        let predicateIRI = header;
-
-        try {
-            // Attempt to resolve CURIEs in headers using your existing function
-            const resolvedIri = curieToIri(header);
-            if (resolvedIri) {
-                predicateIRI = resolvedIri;
-            }
-        } catch (e) {
-            // Header is neither a valid CURIE nor an IRI that can be resolved, ignore it.
-            continue;
-        }
-
-        // Add the resolved IRI to the set
-        allPredicates.add(predicateIRI);
-    }
-    
-    return allPredicates;
+    return new Set(collectPredicateIrisFromHeaders());
 }
 
 /*
@@ -2013,27 +2181,7 @@ function handleFileTypeChange() {
  * @returns {string} - The file extension in lowercase (e.g. "csv")
  */
 function parseFileExtension(filename) {
-  try {
-    console.info(`[parseFileExtension] Received filename: ${filename}`);
-
-    if (typeof filename !== 'string') {
-      console.error("[parseFileExtension] Invalid input: expected string");
-      return '';
-    }
-
-    const lastDot = filename.lastIndexOf('.');
-    if (lastDot === -1 || lastDot === filename.length - 1) {
-      console.warn("[parseFileExtension] No extension found or empty extension");
-      return '';
-    }
-
-    const ext = filename.slice(lastDot + 1).toLowerCase();
-    console.info(`[parseFileExtension] Parsed extension: ${ext}`);
-    return ext;
-  } catch (error) {
-    console.error("[parseFileExtension] Unexpected error:", error);
-    return '';
-  }
+  return SpreadsheetHelpers.parseFileExtension(filename);
 }
 
 
@@ -2045,34 +2193,7 @@ function parseFileExtension(filename) {
  * @returns {string} - 'spreadsheet', 'ontology', or 'unsupported'
  */
 function detectFormatByExtension(extension) {
-  console.info(`[detectFormatByExtension] Checking extension: ${extension}`);
-
-  // Define supported extension sets
-  var spreadsheetExts = ["csv", "tsv", "xls", "xlsx"];
-  var ontologyExts = ["ttl", "nt", "rdf", "jsonld"];
-
-  try {
-    if (typeof extension !== 'string') {
-      console.error("[detectFormatByExtension] Invalid input: expected string");
-      return 'unsupported';
-    }
-
-    if (spreadsheetExts.includes(extension)) {
-      console.info("[detectFormatByExtension] Detected spreadsheet format");
-      return 'spreadsheet';
-    }
-
-    if (ontologyExts.includes(extension)) {
-      console.info("[detectFormatByExtension] Detected ontology format");
-      return 'ontology';
-    }
-
-    console.warn("[detectFormatByExtension] Unsupported extension");
-    return 'unsupported';
-  } catch (error) {
-    console.error("[detectFormatByExtension] Unexpected error:", error);
-    return 'unsupported';
-  }
+  return SpreadsheetHelpers.detectFormatByExtension(extension);
 }
 
 /**
@@ -2161,7 +2282,6 @@ async function handleInsertDataSave() {
     const extension = parseFileExtension(currentImportFile.name);
     const parsed = await parseSpreadsheetData(currentImportFile, extension, hasHeader);
     const allHeaders = getColumnHeaders(); // already includes customs
-    const allColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
 
     const knownPredicates = allHeaders; // use as the canonical expected headers
 
@@ -2175,16 +2295,13 @@ async function handleInsertDataSave() {
 
     // Merge clean data
     const { mergedRows, stats } = mergeTableData(
-      hotInstance.getData(),
+      getTableDataAsArrays(),
       result.cleanedRows,
       insertMode
     );
 
-    // Rebuild table with merged data
-    hotInstance.destroy();
-    hotInstance = createTable(container, mergedRows, allHeaders, allColumns);
-    attachHotHooks();
-    harvestRowsIntoVocab?.(mergedRows);
+    // Refresh table with merged data
+    replaceTableData(mergedRows, true);
 
     
     // Toast feedback
@@ -2254,66 +2371,115 @@ function parseOntologyData(file, mimeTypes, guessMediaType, parseFileExtension) 
   });
 }
 
+function firstLiteralFromObjects(objects) {
+  const literal = (objects || []).find((obj) => obj?.termType === 'Literal');
+  return literal ? literal.value : '';
+}
+
+function firstIriFromObjects(objects) {
+  const namedNode = (objects || []).find((obj) => obj?.termType === 'NamedNode');
+  return namedNode ? namedNode.value : '';
+}
+
+function quadObjectToTableValue(object) {
+  if (!object) return '';
+  if (object.termType === 'Literal') return object.value;
+  if (object.termType === 'BlankNode') return `_:${object.value}`;
+  return object.value || '';
+}
+
 /**
- * Helper function to pivot N3.js quads into a Handsontable-compatible row structure.
- * It groups triples by subject and maps predicates to known table columns.
+ * Helper function to pivot N3.js quads into the current table row structure.
+ * It groups triples by subject and maps base predicates into the fixed columns,
+ * while custom predicates only populate currently configured predicate columns.
  * @param {Array} quads - Array of quads from parseOntologyData.
- * @param {Array<string>} knownPredicates - Array of column headers (e.g., ["IRI", "rdfs:label", ...])
+ * @param {Array<string>} knownPredicates - Array of current table headers.
  * @returns {object} - An object { valid: true, cleanedRows: [...], errors: [] }
  */
 function validateAndPivotOntologyData(quads, knownPredicates) {
-  const subjectData = new Map(); // Key: subject URI, Value: { predicate: object }
+  const subjectData = new Map();
   const errors = [];
+  const knownCustomPredicates = (knownPredicates || [])
+    .slice(BASE_COLS)
+    .map((header) => curieToIri(header) || String(header || '').trim())
+    .filter(Boolean);
 
-  // 1. Group quads by subject
-  for (const quad of quads) {
-    const s = quad.subject.value;
-    const p = quad.predicate.value;
-    const o = quad.object.value;
+  for (const quad of quads || []) {
+    const subject = quad?.subject?.value;
+    const predicate = quad?.predicate?.value;
+    if (!subject || !predicate) continue;
 
-    if (!subjectData.has(s)) {
-      subjectData.set(s, {});
+    if (!subjectData.has(subject)) {
+      subjectData.set(subject, new Map());
     }
 
-    const predicates = subjectData.get(s);
-    
-    // Check if this predicate is already a column
-    if (knownPredicates.includes(p)) {
-        // Handle multiple values for the same predicate (e.g., multiple rdfs:comment)
-        // This simple version joins with a comma. You could also create duplicate rows.
-        if (predicates[p]) {
-            predicates[p] += `, ${o}`;
-        } else {
-            predicates[p] = o;
-        }
+    const predicateMap = subjectData.get(subject);
+    if (!predicateMap.has(predicate)) {
+      predicateMap.set(predicate, []);
     }
-    // You could add an 'else' here to collect unrecognized predicates as an error/warning
+    predicateMap.get(predicate).push(quad.object);
   }
 
-  // 2. Pivot the Map into an array of rows
   const cleanedRows = [];
-  const subjectHeader = knownPredicates[0]; // Assumes first column is the Subject/IRI
+  for (const [subjectIri, predicateMap] of subjectData.entries()) {
+    const rdfTypes = (predicateMap.get(w3cIRI.RDF_TYPE) || [])
+      .filter((obj) => obj?.termType === 'NamedNode')
+      .map((obj) => obj.value);
+    const hasType = (iri) => rdfTypes.includes(iri);
 
-  for (const [subjectUri, predicates] of subjectData.entries()) {
-    // Create a new row array, initialized to null
-    const newRow = new Array(knownPredicates.length).fill(null);
-    
-    // Set the subject in the first column
-    newRow[0] = subjectUri;
-
-    // Map the predicates to their corresponding columns
-    for (const [predicateUri, objectValue] of Object.entries(predicates)) {
-      const colIndex = knownPredicates.indexOf(predicateUri);
-      if (colIndex > 0) { // colIndex 0 is subject, which we already set
-        newRow[colIndex] = objectValue;
-      }
+    if (hasType(w3cIRI.OWL_ONTOLOGY)) {
+      continue;
     }
-    cleanedRows.push(newRow);
+
+    let elementType = '';
+    if (hasType(w3cIRI.OWL_CLASS)) elementType = 'Class';
+    else if (hasType(w3cIRI.OWL_OBJPROP)) elementType = 'ObjectProperty';
+    else if (hasType(w3cIRI.OWL_DATATYPE)) elementType = 'DatatypeProperty';
+    else if (hasType(w3cIRI.OWL_ANNOPROP)) elementType = 'AnnotationProperty';
+    else if (hasType(w3cIRI.OWL_NAMEDIND)) elementType = 'NamedIndividual';
+    else if (rdfTypes.length) elementType = 'NamedIndividual';
+
+    let isA = '';
+    if (elementType === 'Class') {
+      isA = firstIriFromObjects(predicateMap.get(w3cIRI.RDFS_SUBCLASS));
+    } else if (
+      elementType === 'ObjectProperty' ||
+      elementType === 'DatatypeProperty' ||
+      elementType === 'AnnotationProperty'
+    ) {
+      isA = firstIriFromObjects(predicateMap.get(w3cIRI.RDFS_SUBPROP));
+    } else if (elementType === 'NamedIndividual') {
+      const classish = rdfTypes.filter((iri) => ![
+        w3cIRI.OWL_CLASS,
+        w3cIRI.OWL_OBJPROP,
+        w3cIRI.OWL_DATAPROP,
+        w3cIRI.OWL_ANNOPROP,
+        w3cIRI.OWL_NAMEDIND,
+      ].includes(iri));
+      isA = classish[0] || '';
+    }
+
+    const row = new Array(BASE_COLS + knownCustomPredicates.length).fill('');
+    row[0] = subjectIri;
+    row[1] = firstLiteralFromObjects(predicateMap.get(w3cIRI.RDFS_LABEL));
+    row[2] = elementType;
+    row[3] = firstLiteralFromObjects(predicateMap.get(w3cIRI.SKOS_DEFINITION));
+    row[4] = isA;
+    row[5] = firstIriFromObjects(predicateMap.get(w3cIRI.CCO_CURATEDIN)) ||
+      firstLiteralFromObjects(predicateMap.get(w3cIRI.CCO_CURATEDIN));
+
+    knownCustomPredicates.forEach((predicateIri, index) => {
+      const values = (predicateMap.get(predicateIri) || [])
+        .map(quadObjectToTableValue)
+        .filter(Boolean);
+      row[BASE_COLS + index] = values.join(' ; ');
+    });
+
+    cleanedRows.push(row);
   }
-  
-  // For now, validation is simple. You could add more complex checks here.
-  if (cleanedRows.length === 0 && quads.length > 0) {
-      errors.push("Data was parsed, but no subjects matched the known table columns.");
+
+  if (cleanedRows.length === 0 && (quads || []).length > 0) {
+    errors.push('Data was parsed, but no rows matched the current table schema.');
   }
 
   return { valid: errors.length === 0, cleanedRows, errors };
@@ -2344,7 +2510,6 @@ async function handleInsertOntologySave() {
 
     // Get all current column headers and definitions
     const allHeaders = getColumnHeaders(); // already includes customs
-    const allColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
 
     // The "known predicates" are all column headers.
     // We assume the first header is the Subject (e.g., "IRI").
@@ -2381,16 +2546,13 @@ async function handleInsertOntologySave() {
 
     // Merge clean data (this logic remains identical)
     const { mergedRows, stats } = mergeTableData(
-      hotInstance.getData(),
+      getTableDataAsArrays(),
       result.cleanedRows,
       insertMode
     );
 
-    // Rebuild table with merged data (this logic remains identical)
-    hotInstance.destroy();
-    hotInstance = createTable(container, mergedRows, allHeaders, allColumns);
-    attachHotHooks();
-    harvestRowsIntoVocab?.(mergedRows);
+    // Refresh table with merged data
+    replaceTableData(mergedRows, true);
 
     
     // Toast feedback (this logic remains identical)
@@ -2468,8 +2630,12 @@ function autoSelectFileType(file) {
 }
 
 function resetFileInput() {
-  const fileNameSpan = document.getElementById("file-input");
-  fileNameSpan.textContent = "No file selected";
+  const fileInput = document.getElementById("file-input");
+  const fileNameText = document.getElementById("filename-text");
+  const fileNameDisplay = document.getElementById("filename-display");
+  if (fileInput) fileInput.value = "";
+  if (fileNameText) fileNameText.textContent = "";
+  if (fileNameDisplay) fileNameDisplay.style.display = "none";
 }
 
 
@@ -2495,58 +2661,85 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
   const unmatchedHeaders = [];
   const ignoredColumns = [];
 
-  // Alias mapping to support variations in common headers
   const headerAliases = {
-    "iri": "iri",
-    "IRI": "iri",
-    "id": "iri",
-    "label": "label",
-    "rdfs:label": "label",
-    "http://www.w3.org/2000/01/rdf-schema#label": "label",
-    "element type": "element type",
-    "type": "element type",
-    "rdf:type": "element type",
-    "http://www.w3.org/1999/02/22-rdf-syntax-ns#type": "element type",
-    "definition": "definition",
-    "skos:definition": "definition",
-    "http://www.w3.org/2004/02/skos/core#definition": "definition",
-    "is a": "is a",
-    "subclass of": "is a",
-    "rdfs:subClassOf": "is a",
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": "is a",
-    "subproperty of": "is a",
-    "rdfs:subPropertyOf": "is a",
-    "http://www.w3.org/2000/01/rdf-schema#subPropertyOf": "is a",
-    "is curated in": "is curated in",
-    "is defined by": "is curated in",
-    "is curated in ontology": "is curated in",
-    "cco2:ont00001760": "is curated in",
-    "https://www.commoncoreontologies.org/ont00001760": "is curated in",
-    "has curation status": "has curation status",
-    "obo:IAO_0000114": "has curation status",
-    "http://purl.obolibrarry.org/obo/IAO_0000114": "has curation status",
-    "cco2:ont00001753": "acronym",
-    "https://www.commoncoreontologies.org/ont00001753": "acronym",
-    "cceo:acronym": "acronym"
-    // Add more aliases as needed
+    iri: 'iri',
+    id: 'iri',
+    label: 'label',
+    'rdfs:label': 'label',
+    'http://www.w3.org/2000/01/rdf-schema#label': 'label',
+    'element type': 'element type',
+    type: 'element type',
+    'rdf:type': 'element type',
+    'http://www.w3.org/1999/02/22-rdf-syntax-ns#type': 'element type',
+    definition: 'definition',
+    'skos:definition': 'definition',
+    'http://www.w3.org/2004/02/skos/core#definition': 'definition',
+    'is a': 'is a',
+    'subclass of': 'is a',
+    'rdfs:subClassOf': 'is a',
+    'http://www.w3.org/2000/01/rdf-schema#subClassOf': 'is a',
+    'subproperty of': 'is a',
+    'rdfs:subPropertyOf': 'is a',
+    'http://www.w3.org/2000/01/rdf-schema#subPropertyOf': 'is a',
+    'is curated in': 'is curated in ontology',
+    'is defined by': 'is curated in ontology',
+    'is curated in ontology': 'is curated in ontology',
+    'cco2:ont00001760': 'is curated in ontology',
+    'https://www.commoncoreontologies.org/ont00001760': 'is curated in ontology',
+  };
+
+  const normalizeIncomingHeader = (value) => {
+    const raw = String(value || '').trim();
+    const lower = raw.toLowerCase();
+
+    if (headerAliases[lower]) {
+      return headerAliases[lower];
+    }
+
+    const resolved = curieToIri(raw);
+    if (resolved) {
+      return resolved;
+    }
+
+    const matchedCustom = customPredicates.find((predicateIri) => {
+      const curie = iriToCurie(predicateIri) || '';
+      const localName = predicateIri.split(/[#/]/).pop() || '';
+      return predicateIri.toLowerCase() === lower ||
+        curie.toLowerCase() === lower ||
+        iriToNiceLabel(predicateIri).toLowerCase() === lower ||
+        localName.toLowerCase() === lower;
+    });
+
+    return matchedCustom || lower;
   };
 
   try {
-    // Normalize known headers
-    const known = knownPredicates.map(h => h.toLowerCase().trim());
+    if (!rows || !Array.isArray(rows)) {
+      console.error('[validateTableData] Invalid parsed input');
+      return { valid: false, errors: ['File could not be parsed or is empty'] };
+    }
 
-    // Map headers if present
-    let mappedHeader = null;
-    if (hasHeaderRow && header) {
-      mappedHeader = header.map(h => {
-        const key = h.toLowerCase().trim();
-        return headerAliases[key] || key;
-      });
+    const expectedCols = BASE_COLS + customPredicates.length;
+    const knownHeaderIndex = new Map();
 
-      mappedHeader.forEach((h, i) => {
-        if (!known.includes(h)) {
-          ignoredColumns.push(header[i]); // store original for feedback
+    (knownPredicates || []).forEach((knownHeader, index) => {
+      const normalized = normalizeIncomingHeader(knownHeader);
+      if (!knownHeaderIndex.has(normalized)) {
+        knownHeaderIndex.set(normalized, index);
+      }
+    });
+
+    let columnIndexMap = null;
+    if (hasHeaderRow && Array.isArray(header)) {
+      columnIndexMap = header.map((sourceHeader) => {
+        const normalized = normalizeIncomingHeader(sourceHeader);
+        const targetIndex = knownHeaderIndex.get(normalized);
+        if (typeof targetIndex !== 'number') {
+          ignoredColumns.push(sourceHeader);
+          unmatchedHeaders.push(sourceHeader);
+          return -1;
         }
+        return targetIndex;
       });
 
       if (ignoredColumns.length > 0) {
@@ -2554,27 +2747,30 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
       }
     }
 
-    // Validate parsed rows
-    if (!rows || !Array.isArray(rows)) {
-      console.error('[validateTableData] Invalid parsed input');
-      return { valid: false, errors: ['File could not be parsed or is empty'] };
-    }
-
-    const expectedCols = BASE_COLS + customPredicates.length;
-
     rows.forEach((row, i) => {
-      const cleanedRow = row.slice(0, expectedCols); // Trim excess columns
+      const sourceRow = Array.isArray(row) ? row : [];
+      const cleanedRow = Array.from({ length: expectedCols }, () => '');
 
-      if (row.length < expectedCols) {
-        console.info(`[validateTableData] Padding row ${i + 1} with empty cells`);
-        while (row.length < expectedCols) {
-          row.push("");
+      if (columnIndexMap) {
+        sourceRow.forEach((value, sourceIndex) => {
+          const targetIndex = columnIndexMap[sourceIndex];
+          if (targetIndex >= 0 && targetIndex < expectedCols) {
+            cleanedRow[targetIndex] = value == null ? '' : value;
+          }
+        });
+      } else {
+        for (let col = 0; col < Math.min(expectedCols, sourceRow.length); col += 1) {
+          cleanedRow[col] = sourceRow[col] == null ? '' : sourceRow[col];
         }
       }
 
-      const typeValue = cleanedRow[2]; // Expecting "element type" column
+      if (cleanedRow.every((value) => String(value || '').trim() === '')) {
+        return;
+      }
+
+      const typeValue = String(cleanedRow[2] || '').trim();
       const validTypes = getElementTypes();
-      if (!validTypes.includes(typeValue)) {
+      if (typeValue && !validTypes.includes(typeValue)) {
         const msg2 = `Row ${i + 1} has invalid Element Type: "${typeValue}"`;
         console.warn(msg2);
         errors.push(msg2);
@@ -2587,7 +2783,7 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
       valid: errors.length === 0,
       cleanedRows: cleanedRows,
       ignoredColumns: ignoredColumns,
-      unmatchedHeaders: ignoredColumns, // for now same
+      unmatchedHeaders: unmatchedHeaders,
       errors: errors
     };
   } catch (e) {
@@ -2612,37 +2808,7 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
  * @returns {{ mergedRows: string[][], stats: { original: number, appended: number, total: number } }}
  */
 function mergeTableData(currentRows, newRows, mode) {
-  console.info("[mergeTableData] Mode:", mode);
-  try {
-    let mergedRows = [];
-
-    if (mode === 'replace') {
-      mergedRows = newRows;
-      console.info(`[mergeTableData] Replacing all ${currentRows.length} rows with ${newRows.length} new rows.`);
-    } else if (mode === 'append') {
-      mergedRows = currentRows.concat(newRows);
-      console.info(`[mergeTableData] Appending ${newRows.length} rows to existing ${currentRows.length} rows.`);
-    } else {
-      console.warn("[mergeTableData] Unknown mode. Defaulting to append.");
-      mergedRows = currentRows.concat(newRows);
-    }
-
-    const stats = {
-      original: currentRows.length,
-      appended: newRows.length,
-      total: mergedRows.length
-    };
-
-    console.info("[mergeTableData] Merge complete:", stats);
-    return { mergedRows, stats };
-
-  } catch (e) {
-    console.error("[mergeTableData] Merge failed:", e);
-    return {
-      mergedRows: currentRows,
-      stats: { original: currentRows.length, appended: 0, total: currentRows.length }
-    };
-  }
+  return SpreadsheetHelpers.mergeTableData(currentRows, newRows, mode);
 }
 
 // DOM HANDLERS
@@ -3053,8 +3219,8 @@ document.getElementById("ontology-creator-input").addEventListener("input", upda
 document.getElementById("ontology-description-input").addEventListener("input", updateOntologyPreview);
 document.querySelectorAll('input[name="base-iri-delimiter"]').forEach(radio => {
   radio.addEventListener("change", updateOntologyPreview);
-  initializeIriModeToggles()
 });
+initializeIriModeToggles();
 
 // Event Listeners for Prefix Management
 function initializePrefixManagerListeners() {

@@ -1,4 +1,4 @@
-const { parseFileExtension } = require('../path/to/your/module');
+const { parseFileExtension } = require("../docs/app/ontology_spreadsheet_helpers.js");
 
 describe('parseFileExtension', () => {
   test('returns correct extension for standard filename', () => {
