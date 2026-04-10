@@ -6,6 +6,15 @@
   const DataEditor = GDG.DataEditor || GDG.default;
   const GridCellKind = GDG.GridCellKind;
   const CompactSelection = GDG.CompactSelection;
+  const GRID_ROW_HEIGHT = 44;
+  const GRID_HEADER_HEIGHT = 48;
+  const GRID_ROW_MARKER_WIDTH = 32;
+  const GRID_FRAME_SIZE = 2;
+  const GRID_TEXT_FONT_SIZE = 14;
+  const GRID_LINE_HEIGHT = 1.25;
+  const GRID_HORIZONTAL_PADDING = 10;
+  const GRID_VERTICAL_PADDING = 7;
+  let textMeasureContext = null;
 
   const BASE_FIELDS = [
     "iri",
@@ -22,7 +31,7 @@
     elementType: 160,
     definition: 360,
     isA: 220,
-    isCuratedInOntology: 220,
+    isCuratedInOntology: 275,
   };
 
   function ensureDependencies() {
@@ -68,6 +77,208 @@
     if (/definition|description|citation|comment|scope|note/i.test(header)) return 280;
     if (/iri|curated/i.test(header)) return 220;
     return 180;
+  }
+
+  function readCssVar(name, fallback) {
+    const rootValue = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    if (rootValue) return rootValue;
+    const bodyValue = getComputedStyle(document.body).getPropertyValue(name).trim();
+    return bodyValue || fallback;
+  }
+
+  function buildGridTheme() {
+    const accent = readCssVar("--ont-accent", "#2563eb");
+    const accentSoft = readCssVar("--ont-accent-soft", "#e0e7ff");
+    const panel = readCssVar("--ont-panel-bg", "#ffffff");
+    const background = readCssVar("--ont-bg", "#f8fafc");
+    const border = readCssVar("--ont-border", "#d0d7de");
+    const text = readCssVar("--ont-text", "#1f2937");
+    const muted = readCssVar("--ont-muted", "#4b5563");
+    const fontFamily = readCssVar(
+      "--ont-font-body",
+      "system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    );
+
+        return {
+          accentColor: accent,
+      accentFg: "#ffffff",
+      accentLight: accentSoft,
+      textDark: text,
+      textMedium: muted,
+      textLight: muted,
+        textHeader: text,
+      textHeaderSelected: text,
+      textGroupHeader: text,
+      textBubble: text,
+      textMenu: text,
+      bgCell: panel,
+      bgCellMedium: background,
+      bgHeader: background,
+      bgHeaderHasFocus: panel,
+      bgHeaderHovered: accentSoft,
+      bgBubble: accentSoft,
+      bgBubbleSelected: accentSoft,
+      bgSearchResult: accentSoft,
+      bgSearchResultStacked: accentSoft,
+      bgIconHeader: background,
+      fgIconHeader: muted,
+      borderColor: border,
+      drilldownBorder: border,
+      linkColor: accent,
+      headerFontStyle: "600 14px",
+      baseFontStyle: "14px",
+      fontFamily,
+      editorFontSize: "14px",
+      cellHorizontalPadding: GRID_HORIZONTAL_PADDING,
+      cellVerticalPadding: GRID_VERTICAL_PADDING,
+      lineHeight: GRID_LINE_HEIGHT,
+      roundingRadius: 8,
+    };
+  }
+
+  function getTextMeasureContext() {
+    if (!textMeasureContext) {
+      textMeasureContext = document.createElement("canvas").getContext("2d");
+    }
+    return textMeasureContext;
+  }
+
+  function wrapTextLine(line, maxWidth, measureText) {
+    const value = String(line ?? "");
+    if (!value) return 1;
+    if (maxWidth <= 0) return Math.max(1, value.split(/\s+/).length);
+    if (measureText(value) <= maxWidth) return 1;
+
+    const words = value.split(/\s+/);
+    let lines = 0;
+    let current = "";
+
+    words.forEach(function (word) {
+      const next = current ? `${current} ${word}` : word;
+      if (!current || measureText(next) <= maxWidth) {
+        current = next;
+        return;
+      }
+
+      lines += 1;
+      current = word;
+
+      while (current && measureText(current) > maxWidth) {
+        let sliceLength = current.length;
+        while (sliceLength > 1 && measureText(current.slice(0, sliceLength)) > maxWidth) {
+          sliceLength -= 1;
+        }
+        lines += 1;
+        current = current.slice(sliceLength);
+      }
+    });
+
+    if (current) {
+      lines += 1;
+    }
+
+    return Math.max(1, lines);
+  }
+
+  function measureWrappedLineCount(value, maxWidth, theme) {
+    const text = String(value ?? "");
+    if (!text) return 1;
+
+    const context = getTextMeasureContext();
+    if (!context) return Math.max(1, text.split(/\r?\n/).length);
+
+    context.font = `${theme.baseFontStyle || `${GRID_TEXT_FONT_SIZE}px`} ${theme.fontFamily || ""}`;
+
+    return text.split(/\r?\n/).reduce(function (total, line) {
+      return total + wrapTextLine(line, maxWidth, function (sample) {
+        return context.measureText(sample).width;
+      });
+    }, 0);
+  }
+
+  function computeRowHeight(row, rowIndex, schema, theme, displayResolver) {
+    const verticalPadding = (theme.cellVerticalPadding || GRID_VERTICAL_PADDING) * 2;
+    const lineHeightPx =
+      Math.ceil((theme.lineHeight || GRID_LINE_HEIGHT) * GRID_TEXT_FONT_SIZE);
+
+    let height = GRID_ROW_HEIGHT;
+
+    (schema || []).forEach(function (meta) {
+      if (!meta.allowWrapping) return;
+
+      const value = displayResolver(meta, row, rowIndex);
+      const usableWidth = Math.max(
+        24,
+        (meta.width || defaultWidthForField(meta.field, meta.header)) -
+          (theme.cellHorizontalPadding || GRID_HORIZONTAL_PADDING) * 2
+      );
+      const lineCount = measureWrappedLineCount(value, usableWidth, theme);
+      const wrappedHeight = lineCount * lineHeightPx + verticalPadding + 4;
+      height = Math.max(height, wrappedHeight);
+    });
+
+    return Math.ceil(height);
+  }
+
+  function computeRowHeights(rows, schema, theme, displayResolver) {
+    return (rows || []).map(function (row, rowIndex) {
+      return computeRowHeight(row, rowIndex, schema, theme, displayResolver);
+    });
+  }
+
+  function computeGridHeight(rowHeights) {
+    const totalRowHeight = (rowHeights || []).reduce(function (sum, height) {
+      return sum + Math.max(0, Number(height) || 0);
+    }, 0);
+
+    return GRID_HEADER_HEIGHT + totalRowHeight + GRID_FRAME_SIZE;
+  }
+
+  function computeGridWidth(columns) {
+    const totalColumnWidth = (columns || []).reduce(function (sum, column) {
+      return sum + Math.max(0, Number(column?.width) || 0);
+    }, 0);
+
+    return GRID_ROW_MARKER_WIDTH + totalColumnWidth + GRID_FRAME_SIZE;
+  }
+
+  function computeViewportCaps(container) {
+    const rect = container.getBoundingClientRect();
+    const parentWidth = container.parentElement?.clientWidth || window.innerWidth || 0;
+    const viewportWidth = Math.max(320, Math.floor(parentWidth));
+    const viewportHeight = Math.max(
+      GRID_HEADER_HEIGHT + GRID_ROW_HEIGHT + GRID_FRAME_SIZE,
+      Math.floor((window.innerHeight || 0) - rect.top - 32),
+    );
+
+    return {
+      width: viewportWidth,
+      height: viewportHeight,
+    };
+  }
+
+  function resolveEditorOptions(source, rowIndex, query) {
+    if (typeof source === "function") {
+      let resolved = [];
+      try {
+        source.call({ row: rowIndex }, query, (values) => {
+          resolved = Array.isArray(values) ? values : [];
+        });
+      } catch (error) {
+        console.error("[TOM.Grid] Failed to resolve autocomplete options", error);
+      }
+      return resolved;
+    }
+
+    if (Array.isArray(source)) {
+      const term = String(query || "").trim().toLowerCase();
+      if (!term) return source.slice(0, 50);
+      return source
+        .filter((value) => String(value || "").toLowerCase().includes(term))
+        .slice(0, 50);
+    }
+
+    return [];
   }
 
   function buildSchema(headers, columns, previousSchema) {
@@ -237,10 +448,38 @@
   }
 
   function AutocompleteEditor(props) {
-    const options = props.value?.tomOptions || [];
+    const initialValue =
+      props.value?.tomEditValue ?? props.value?.displayData ?? props.value?.data ?? "";
+    const [inputValue, setInputValue] = React.useState(initialValue);
+    const [options, setOptions] = React.useState(() =>
+      resolveEditorOptions(props.value?.tomSource, props.value?.tomRowIndex, initialValue)
+    );
     const listId = `tom-autocomplete-${props.value?.tomField || "field"}-${
       props.target?.y || 0
     }-${props.target?.x || 0}`;
+
+    React.useEffect(() => {
+      const nextValue =
+        props.value?.tomEditValue ?? props.value?.displayData ?? props.value?.data ?? "";
+      setInputValue(nextValue);
+      setOptions(resolveEditorOptions(props.value?.tomSource, props.value?.tomRowIndex, nextValue));
+    }, [
+      props.value?.data,
+      props.value?.displayData,
+      props.value?.tomEditValue,
+      props.value?.tomRowIndex,
+      props.value?.tomSource,
+    ]);
+
+    function updateValue(nextValue) {
+      setInputValue(nextValue);
+      setOptions(resolveEditorOptions(props.value?.tomSource, props.value?.tomRowIndex, nextValue));
+      props.onChange({
+        ...props.value,
+        data: nextValue,
+        displayData: nextValue,
+      });
+    }
 
     return React.createElement(
       "div",
@@ -258,14 +497,9 @@
           boxSizing: "border-box",
         },
         list: listId,
-        value: props.value?.data ?? "",
+        value: inputValue,
         onChange: (event) => {
-          const nextValue = event.target.value;
-          props.onChange({
-            ...props.value,
-            data: nextValue,
-            displayData: nextValue,
-          });
+          updateValue(event.target.value);
         },
       }),
       React.createElement(
@@ -319,9 +553,37 @@
       schema: buildSchema(config.colHeaders || [], config.columns || [], null),
       rows: [],
       destroyed: false,
+      themeObserver: null,
+      mediaQueryList: null,
     };
 
     state.rows = cloneObjectRows(config.data || [], state.schema);
+
+    if (typeof MutationObserver !== "undefined") {
+      const observer = new MutationObserver(() => render());
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["class", "style", "data-theme"],
+      });
+      if (document.body) {
+        observer.observe(document.body, {
+          attributes: true,
+          attributeFilter: ["class", "style", "data-theme"],
+        });
+      }
+      state.themeObserver = observer;
+    }
+
+    if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+      const mediaQueryList = window.matchMedia("(prefers-color-scheme: dark)");
+      const handleThemeChange = () => render();
+      if (typeof mediaQueryList.addEventListener === "function") {
+        mediaQueryList.addEventListener("change", handleThemeChange);
+      } else if (typeof mediaQueryList.addListener === "function") {
+        mediaQueryList.addListener(handleThemeChange);
+      }
+      state.mediaQueryList = { mediaQueryList, handleThemeChange };
+    }
 
     function visibleSchema() {
       return state.schema.filter((meta) => !meta.hidden);
@@ -345,20 +607,8 @@
       });
     }
 
-    function getCellOptions(meta, rowIndex) {
-      if (typeof meta.source === "function") {
-        let resolved = [];
-        try {
-          meta.source.call({ row: rowIndex }, "", (values) => {
-            resolved = Array.isArray(values) ? values : [];
-          });
-        } catch (error) {
-          console.error("[TOM.Grid] Failed to resolve cell options", error);
-        }
-        return resolved;
-      }
-
-      return Array.isArray(meta.source) ? meta.source : [];
+    function getCellOptions(meta, rowIndex, query) {
+      return resolveEditorOptions(meta.source, rowIndex, query);
     }
 
     function getDisplayValue(meta, rowIndex, value) {
@@ -410,6 +660,9 @@
         tomField: meta.field,
         tomHeader: meta.header,
         tomColIndex: meta.index,
+        tomRowIndex: rowIndex,
+        tomSource: meta.source,
+        tomEditValue: String(display ?? raw ?? ""),
         tomEditor:
           meta.type === "dropdown"
             ? "dropdown"
@@ -418,7 +671,7 @@
             : meta.allowWrapping
             ? "textarea"
             : "text",
-        tomOptions: getCellOptions(meta, rowIndex),
+        tomOptions: getCellOptions(meta, rowIndex, String(display ?? raw ?? "")),
       };
     }
 
@@ -461,12 +714,27 @@
 
     function render() {
       if (state.destroyed) return;
-
-      const columns = visibleSchema().map((meta) => ({
+      const theme = buildGridTheme();
+      const visible = visibleSchema();
+      const columns = visible.map((meta) => ({
         id: meta.field,
         title: meta.header,
         width: meta.width,
       }));
+      const rowHeights = computeRowHeights(state.rows, visible, theme, function (meta, row, rowIndex) {
+        return getDisplayValue(meta, rowIndex, row?.[meta.field] ?? "");
+      });
+      const gridHeight = computeGridHeight(rowHeights);
+      const gridWidth = computeGridWidth(columns);
+      const viewportCaps = computeViewportCaps(container);
+      const viewportHeight = Math.min(gridHeight, viewportCaps.height);
+      const viewportWidth = Math.min(gridWidth, viewportCaps.width);
+      container.style.height = `${viewportHeight}px`;
+      container.style.minHeight = `${viewportHeight}px`;
+      container.style.maxHeight = `${viewportHeight}px`;
+      container.style.width = `${viewportWidth}px`;
+      container.style.minWidth = `${viewportWidth}px`;
+      container.style.maxWidth = `${viewportWidth}px`;
 
       state.root.render(
         React.createElement(DataEditor, {
@@ -482,9 +750,17 @@
             render();
           },
           rowMarkers: "number",
-          rowMarkerWidth: 36,
-          height: Math.max(420, container.clientHeight || 520),
-          width: "100%",
+          rowMarkerWidth: GRID_ROW_MARKER_WIDTH,
+          rowHeight: function rowHeight(rowIndex) {
+            return rowHeights[rowIndex] || GRID_ROW_HEIGHT;
+          },
+          headerHeight: GRID_HEADER_HEIGHT,
+          height: gridHeight,
+          width: gridWidth,
+          theme,
+          scaleToRem: true,
+          overscrollY: 0,
+          overscrollX: 0,
           smoothScrollX: true,
           smoothScrollY: true,
           columnSelect: "multi",
@@ -549,6 +825,7 @@
                 : state.schema.findIndex((meta) => meta.field === column.id);
             if (schemaIndex >= 0) {
               state.schema[schemaIndex].width = newSize;
+              render();
             }
           },
         })
@@ -667,6 +944,17 @@
       destroy() {
         if (state.destroyed) return;
         state.destroyed = true;
+        if (state.themeObserver) {
+          state.themeObserver.disconnect();
+        }
+        if (state.mediaQueryList) {
+          const { mediaQueryList, handleThemeChange } = state.mediaQueryList;
+          if (typeof mediaQueryList.removeEventListener === "function") {
+            mediaQueryList.removeEventListener("change", handleThemeChange);
+          } else if (typeof mediaQueryList.removeListener === "function") {
+            mediaQueryList.removeListener(handleThemeChange);
+          }
+        }
         state.root.unmount();
         container.innerHTML = "";
       },

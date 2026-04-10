@@ -17,13 +17,13 @@
     <button id="dump-rows-btn">Dump Rows to Console</button>
   </div>
 
-  <div id="hot" class="tom-grid-shell"></div>
+  <div id="ontology-grid" class="tom-grid-shell"></div>
   <div id="portal"></div>
 
   <script src="./app/glide-data-grid.min.js"></script>
   <script src="./app/tom-grid-glide.js"></script>
   <script>
-    const grid = window.TOM.Grid.createGrid(document.getElementById("hot"), {
+    const grid = window.TOM.Grid.createGrid(document.getElementById("ontology-grid"), {
       colHeaders: ["iri", "label", "element type", "definition", "is a", "is curated in ontology"],
       columns: [
         { type: "text" },

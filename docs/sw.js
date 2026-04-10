@@ -18,9 +18,8 @@ const PRECACHE_MANIFEST = [
   { url: './app/tom-grid-glide.js',           revision: 'v0.2.0' },
   { url: './app/tom-core.js',                 revision: 'v0.2.0' },
   { url: './app/tom-ui.js',                   revision: 'v0.2.0' },
-  { url: './app/ontology_spreadsheet.js',     revision: 'v0.2.0' },
+  { url: './app/tom-app.js',                  revision: 'v0.2.0' },
   { url: './index.html',                      revision: 'v0.2.0' },
-  { url: './index-dev.html',                  revision: 'v0.2.0' },
   { url: './favicon.ico',                     revision: 'v0.1.1' },
   { url: './images/tom.svg',                  revision: 'v0.1.1' },
   { url: './template.csv',                    revision: 'v0.1.1' },
@@ -28,7 +27,6 @@ const PRECACHE_MANIFEST = [
   { url: './json/bfo-cco-lookup.json',        revision: 'v0.1.1' },
   { url: './json/bfo-lookup.json',            revision: 'v0.1.1' },
   { url: './json/cco-lookup.json',            revision: 'v0.1.1' },
-  { url: './json/bfo-lookup.json',            revision: 'v0.1.1' },
 ];
 
 /**
