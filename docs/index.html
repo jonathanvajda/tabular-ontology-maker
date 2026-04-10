@@ -136,7 +136,7 @@
       <button id="exportBtn">Download RDF</button>
     </div>
 
-    <div id="hot" class="tom-grid-shell"></div>
+    <div id="ontology-grid" class="tom-grid-shell"></div>
 
     <!-- Change Number of Rows -->
     <div id="row-controls" style="margin: 1em 0; display:flex; align-items:center; gap:10px;">
@@ -330,14 +330,14 @@
     <!-- Drag & Drop -->
     <div id="drop-area" style="border:2px dashed #ccc; padding:20px; text-align:center; margin-bottom:1em;">
       <p>Drag & drop a file here</p>
-      <p>— or —</p>
+      <p>- or -</p>
       <input type="file" id="file-input" accept=".csv,.tsv,.xls,.xlsx,.ttl,.rdf,.jsonld,.nt" />
     </div>
 
     <!-- Filename display -->
     <div id="filename-display" style="margin-bottom:1em; display:none;">
       <span id="filename-text" style="font-weight:bold;"></span>
-      <button id="remove-file-btn" style="margin-left:10px; height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">❌</button>
+      <button id="remove-file-btn" style="margin-left:10px; height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">X</button>
     </div>
 
     <!-- File type radio -->
@@ -418,10 +418,7 @@
       })();
     })();
   </script>
-  <script src="./app/tom-grid-glide.js"></script>
-  <script src="./app/tom-core.js"></script>
-  <script src="./app/tom-ui.js"></script>
-  <script src="./app/ontology_spreadsheet.js"></script>
+  <script type="module" src="./app/tom-app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
@@ -437,7 +434,7 @@
           // A new SW is waiting to activate
           if (reg.waiting) offerRefresh(reg.waiting);
 
-          // A new SW is installed but not yet waiting (it’s in installing state)
+          // A new SW is installed but not yet waiting (it's in installing state)
           reg.addEventListener('updatefound', () => {
             const newSW = reg.installing;
             if (!newSW) return;
@@ -460,7 +457,7 @@
           navigator.serviceWorker.addEventListener('message', (e) => {
             if (e.data?.type === 'json-updated') {
               console.info('[PWA] JSON updated:', e.data.url);
-              // Option: hot-reload specific panels, or show a toast “Data updated”
+              // Option: live-refresh specific panels, or show a toast "Data updated"
             }
           });
         } catch (err) {

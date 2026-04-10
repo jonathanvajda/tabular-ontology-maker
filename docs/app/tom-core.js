@@ -11,7 +11,7 @@ let currentImportFile = null;
 // 0: iri, 1: label, 2: element type, 3: definition, 4: is a, 5: is curated in ontology
 const BASE_COLS = 6;
 
-const container = document.getElementById('hot');
+const container = document.getElementById('ontology-grid');
 const output = document.getElementById('rdfOutput');
 
 // --- Constants so you can rename easily ---
@@ -136,7 +136,7 @@ async function saveOntologySettings(next) {
 // Synchronous accessor *after* settingsLoad() has run
 function getOntologySettings() {
   if (!SETTINGS_CACHE) {
-    console.warn('[getOntologySettings] Cache empty — did you await settingsLoad() during init?');
+    console.warn('[getOntologySettings] Cache empty - did you await settingsLoad() during init?');
     // Last-resort fallback to keep UI from crashing:
     return generateOntologySettings();
   }
@@ -368,8 +368,8 @@ function getBaseAndDelimiter(settings) {
 }
 
 
-// Scan current HOT for largest opaque number already used
-function findMaxOpaqueNumber(hot, settings) {
+// Scan current grid for largest opaque number already used
+function findMaxOpaqueNumber(grid, settings) {
   const { base, delimiter } = getBaseAndDelimiter(settings);
   const lead = settings.opaqueLeading || 'ont';
   const digits = Math.max(1, settings.opaqueDigits || 6);
@@ -378,7 +378,7 @@ function findMaxOpaqueNumber(hot, settings) {
   const re = new RegExp('^' + iriPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d{' + digits + '})$');
 
   let max = (settings.opaqueStart ? settings.opaqueStart - 1 : 0);
-  const rows = hot.getData();
+  const rows = grid.getData();
   for (const row of rows) {
     const iri = row?.[0] || '';
     const m = re.exec(String(iri));
@@ -463,7 +463,7 @@ const getInitialData = () => {
     ["http://example.org/ont000002", "Bob", "NamedIndividual", "An instance of a Person.", "cco2:ont00001262", "http://example.org/ExampleOntology"],
     ["http://example.org/ont000003", "has vehicle", "ObjectProperty", "x hasVehicle y iff x possesses y and y is a Vehicle.", "ex:Owns", "http://example.org/ExampleOntology"],
     ["http://example.org/ont000004", "Automobile", "Class", "A ground vehicle that is designed to transport passengers.", "cco2:ont00000618", "http://example.org/ExampleOntology"],
-    ["", "", "", "", "", ""]
+    ["http://example.org/ont000005", "Student", "Class", "", "", "http://example.org/ExampleOntology"]
 ];
 };
 
@@ -486,7 +486,7 @@ const createTable = (container, data, colHeaders, columns) => {
     cells: (row, col) => {
       const cellProps = {};
 
-      // your existing per-column logic…
+      // your existing per-column logic
 
       // For custom predicate columns, enforce IRI vs literal
       if (col >= BASE_COLS) {
@@ -509,7 +509,7 @@ const createTable = (container, data, colHeaders, columns) => {
           // Optionally a nice tooltip:
           cellProps.allowInvalid = false;
         } else {
-          // 'literal' — no special validator (or add your own literal constraints)
+          // 'literal' - no special validator (or add your own literal constraints)
         }
       }
 
@@ -852,7 +852,7 @@ const handleExport = async (shouldDownload = false) => {
 async function saveRDFtoIndexedDB() {
   console.info('saveRDFtoIndexedDB happened');
   const rows = hotInstance.getData();
-  // A <button> has no useful .value — read from the format <select>
+  // A <button> has no useful .value - read from the format <select>
   const format = document.getElementById('exportFormat')?.value || 'ttl';
 
   try {
@@ -976,7 +976,7 @@ function asObjectTerm(value) {
   if (/^https?:\/\/\S+$/i.test(v)) {
     return N3.DataFactory.namedNode(v);
   }
-  // CURIE → IRI (uses your curieToIri)
+  // CURIE -> IRI (uses your curieToIri)
   if (/^[A-Za-z][\w-]*:[\w.-]+$/.test(v)) {
     const iri = curieToIri(v);
     if (iri) return N3.DataFactory.namedNode(iri);
@@ -1019,11 +1019,11 @@ async function reloadSavedSession() {
     // Use the latest record
     const { rdfData, format } = all[all.length - 1];
 
-    // Parse RDF → quads
+    // Parse RDF -> quads
     const parser = new N3.Parser({ format: n3FormatForSaved(format) });
     const quads = parser.parse(rdfData);
 
-    // Build subject → predicate→values map + set of all predicates
+    // Build subject -> predicate->values map + set of all predicates
     const subjMap = new Map();
     const extraPreds = new Set();
 
@@ -1137,10 +1137,10 @@ async function reloadSavedSession() {
     hotInstance.replaceRows(finalRows, 'LoadData');
     harvestRowsIntoVocab?.(finalRows);
 
-    showToast(`✅ Reloaded ${subjMap.size} subject${subjMap.size!==1?'s':''} from latest saved RDF`, 'success');
+    showToast(`Reloaded ${subjMap.size} subject${subjMap.size!==1?'s':''} from latest saved RDF`, 'success');
   } catch (e) {
     console.error('[reloadSavedSession] failed:', e);
-    showToast('❌ Failed to reload prior session — see console', 'error');
+    showToast('Failed to reload prior session - see console', 'error');
   }
 }
 
@@ -1163,7 +1163,7 @@ function toCamelCase(str) {
     .replace(/[^a-z0-9]+(.)/g, (_, chr) => chr.toUpperCase());
 }
 
-// Converts a string to PascalCase (e.g., "example term" → "ExampleTerm")
+// Converts a string to PascalCase (e.g., "example term" -> "ExampleTerm")
 function toPascalCase(str) {
   return str
     .toLowerCase()
@@ -1208,7 +1208,7 @@ async function loadVocabFrom(url, source = "External") {
     console.info(`[vocab] Loaded ${data.length} entries from ${source}`);
   } catch (e) {
     console.error("[vocab] Failed to load index:", e);
-    showToast("⚠️ Could not load lookup index", "error");
+    showToast("Could not load lookup index", "error");
   }
 }
 
@@ -1255,33 +1255,38 @@ function searchVocab(q, { max = 50, typeHint = null } = {}) {
 }
 
 function displayLabelAndCurie(rec) {
-  console.log('[displayLabelAndCurie] called with rec:', rec.label);
-  return `${rec.label || rec.curie || rec.iri} — ${(rec.curie || rec.iri)}`;
+  return `${rec.label || rec.curie || rec.iri} - ${(rec.curie || rec.iri)}`;
 }
 
 // Try to resolve whatever the user typed to an IRI
 function resolveToIri(value) {
   if (!value) return null;
   const v = String(value).trim();
+  const displayParts = v.split(/\s(?:-|::)\s/);
+  const maybeCode = displayParts.length > 1 ? displayParts[displayParts.length - 1].trim() : v;
 
-  // If they picked from the dropdown, it may be "Label — CURIE"
-  const maybeCode = v.includes("—") ? v.split("—").pop().trim() : v;
-
-  // Already a full IRI? (accept any scheme, not just http)
   if (/^https?:\/\/\S+$/i.test(maybeCode) || /^urn:[^:\s]+:.+/i.test(maybeCode) || /^<[^>\s]+>$/.test(maybeCode)) {
-    return maybeCode.replace(/^<|>$/g, ''); // allow <IRI> form too
+    return maybeCode.replace(/^<|>$/g, '');
   }
 
-  // CURIE?
-  if (maybeCode.includes(":")) {
-    const [pfx, local] = maybeCode.split(":");
+  if (maybeCode.includes(':')) {
+    const [pfx, local] = maybeCode.split(':');
     const base = iriPrefixes[pfx];
     if (base) return base + local;
 
     const rec = vocabByCurie.get(maybeCode);
     if (rec) return rec.iri;
   }
-  return null; // not resolvable → invalid
+
+  const exactByIri = vocabByIri.get(maybeCode) || vocabByIri.get(v);
+  if (exactByIri) return exactByIri.iri;
+
+  const byLabel =
+    vocabByLabelLC.get(String(maybeCode).toLowerCase()) ||
+    vocabByLabelLC.get(String(v).toLowerCase());
+  if (byLabel) return byLabel.iri;
+
+  return null;
 }
 
 // This function is used to harvest rows from a Handsontable instance into the vocabulary index.
@@ -1335,7 +1340,7 @@ function attachHotHooks() {
           hotInstance.setDataAtCell(rowIndex, 0, iri); // col 0 = IRI
         }
       } else {
-        // readable: we’ll fill when/if label appears (see afterChange)
+        // readable: we'll fill when/if label appears (see afterChange)
         for (let r = 0; r < amount; r++) {
           const rowIndex = index + r;
           // leave IRI blank for now
@@ -1384,7 +1389,7 @@ function attachHotHooks() {
         }
       }
     } catch (e) {
-      console.error('[IRI] afterChange label→IRI sync failed', e);
+      console.error('[IRI] afterChange label->IRI sync failed', e);
     }
   });
 }
@@ -1394,7 +1399,7 @@ function backfillIris() {
   try {
     if (!hotInstance) {
       console.warn('[IRI] No table instance');
-      showToast('⚠️ Table not ready', 'error');
+      showToast('Table not ready', 'error');
       return;
     }
 
@@ -1443,10 +1448,10 @@ function backfillIris() {
       }
     }
 
-    showToast(`✅ Backfilled ${filled} IRI${filled!==1?'s':''}` + (skipped ? ` (skipped ${skipped} unlabeled row${skipped!==1?'s':''})` : ''), 'success');
+    showToast(`Backfilled ${filled} IRI${filled!==1?'s':''}` + (skipped ? ` (skipped ${skipped} unlabeled row${skipped!==1?'s':''})` : ''), 'success');
   } catch (e) {
     console.error('[IRI] Backfill failed', e);
-    showToast('❌ Backfill failed — see console', 'error');
+    showToast('Backfill failed - see console', 'error');
   }
 }
 
@@ -1715,10 +1720,10 @@ async function confirmAddPredicate() {
       }
     }
 
-    showToast('✅ Predicates/columns updated', 'success');
+    showToast('Predicates/columns updated', 'success');
   } catch (e) {
     console.error('[ManagePredicates] confirmAddPredicate failed', e);
-    showToast('❌ Failed to update predicates/columns', 'error');
+    showToast('Failed to update predicates/columns', 'error');
   }
 }
 
@@ -2114,13 +2119,13 @@ async function handleInsertDataSave() {
     const insertMode = selectedInsertMode;
     if (!["append", "replace"].includes(insertMode)) {
       console.warn("Invalid insert mode:", insertMode);
-      showToast("❌ Invalid insert mode selected", "error");
+      showToast("Invalid insert mode selected", "error");
       return;
     }
 
     if (!currentImportFile) {
       console.warn("No file selected");
-      showToast("❌ Please select a file before saving", "error");
+      showToast("Please select a file before saving", "error");
       return;
     }
 
@@ -2157,7 +2162,7 @@ async function handleInsertDataSave() {
     
     // Toast feedback
     showToast(
-      `✅ ${stats.appended} rows added (${stats.total} total)`,
+      `${stats.appended} rows added (${stats.total} total)`,
       "success"
     );
 
@@ -2168,7 +2173,7 @@ async function handleInsertDataSave() {
 
   } catch (error) {
     console.error("Import error:", error);
-    showToast("❌ Error processing import — see console", "error");
+    showToast("Error processing import - see console", "error");
   }
 }
 
@@ -2298,13 +2303,13 @@ async function handleInsertOntologySave() {
     const insertMode = selectedInsertMode;
     if (!["append", "replace"].includes(insertMode)) {
       console.warn("Invalid insert mode:", insertMode);
-      showToast("❌ Invalid insert mode selected", "error");
+      showToast("Invalid insert mode selected", "error");
       return;
     }
 
     if (!currentImportFile) {
       console.warn("No file selected");
-      showToast("❌ Please select a file before saving", "error");
+      showToast("Please select a file before saving", "error");
       return;
     }
 
@@ -2339,7 +2344,7 @@ async function handleInsertOntologySave() {
     }
     
     if (result.cleanedRows.length === 0) {
-        showToast("ℹ️ No new data found matching the current table columns.", "info");
+        showToast("No new data found matching the current table columns.", "info");
         // Close modal and reset
         document.getElementById("insert-data-modal").style.display = "none";
         currentImportFile = null;
@@ -2361,7 +2366,7 @@ async function handleInsertOntologySave() {
     
     // Toast feedback (this logic remains identical)
     showToast(
-      `✅ ${stats.appended} subjects loaded (${stats.total} total rows)`,
+      `${stats.appended} subjects loaded (${stats.total} total rows)`,
       "success"
     );
 
@@ -2372,7 +2377,7 @@ async function handleInsertOntologySave() {
 
   } catch (error) {
     console.error("Import error:", error);
-    showToast(`❌ Error processing import: ${error.message}`, "error");
+    showToast(`Error processing import: ${error.message}`, "error");
   }
 }
 
@@ -2393,13 +2398,13 @@ async function handlePrimarySave() {
       // Calls the new function for TTL, RDF, etc.
       await handleInsertOntologySave(); 
     } else {
-      showToast("❌ Please select a file type (Spreadsheet or Ontology)", "error");
+      showToast("Please select a file type (Spreadsheet or Ontology)", "error");
     }
   } catch (error) {
     // This provides a top-level catch in case the individual
     // handlers fail in a way their own try/catch doesn't handle.
     console.error("Primary save handler error:", error);
-    showToast("❌ A critical error occurred during save.", "error");
+    showToast("A critical error occurred during save.", "error");
   }
 }
 
@@ -2700,7 +2705,7 @@ function openPrefixManagerModal() {
 
       const removeCell = document.createElement("td");
       const removeBtn = document.createElement("button");
-      removeBtn.textContent = "❌";
+      removeBtn.textContent = "X";
       removeBtn.addEventListener("click", () => {
         delete iriPrefixes[prefix];
         openPrefixManagerModal(); // re-render the table
@@ -2714,7 +2719,7 @@ function openPrefixManagerModal() {
     document.getElementById("prefix-manager-modal").style.display = "block";
   } catch (err) {
     console.error("[openPrefixManagerModal] Failed to populate prefix table:", err);
-    showToast("❌ Failed to open prefix manager", "error");
+    showToast("Failed to open prefix manager", "error");
   }
 }
 
@@ -2857,7 +2862,7 @@ async function openImportsModal() {
 
   imports.forEach((iri) => {
     const loaded = !!importsMap[iri]?.content;
-    const statusIcon = loaded ? "✅" : "❌";
+    const statusIcon = loaded ? "[loaded]" : "[missing]";
     const row = document.createElement("div");
     row.style.marginBottom = "10px";
 
@@ -2900,7 +2905,7 @@ async function handleImportFileUpload(event, iri) {
     const content = e.target.result;
 
     if (!isValidOntology(content)) {
-      validationMsg.textContent = "⚠️ Not a valid RDF/OWL text";
+      validationMsg.textContent = "Not a valid RDF/OWL text";
       validationMsg.style.display = "inline";
       return;
     }
@@ -2926,7 +2931,7 @@ async function handleImportFileUpload(event, iri) {
     };
 
     await saveOntologySettings(settings);
-    showToast("✅ Ontology import saved", "success");
+    showToast("Ontology import saved", "success");
     openImportsModal(); // refresh
   };
   reader.readAsText(file);
@@ -2965,7 +2970,7 @@ document.getElementById("add-rows-btn").addEventListener("click", () => {
   const n = getRowCountInput();
   if (!n) { showToast("Enter a valid row count.", "error"); return; }
   addRowsToTable(n);
-  showToast(`✅ ${n} row${n>1?'s':''} added`, "success");
+  showToast(`${n} row${n>1?'s':''} added`, "success");
 });
 
 // Listeners for removing rows
@@ -2973,7 +2978,7 @@ document.getElementById("remove-rows-btn").addEventListener("click", () => {
   const n = getRowCountInput();
   if (!n) { showToast("Enter a valid row count.", "error"); return; }
   removeRowsFromBottom(n);
-  showToast(`🗑️ ${n} row${n>1?'s':''} removed`, "info");
+  showToast(`${n} row${n>1?'s':''} removed`, "info");
 });
 
 // Save predicate management settings from modal
@@ -2983,11 +2988,11 @@ async function saveManagePredicates() {
     // Persist the in-memory predicateValueModes map
     await savePredicateValueModes();
 
-    showToast('✅ Predicate value modes saved', 'success');
+    showToast('Predicate value modes saved', 'success');
     document.getElementById('manage-predicates-modal').style.display = 'none';
   } catch (e) {
     console.error('[ManagePredicates] saveManagePredicates failed', e);
-    showToast('❌ Failed to save predicate value modes', 'error');
+    showToast('Failed to save predicate value modes', 'error');
   }
 }
 
@@ -3131,3 +3136,4 @@ TOM.Core = {
   removeRowsFromBottom,
 };
 })();
+
