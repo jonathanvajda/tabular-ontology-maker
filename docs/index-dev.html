@@ -15,8 +15,8 @@
   <meta name="version" content="0.2.0" />
   <link rel="shortcut icon" href="favicon.ico">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="./app/handsontable.full.css" />
-  <link rel="stylesheet" href="./app/ontology_spreadsheet_styles.css" />
+  <link rel="stylesheet" href="./styles/glide-data-grid.min.css" />
+  <link rel="stylesheet" href="./styles/ontology_spreadsheet_styles.css" />
 </head>
 <body>
 <nav style="margin-bottom:8px;">
@@ -48,7 +48,7 @@
     <button id="exportBtn">Download RDF</button>
   </div>
 
-  <div id="hot"></div>
+  <div id="hot" class="tom-grid-shell"></div>
 
   <!-- Change Number of Rows -->
   <div id="row-controls" style="margin: 1em 0; display:flex; align-items:center; gap:10px;">
@@ -269,16 +269,20 @@
 
   <!-- Toast container -->
   <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+  <div id="portal"></div>
 
   <footer>
     <details><summary><b>Important User Data Notice</b></summary>By design, any data that a user inputs stays <i>local</i> to the user's device. Ontology settings and data can be saved in the browser ('Save Session' button), but users are encouraged to export their work ('Download RDF' button), since it <i>cannot</i> be otherwise recovered. This is on purpose: I do not harvest your data or process your data. This site does not receive data from a user, and therefore no user data is stored anywhere except locally. If you are interested in storing data on the cloud (on a server), please contact me (jonathan.vajda [at] gmail.com) so I know about your interest and so I can notify you if/when I add that feature.</details><br />
     <span style="text-align:right"><small>Copyright 2025, Jonathan Vajda</small></span>
   </footer>
 
-  <script src="./app/handsontable.full.js"></script>
+  <script src="./app/glide-data-grid.min.js"></script>
   <script src="./app/xlsx.full.min.js"></script>
   <script src="./app/n3.min.js"></script>
-  <script src="./app/ontology_spreadsheet-dev.js"></script>
+  <script src="./app/tom-grid-glide.js"></script>
+  <script src="./app/tom-core.js"></script>
+  <script src="./app/tom-ui.js"></script>
+  <script src="./app/ontology_spreadsheet.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {

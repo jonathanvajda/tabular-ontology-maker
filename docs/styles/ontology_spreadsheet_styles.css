@@ -100,6 +100,11 @@ h3 {
 
 #hot {
   margin-bottom: 1em;
+  min-height: 520px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
 }
 
 .ht_clone_top thead th {
@@ -181,3 +186,16 @@ input.htFocusCatcher {
 .toast.success { background-color: #4caf50; }   /* Green */
 .toast.warning { background-color: #ff9800; }   /* Orange */
 .toast.error   { background-color: #f44336; }   /* Red */
+
+.tom-grid-shell {
+  box-shadow: 0 10px 30px rgba(24, 53, 77, 0.06);
+}
+
+.tom-grid-editor {
+  white-space: pre-wrap;
+}
+
+#portal {
+  position: relative;
+  z-index: 10000;
+}

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Glide Grid Harness</title>
+  <link rel="stylesheet" href="./styles/skeleton.css" />
+  <link rel="stylesheet" href="./styles/glide-data-grid.min.css" />
+  <link rel="stylesheet" href="./styles/ontology_spreadsheet_styles.css" />
+</head>
+<body style="margin: 1.5rem;">
+  <h1>Glide Grid Harness</h1>
+  <p>Use this page to test editing, selection, paste, and schema updates without the full ontology workflow.</p>
+
+  <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+    <button id="add-column-btn">Add Predicate Column</button>
+    <button id="dump-rows-btn">Dump Rows to Console</button>
+  </div>
+
+  <div id="hot" class="tom-grid-shell"></div>
+  <div id="portal"></div>
+
+  <script src="./app/glide-data-grid.min.js"></script>
+  <script src="./app/tom-grid-glide.js"></script>
+  <script>
+    const grid = window.TOM.Grid.createGrid(document.getElementById("hot"), {
+      colHeaders: ["iri", "label", "element type", "definition", "is a", "is curated in ontology"],
+      columns: [
+        { type: "text" },
+        { type: "text" },
+        { type: "dropdown", source: ["Class", "NamedIndividual", "ObjectProperty"], strict: true },
+        { type: "text", allowWrapping: true },
+        { type: "autocomplete", source: ["bfo:Object", "cco:Agent", "cco:Vehicle"] },
+        { type: "text" },
+      ],
+      data: [
+        ["http://example.org/ont000001", "Doctor", "Class", "A human person who has earned a doctorate.", "bfo:Object", "http://example.org/ExampleOntology"],
+        ["http://example.org/ont000002", "Bob", "NamedIndividual", "An instance of a Person.", "cco:Agent", "http://example.org/ExampleOntology"],
+      ],
+    });
+
+    let predicateCount = 0;
+
+    document.getElementById("add-column-btn").addEventListener("click", function () {
+      predicateCount += 1;
+      const headers = grid.getColHeader().concat([`http://example.org/predicate/${predicateCount}`]);
+      const columns = headers.map((header, index) => {
+        if (index === 2) return { type: "dropdown", source: ["Class", "NamedIndividual", "ObjectProperty"], strict: true };
+        if (index === 4) return { type: "autocomplete", source: ["bfo:Object", "cco:Agent", "cco:Vehicle"] };
+        return { type: "text" };
+      });
+
+      grid.setSchema(headers, columns);
+    });
+
+    document.getElementById("dump-rows-btn").addEventListener("click", function () {
+      console.log("[Harness] rows", grid.getRows());
+    });
+  </script>
+</body>
+</html>
