@@ -96,7 +96,6 @@ h3 {
   border-radius: 10px;
   overflow: auto;
   background: var(--ont-panel-bg, #fff);
-  vertical-align: top;
 }
 
 textarea {
@@ -122,7 +121,7 @@ textarea {
   padding: 12px 16px;
   margin-top: 8px;
   border-radius: 6px;
-  font-size: 1rem;
+  font-size: 1.35rem;
   opacity: 0;
   transform: translateX(100%);
   transition: all 0.3s ease;
