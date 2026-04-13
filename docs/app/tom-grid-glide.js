@@ -5,14 +5,16 @@ const ReactDOM = GDG.ReactDOM || window.ReactDOM;
 const DataEditor = GDG.DataEditor || GDG.default;
 const GridCellKind = GDG.GridCellKind;
 const CompactSelection = GDG.CompactSelection;
-const GRID_ROW_HEIGHT = 44;
-const GRID_HEADER_HEIGHT = 48;
+const GRID_ROW_HEIGHT = 36;
+const GRID_HEADER_HEIGHT = 40;
 const GRID_ROW_MARKER_WIDTH = 32;
 const GRID_FRAME_SIZE = 2;
 const GRID_TEXT_FONT_SIZE = 14;
-const GRID_LINE_HEIGHT = 1.5;
+const GRID_LINE_HEIGHT = 1.25;
 const GRID_HORIZONTAL_PADDING = 10;
-const GRID_VERTICAL_PADDING = 7;
+const GRID_VERTICAL_PADDING = 8;
+const EDITOR_OPTION_LIMIT = 50;
+const autocompleteDrafts = new Map();
 let textMeasureContext = null;
 
 const BASE_FIELDS = [
@@ -49,6 +51,27 @@ function ensurePortal() {
     document.body.appendChild(portal);
   }
   return portal;
+}
+
+function renderPortal(children, container) {
+  if (!container || !children) return children;
+
+  if (ReactDOM && typeof ReactDOM.createPortal === "function") {
+    return ReactDOM.createPortal(children, container);
+  }
+
+  if (window.ReactDOM && typeof window.ReactDOM.createPortal === "function") {
+    return window.ReactDOM.createPortal(children, container);
+  }
+
+  return children;
+}
+
+function canRenderPortal() {
+  return Boolean(
+    (ReactDOM && typeof ReactDOM.createPortal === "function") ||
+      (window.ReactDOM && typeof window.ReactDOM.createPortal === "function")
+  );
 }
 
 function slugify(value) {
@@ -212,7 +235,7 @@ function computeRowHeight(row, rowIndex, schema, theme, displayResolver) {
         (theme.cellHorizontalPadding || GRID_HORIZONTAL_PADDING) * 2
     );
     const lineCount = measureWrappedLineCount(value, usableWidth, theme);
-    const wrappedHeight = lineCount * lineHeightPx + verticalPadding + 4;
+    const wrappedHeight = lineCount * lineHeightPx + verticalPadding;
     height = Math.max(height, wrappedHeight);
   });
 
@@ -230,7 +253,7 @@ function computeGridHeight(rowHeights) {
     return sum + Math.max(0, Number(height) || 0);
   }, 0);
 
-  return totalRowHeight ;
+  return GRID_HEADER_HEIGHT + totalRowHeight + GRID_FRAME_SIZE;
 }
 
 function computeGridWidth(columns) {
@@ -256,28 +279,113 @@ function computeViewportCaps(container) {
   };
 }
 
+function normalizeEditorOption(option) {
+  if (option == null) return null;
+
+  if (typeof option === "object" && !Array.isArray(option)) {
+    const label = option.label ?? option.display ?? option.text ?? option.value;
+    const value =
+      option.commitValue ?? option.value ?? option.label ?? option.display ?? option.text;
+
+    if (label == null && value == null) return null;
+
+    const normalizedLabel = String(label ?? value ?? "");
+    const normalizedValue = String(value ?? normalizedLabel);
+    const searchTerms = [
+      normalizedLabel,
+      normalizedValue,
+      option.description,
+      ...(Array.isArray(option.keywords) ? option.keywords : []),
+      ...(Array.isArray(option.searchTerms) ? option.searchTerms : []),
+    ]
+      .filter((entry) => entry != null && String(entry).trim() !== "")
+      .map((entry) => String(entry).toLowerCase());
+
+    return {
+      label: normalizedLabel,
+      value: normalizedValue,
+      description: option.description ? String(option.description) : "",
+      searchText: searchTerms.join("\n"),
+      raw: option,
+    };
+  }
+
+  const text = String(option ?? "");
+  return {
+    label: text,
+    value: text,
+    description: "",
+    searchText: text.toLowerCase(),
+    raw: option,
+  };
+}
+
+function normalizeEditorOptions(values) {
+  const seen = new Set();
+
+  return (Array.isArray(values) ? values : [])
+    .map((option) => normalizeEditorOption(option))
+    .filter((option) => {
+      if (!option) return false;
+      const key = `${option.value}::${option.label}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function filterEditorOptions(options, query, limit) {
+  const max = Math.max(1, Number(limit) || EDITOR_OPTION_LIMIT);
+  const normalized = normalizeEditorOptions(options);
+  const term = String(query || "").trim().toLowerCase();
+
+  if (!term) return normalized.slice(0, max);
+  return normalized.filter((option) => option.searchText.includes(term)).slice(0, max);
+}
+
 function resolveEditorOptions(source, rowIndex, query) {
-  if (typeof source === "function") {
-    let resolved = [];
-    try {
-      source.call({ row: rowIndex }, query, (values) => {
-        resolved = Array.isArray(values) ? values : [];
-      });
-    } catch (error) {
-      console.error("[TOM.Grid] Failed to resolve autocomplete options", error);
-    }
-    return resolved;
-  }
-
   if (Array.isArray(source)) {
-    const term = String(query || "").trim().toLowerCase();
-    if (!term) return source.slice(0, 50);
-    return source
-      .filter((value) => String(value || "").toLowerCase().includes(term))
-      .slice(0, 50);
+    return Promise.resolve(filterEditorOptions(source, query, EDITOR_OPTION_LIMIT));
   }
 
-  return [];
+  if (typeof source === "function") {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+
+      const finish = (values) => {
+        if (settled) return;
+        settled = true;
+        resolve(filterEditorOptions(values, query, EDITOR_OPTION_LIMIT));
+      };
+
+      try {
+        const maybe = source.call({ row: rowIndex }, query, finish);
+        if (maybe && typeof maybe.then === "function") {
+          maybe.then(finish).catch(reject);
+        } else if (maybe !== undefined) {
+          finish(maybe);
+        }
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  return Promise.resolve([]);
+}
+
+function getDropdownOptions(source) {
+  return normalizeEditorOptions(Array.isArray(source) ? source : []).map((option) => option.value);
+}
+
+function getAutocompleteDraftKey(value) {
+  return `${value?.tomField || ""}::${value?.tomRowIndex ?? ""}`;
+}
+
+function getInitialAutocompleteQuery(value) {
+  const liveValue = String(value?.data ?? "");
+  const storedValue = String(value?.tomStoredValue ?? "");
+  return liveValue && liveValue !== storedValue ? liveValue : "";
 }
 
 function buildSchema(headers, columns, previousSchema) {
@@ -297,6 +405,7 @@ function buildSchema(headers, columns, previousSchema) {
       index,
       width: previous?.width || column.width || defaultWidthForField(field, header),
       type: column.type || "text",
+      editor: column.editor || previous?.editor || null,
       strict: column.strict,
       allowInvalid: column.allowInvalid,
       source: column.source,
@@ -447,67 +556,370 @@ function SelectEditor(props) {
 }
 
 function AutocompleteEditor(props) {
-  const initialValue =
+  const portal = ensurePortal();
+  const supportsPortal = canRenderPortal();
+  const draftKey = getAutocompleteDraftKey(props.value);
+  const initialStoredValue = props.value?.tomStoredValue ?? props.value?.data ?? "";
+  const initialDisplayValue =
     props.value?.tomEditValue ?? props.value?.displayData ?? props.value?.data ?? "";
-  const [inputValue, setInputValue] = React.useState(initialValue);
-  const [options, setOptions] = React.useState(() =>
-    resolveEditorOptions(props.value?.tomSource, props.value?.tomRowIndex, initialValue)
+  const initialQueryValue = getInitialAutocompleteQuery(props.value);
+  if (!autocompleteDrafts.has(draftKey)) {
+    autocompleteDrafts.set(draftKey, String(initialQueryValue ?? ""));
+  }
+  const [inputValue, setInputValue] = React.useState(
+    autocompleteDrafts.get(draftKey) ?? initialQueryValue
   );
+  const [options, setOptions] = React.useState([]);
+  const [status, setStatus] = React.useState(
+    String(autocompleteDrafts.get(draftKey) ?? initialQueryValue ?? "").trim() ? "loading" : "idle"
+  );
+  const [isMenuOpen, setIsMenuOpen] = React.useState(true);
+  const [highlightedIndex, setHighlightedIndex] = React.useState(0);
+  const inputRef = React.useRef(null);
+  const listRef = React.useRef(null);
+  const lookupRequestRef = React.useRef(0);
+  const cellIdentityRef = React.useRef("");
+  const originalCellRef = React.useRef({
+    ...props.value,
+    data: String(initialStoredValue ?? ""),
+    displayData: String(initialDisplayValue ?? initialStoredValue ?? ""),
+  });
   const listId = `tom-autocomplete-${props.value?.tomField || "field"}-${
     props.target?.y || 0
   }-${props.target?.x || 0}`;
 
   React.useEffect(() => {
-    const nextValue =
+    const cellIdentity = `${props.value?.tomField || ""}::${props.value?.tomRowIndex ?? ""}`;
+    if (cellIdentityRef.current === cellIdentity) return;
+    cellIdentityRef.current = cellIdentity;
+
+    const nextStoredValue = props.value?.tomStoredValue ?? props.value?.data ?? "";
+    const nextDisplayValue =
       props.value?.tomEditValue ?? props.value?.displayData ?? props.value?.data ?? "";
-    setInputValue(nextValue);
-    setOptions(resolveEditorOptions(props.value?.tomSource, props.value?.tomRowIndex, nextValue));
+    const nextQueryValue = getInitialAutocompleteQuery(props.value);
+    originalCellRef.current = {
+      ...props.value,
+      data: String(nextStoredValue ?? ""),
+      displayData: String(nextDisplayValue ?? nextStoredValue ?? ""),
+    };
+    setInputValue(String(autocompleteDrafts.get(draftKey) ?? nextQueryValue ?? ""));
+    setOptions([]);
+    setHighlightedIndex(0);
+    setStatus(
+      String(autocompleteDrafts.get(draftKey) ?? nextQueryValue ?? "").trim() ? "loading" : "idle"
+    );
+    setIsMenuOpen(true);
   }, [
-    props.value?.data,
-    props.value?.displayData,
-    props.value?.tomEditValue,
+    draftKey,
+    props.value?.tomField,
     props.value?.tomRowIndex,
-    props.value?.tomSource,
   ]);
 
-  function updateValue(nextValue) {
-    setInputValue(nextValue);
-    setOptions(resolveEditorOptions(props.value?.tomSource, props.value?.tomRowIndex, nextValue));
-    props.onChange({
+  React.useEffect(() => {
+    const source = props.value?.tomSource;
+    const rowIndex = props.value?.tomRowIndex;
+    const query = String(inputValue ?? "");
+    const trimmed = query.trim();
+
+    setHighlightedIndex(0);
+    if (listRef.current) {
+      listRef.current.scrollTop = 0;
+    }
+
+    if (!Array.isArray(source) && typeof source === "function" && !trimmed) {
+      setOptions([]);
+      setStatus("idle");
+      return undefined;
+    }
+
+    let cancelled = false;
+    const requestId = lookupRequestRef.current + 1;
+    lookupRequestRef.current = requestId;
+    setStatus("loading");
+
+    resolveEditorOptions(source, rowIndex, query)
+      .then((resolved) => {
+        if (cancelled || lookupRequestRef.current !== requestId) return;
+        setOptions(resolved);
+        setHighlightedIndex(0);
+        setStatus(resolved.length ? "ready" : trimmed ? "empty" : "idle");
+      })
+      .catch((error) => {
+        if (cancelled || lookupRequestRef.current !== requestId) return;
+        console.error("[TOM.Grid] Failed to resolve autocomplete options", error);
+        setOptions([]);
+        setHighlightedIndex(0);
+        setStatus("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [inputValue, props.value?.tomRowIndex, props.value?.tomSource]);
+
+  React.useEffect(() => {
+    const list = listRef.current;
+    if (!list || !options.length) return;
+    if (highlightedIndex <= 0) {
+      list.scrollTop = 0;
+      return;
+    }
+    const active = list.querySelector("[data-active='true']");
+    if (active && typeof active.scrollIntoView === "function") {
+      active.scrollIntoView({ block: "nearest" });
+    }
+  }, [highlightedIndex, options]);
+
+  function emitDraftValue(nextValue) {
+    const nextCell = {
       ...props.value,
       data: nextValue,
       displayData: nextValue,
-    });
+    };
+    props.onChange(nextCell);
+    return nextCell;
+  }
+
+  function finishEditing(nextCell) {
+    if (typeof props.onFinishedEditing === "function") {
+      props.onFinishedEditing(nextCell);
+    }
+  }
+
+  function updateValue(nextValue) {
+    autocompleteDrafts.set(draftKey, nextValue);
+    setInputValue(nextValue);
+    setIsMenuOpen(true);
+  }
+
+  function chooseOption(option) {
+    const nextLabel = option?.label ?? "";
+    const nextValue = option?.value ?? nextLabel;
+    const nextCell = {
+      ...props.value,
+      data: nextValue,
+      displayData: nextLabel,
+    };
+
+    autocompleteDrafts.delete(draftKey);
+    setInputValue(nextLabel);
+    setIsMenuOpen(false);
+    props.onChange(nextCell);
+    finishEditing(nextCell);
+  }
+
+  function restoreOriginalValue() {
+    autocompleteDrafts.delete(draftKey);
+    setInputValue(originalCellRef.current.displayData ?? originalCellRef.current.data ?? "");
+    setIsMenuOpen(false);
+    props.onChange(originalCellRef.current);
+    finishEditing(originalCellRef.current);
+  }
+
+  function commitTypedValue() {
+    autocompleteDrafts.delete(draftKey);
+    const nextCell = emitDraftValue(inputValue);
+    setIsMenuOpen(false);
+    finishEditing(nextCell);
+  }
+
+  const activeOption =
+    options.length > 0 ? options[Math.max(0, Math.min(highlightedIndex, options.length - 1))] : null;
+  const inputRect = props.target || { x: 0, y: 0, width: 0, height: 0 };
+  const menuWidth = Math.max(360, Math.ceil(inputRect.width || 0));
+  const viewportWidth = window.innerWidth || menuWidth;
+  const viewportHeight = window.innerHeight || 0;
+  const menuLeft = Math.max(8, Math.min(inputRect.x || 0, viewportWidth - menuWidth - 8));
+  const preferredTop = (inputRect.y || 0) + (inputRect.height || 0) + 4;
+  const menuHeight = 280;
+  const menuTop =
+    preferredTop + menuHeight <= viewportHeight - 8
+      ? preferredTop
+      : Math.max(8, (inputRect.y || 0) - menuHeight - 4);
+  let menuBody = null;
+
+  if (status === "loading") {
+    menuBody = React.createElement(
+      "div",
+      { className: "tom-autocomplete-status" },
+      "Loading matches..."
+    );
+  } else if (status === "error") {
+    menuBody = React.createElement(
+      "div",
+      { className: "tom-autocomplete-status tom-autocomplete-status-error" },
+      "Lookup failed."
+    );
+  } else if (status === "empty") {
+    menuBody = React.createElement(
+      "div",
+      { className: "tom-autocomplete-status" },
+      "No matches found."
+    );
+  } else if (status === "idle") {
+    menuBody = React.createElement(
+      "div",
+      { className: "tom-autocomplete-status" },
+      "Type to search."
+    );
+  } else {
+    menuBody = React.createElement(
+      "div",
+      {
+        className: "tom-autocomplete-options",
+        role: "listbox",
+        id: listId,
+        ref: listRef,
+      },
+      options.map((option, index) =>
+        React.createElement(
+          "button",
+          {
+            key: `${option.value}-${index}`,
+            id: `${listId}-option-${index}`,
+            type: "button",
+            role: "option",
+            className: `tom-autocomplete-option${
+              index === highlightedIndex ? " is-active" : ""
+            }`,
+            "data-active": index === highlightedIndex ? "true" : "false",
+            "aria-selected": index === highlightedIndex ? "true" : "false",
+            onMouseEnter: () => setHighlightedIndex(index),
+            onMouseDown: (event) => {
+              event.preventDefault();
+              chooseOption(option);
+            },
+          },
+          React.createElement(
+            "span",
+            { className: "tom-autocomplete-option-label" },
+            option.label
+          ),
+          option.description
+            ? React.createElement(
+                "span",
+                { className: "tom-autocomplete-option-meta" },
+                option.description
+              )
+            : null
+        )
+      )
+    );
   }
 
   return React.createElement(
-    "div",
+    React.Fragment,
     null,
-    React.createElement("input", {
-      autoFocus: true,
-      className: "tom-grid-editor",
-      style: {
-        width: "100%",
-        minHeight: "2.25rem",
-        border: "1px solid #b7c7d9",
-        borderRadius: "6px",
-        padding: "0.55rem 0.65rem",
-        font: "inherit",
-        boxSizing: "border-box",
-      },
-      list: listId,
-      value: inputValue,
-      onChange: (event) => {
-        updateValue(event.target.value);
-      },
-    }),
     React.createElement(
-      "datalist",
-      { id: listId },
-      options.map((option) =>
-        React.createElement("option", { key: option, value: option })
-      )
-    )
+      "div",
+      {
+        style: {
+          position: "relative",
+          width: "100%",
+          paddingBottom: !supportsPortal && isMenuOpen ? `${menuHeight + 8}px` : undefined,
+        },
+        className: "tom-autocomplete-root click-outside-ignore",
+      },
+      React.createElement("input", {
+        autoFocus: true,
+        ref: inputRef,
+        className: "tom-grid-editor",
+        style: {
+          width: "100%",
+          minHeight: "2.25rem",
+          border: "1px solid #b7c7d9",
+          borderRadius: "6px",
+          padding: "0.55rem 0.65rem",
+          font: "inherit",
+          boxSizing: "border-box",
+        },
+        role: "combobox",
+        "aria-autocomplete": "list",
+        "aria-expanded": isMenuOpen ? "true" : "false",
+        "aria-controls": listId,
+        "aria-activedescendant":
+          activeOption && status === "ready" ? `${listId}-option-${highlightedIndex}` : undefined,
+        value: inputValue,
+        placeholder: String(initialDisplayValue || ""),
+        onFocus: (event) => {
+          setIsMenuOpen(true);
+        },
+        onChange: (event) => {
+          updateValue(event.target.value);
+        },
+        onKeyDown: (event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setIsMenuOpen(true);
+            setHighlightedIndex((current) =>
+              options.length ? Math.min(current + 1, options.length - 1) : 0
+            );
+            return;
+          }
+
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setIsMenuOpen(true);
+            setHighlightedIndex((current) => (options.length ? Math.max(current - 1, 0) : 0));
+            return;
+          }
+
+          if (event.key === "Enter") {
+            if (activeOption && status === "ready") {
+              event.preventDefault();
+              chooseOption(activeOption);
+              return;
+            }
+            commitTypedValue();
+            return;
+          }
+
+          if (event.key === "Escape") {
+            event.preventDefault();
+            restoreOriginalValue();
+          }
+        },
+      }),
+      !supportsPortal && isMenuOpen
+        ? React.createElement(
+            "div",
+            {
+              className:
+                "tom-autocomplete-popover tom-autocomplete-popover-inline click-outside-ignore",
+              style: {
+                left: "0",
+                width: "100%",
+                maxHeight: `${menuHeight}px`,
+              },
+              onMouseDown: (event) => {
+                event.preventDefault();
+              },
+            },
+            menuBody
+          )
+        : null
+    ),
+    supportsPortal && portal && isMenuOpen
+      ? renderPortal(
+          React.createElement(
+            "div",
+            {
+              className: "tom-autocomplete-popover click-outside-ignore",
+              style: {
+                left: `${menuLeft}px`,
+                top: `${menuTop}px`,
+                width: `${menuWidth}px`,
+                maxHeight: `${menuHeight}px`,
+              },
+              onMouseDown: (event) => {
+                event.preventDefault();
+              },
+            },
+            menuBody
+          ),
+          portal
+        )
+      : null
   );
 }
 
@@ -606,10 +1018,6 @@ function createGrid(container, config) {
     });
   }
 
-  function getCellOptions(meta, rowIndex, query) {
-    return resolveEditorOptions(meta.source, rowIndex, query);
-  }
-
   function getDisplayValue(meta, rowIndex, value) {
     if (typeof config.getDisplayValue === "function") {
       return config.getDisplayValue({
@@ -661,16 +1069,17 @@ function createGrid(container, config) {
       tomColIndex: meta.index,
       tomRowIndex: rowIndex,
       tomSource: meta.source,
+      tomStoredValue: String(raw ?? ""),
       tomEditValue: String(display ?? raw ?? ""),
       tomEditor:
-        meta.type === "dropdown"
-          ? "dropdown"
-          : meta.type === "autocomplete"
+        meta.editor === "autocomplete" || meta.type === "autocomplete"
           ? "autocomplete"
+          : meta.type === "dropdown"
+          ? "dropdown"
           : meta.allowWrapping
           ? "textarea"
           : "text",
-      tomOptions: getCellOptions(meta, rowIndex, String(display ?? raw ?? "")),
+      tomOptions: meta.type === "dropdown" ? getDropdownOptions(meta.source) : [],
     };
   }
 
@@ -757,7 +1166,7 @@ function createGrid(container, config) {
         height: gridHeight,
         width: gridWidth,
         theme,
-        scaleToRem: true,
+        scaleToRem: false,
         overscrollY: 0,
         overscrollX: 0,
         smoothScrollX: true,

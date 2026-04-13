@@ -197,3 +197,77 @@ textarea {
 #portal > * {
   pointer-events: auto;
 }
+
+.tom-autocomplete-popover {
+  position: fixed;
+  z-index: 10001;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  max-height: 260px;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--ont-panel-bg, #fff);
+  border: 1px solid var(--ont-border, #d0d7de);
+  border-radius: 10px;
+  box-shadow: 0 14px 32px rgba(24, 53, 77, 0.18);
+}
+
+.tom-autocomplete-popover-inline {
+  position: absolute;
+}
+
+.tom-autocomplete-options {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  justify-content: flex-start;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  overscroll-behavior: contain;
+}
+
+.tom-autocomplete-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 0.72rem 0.9rem;
+  border: 0;
+  background: transparent;
+  color: var(--ont-text, #1f2937);
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tom-autocomplete-option:hover,
+.tom-autocomplete-option.is-active {
+  background: var(--ont-accent-soft, #e0e7ff);
+}
+
+.tom-autocomplete-option-label {
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tom-autocomplete-option-meta {
+  color: var(--ont-muted, #4b5563);
+  font-size: 0.92em;
+}
+
+.tom-autocomplete-status {
+  padding: 0.8rem 0.9rem;
+  color: var(--ont-muted, #4b5563);
+}
+
+.tom-autocomplete-status-error {
+  color: #b42318;
+}
