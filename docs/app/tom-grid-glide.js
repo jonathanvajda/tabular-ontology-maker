@@ -160,6 +160,67 @@ function buildGridTheme() {
   };
 }
 
+function parseCssColorToRgb(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  const hex = raw.replace(/^#/, "");
+  if (/^[0-9a-f]{3}$/i.test(hex)) {
+    return {
+      r: parseInt(hex[0] + hex[0], 16),
+      g: parseInt(hex[1] + hex[1], 16),
+      b: parseInt(hex[2] + hex[2], 16),
+    };
+  }
+
+  if (/^[0-9a-f]{6}$/i.test(hex)) {
+    return {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+    };
+  }
+
+  const rgbMatch = raw.match(
+    /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*[\d.]+\s*)?\)$/i
+  );
+  if (rgbMatch) {
+    return {
+      r: Number(rgbMatch[1]),
+      g: Number(rgbMatch[2]),
+      b: Number(rgbMatch[3]),
+    };
+  }
+
+  return null;
+}
+
+function isCurrentThemeDark() {
+  const panelColor = readCssVar("--ont-panel-bg", "#ffffff");
+  const backgroundColor = readCssVar("--ont-bg", panelColor || "#ffffff");
+  const rgb = parseCssColorToRgb(panelColor) || parseCssColorToRgb(backgroundColor);
+  if (!rgb) return false;
+
+  const luminance =
+    0.2126 * (Number(rgb.r) || 0) +
+    0.7152 * (Number(rgb.g) || 0) +
+    0.0722 * (Number(rgb.b) || 0);
+
+  return luminance < 140;
+}
+
+function buildInvalidCellTheme() {
+  const dark = isCurrentThemeDark();
+  return {
+    bgCell: dark
+      ? readCssVar("--tom-invalid-bg-dark", "#4b1f24")
+      : readCssVar("--tom-invalid-bg-light", "#ffd6d6"),
+    borderColor: dark
+      ? readCssVar("--tom-invalid-border-dark", "#ff7b72")
+      : readCssVar("--tom-invalid-border-light", "#c83a32"),
+  };
+}
+
 function getTextMeasureContext() {
   if (!textMeasureContext) {
     textMeasureContext = document.createElement("canvas").getContext("2d");
@@ -1138,12 +1199,7 @@ function createGrid(container, config) {
       data: String(raw ?? ""),
       displayData: String(display ?? raw ?? ""),
       readonly: false,
-      themeOverride: isInvalid
-        ? {
-            bgCell: "#fff0f0",
-            borderColor: "#d95c5c",
-          }
-        : undefined,
+      themeOverride: isInvalid ? buildInvalidCellTheme() : undefined,
       tomField: meta.field,
       tomHeader: meta.header,
       tomColIndex: meta.index,

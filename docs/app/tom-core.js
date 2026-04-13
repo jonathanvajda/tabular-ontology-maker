@@ -390,6 +390,34 @@ function findMaxOpaqueNumber(grid, settings) {
   return max;
 }
 
+function collectUsedOpaqueNumbers(grid, settings) {
+  const { base, delimiter } = getBaseAndDelimiter(settings);
+  const lead = settings.opaqueLeading || 'ont';
+  const digits = Math.max(1, settings.opaqueDigits || 6);
+  const iriPrefix = `${base}${delimiter}${lead}`;
+  const re = new RegExp('^' + iriPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d{' + digits + '})$');
+  const used = new Set();
+  const rows = grid.getData();
+
+  for (const row of rows) {
+    const iri = row?.[0] || '';
+    const m = re.exec(String(iri));
+    if (!m) continue;
+    const num = parseInt(m[1], 10);
+    if (Number.isFinite(num)) used.add(num);
+  }
+
+  return used;
+}
+
+function findNextAvailableOpaqueNumber(usedNumbers, settings, startAt) {
+  let next = Math.max(1, Number(startAt) || 1);
+  while (usedNumbers.has(next)) {
+    next += 1;
+  }
+  return next;
+}
+
 function buildOpaqueIri(nextNum, settings) {
   const { base, delimiter } = getBaseAndDelimiter(settings);
   const lead   = settings.opaqueLeading || 'ont';
@@ -964,6 +992,21 @@ function iriFromObjects(objs) {
   return '';
 }
 
+function getSemanticRdfTypes(rdfTypes) {
+  const structuralTypes = new Set([
+    w3cIRI.OWL_CLASS,
+    w3cIRI.OWL_OBJPROP,
+    w3cIRI.OWL_DATAPROP,
+    w3cIRI.OWL_ANNOPROP,
+    w3cIRI.OWL_NAMEDIND,
+    w3cIRI.OWL_ONTOLOGY,
+  ]);
+
+  return (rdfTypes || [])
+    .map(v => /^<([^>]+)>$/.exec(v)?.[1])
+    .filter(u => u && !structuralTypes.has(u));
+}
+
 function asObjectTerm(value) {
   if (value == null) return null;
   const v = String(value).trim();
@@ -1088,9 +1131,7 @@ async function reloadSavedSession() {
       } else if (elementType === 'ObjectProperty' || elementType === 'DatatypeProperty' || elementType === 'AnnotationProperty') {
         isA = iriFromObjects(Array.from(pMap.get(w3cIRI.RDFS_SUBPROP)?.values() || []));
       } else if (elementType === 'NamedIndividual') {
-        const classish = rdfTypes
-          .map(v => /^<([^>]+)>$/.exec(v)?.[1])
-          .filter(u => u && u !== w3cIRI.OWL_CLASS && u !== w3cIRI.OWL_OBJPROP && u !== w3cIRI.OWL_DATAPROP && u !== w3cIRI.OWL_ANNOPROP);
+        const classish = getSemanticRdfTypes(rdfTypes);
         if (classish.length) isA = classish[0];
       }
 
@@ -1420,17 +1461,17 @@ function backfillIris() {
     let skipped = 0;
 
     if (mode === 'opaque') {
-      // start at max seen (or start-1), then fill blanks
-      let next = Math.max(findMaxOpaqueNumber(hotInstance, s), (s.opaqueStart || 1) - 1);
+      const startAt = Math.max(1, s.opaqueStart || 1);
+      const usedOpaqueNumbers = collectUsedOpaqueNumbers(hotInstance, s);
 
       for (let r = 0; r < total; r++) {
         const iri = String(hotInstance.getDataAtCell(r, 0) || '').trim();
         if (!iri) {
-          // advance until unique
-          do { next += 1; } while (existing.has(buildOpaqueIri(next, s)));
+          const next = findNextAvailableOpaqueNumber(usedOpaqueNumbers, s, startAt);
           const newIri = buildOpaqueIri(next, s);
           hotInstance.setDataAtCell(r, 0, newIri);
           existing.add(newIri);
+          usedOpaqueNumbers.add(next);
           filled++;
         }
       }
