@@ -1,15 +1,18 @@
-name: Static Site CI
+name: Deploy static content to Pages
 
 on:
   push:
-    branches:
-      - main
+    branches: ["master", "main"]
   workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 env:
   LOOKUP_OUTPUT: docs/json/bfo-cco-lookup.json
@@ -18,13 +21,16 @@ env:
   LOOKUP_SOURCE_URL: ""
 
 jobs:
-  build:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -35,7 +41,7 @@ jobs:
       - name: Run Jest
         run: npm test
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -43,7 +49,7 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install --upgrade pip rdflib
 
-      - name: Regenerate lookup JSON when a source ontology is configured
+      - name: Regenerate lookup JSON when ontology sources are available
         shell: bash
         run: |
           set -euo pipefail
@@ -103,21 +109,14 @@ jobs:
           }
           EOF
 
-      - name: Configure Pages
+      - name: Setup Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload Pages artifact
+      - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs
 
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
