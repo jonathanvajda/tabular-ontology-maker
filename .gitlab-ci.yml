@@ -1,0 +1,97 @@
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  LOOKUP_OUTPUT: "./docs/json/bfo-cco-lookup.json"
+  LOOKUP_SOURCE_DIR: "./src/ontologies"
+  LOOKUP_SOURCE_PATH: ""
+  LOOKUP_SOURCE_URL: ""
+
+test_js:
+  stage: test
+  image: node:20
+  script:
+    - npm install
+    - npm test
+
+build_lookup:
+  stage: build
+  image: python:3.11
+  script:
+    - python -m pip install --upgrade pip rdflib
+    - |
+      set -eu
+      mkdir -p docs/json
+      generated_any=0
+      source_file=""
+      temp_file=""
+
+      if [ -d "${LOOKUP_SOURCE_DIR}" ]; then
+        find "${LOOKUP_SOURCE_DIR}" -maxdepth 1 -type f \( -name '*.ttl' -o -name '*.rdf' -o -name '*.owl' -o -name '*.nt' -o -name '*.trig' -o -name '*.jsonld' \) > ontology-files.txt
+        if [ -s ontology-files.txt ]; then
+          while IFS= read -r ontology_file; do
+            filename="$(basename "${ontology_file}")"
+            stem="${filename%.*}"
+            output_path="docs/json/${stem}-lookup.json"
+            echo "Generating ${output_path} from ${ontology_file}"
+            python generate-lookup-json.py "${ontology_file}" -o "${output_path}"
+            generated_any=1
+          done < ontology-files.txt
+        fi
+      fi
+
+      if [ "${generated_any}" -eq 0 ]; then
+        if [ -n "${LOOKUP_SOURCE_URL}" ]; then
+          temp_file="$(mktemp)"
+          echo "Downloading lookup source from ${LOOKUP_SOURCE_URL}"
+          wget -qO "${temp_file}" "${LOOKUP_SOURCE_URL}"
+          source_file="${temp_file}"
+        elif [ -n "${LOOKUP_SOURCE_PATH}" ] && [ -f "${LOOKUP_SOURCE_PATH}" ]; then
+          source_file="${LOOKUP_SOURCE_PATH}"
+        fi
+
+        if [ -n "${source_file}" ]; then
+          python generate-lookup-json.py "${source_file}" -o "${LOOKUP_OUTPUT}"
+        else
+          echo "No ontology source directory or single source configured; keeping committed lookup JSON files"
+        fi
+      fi
+
+      if [ -n "${temp_file}" ] && [ -f "${temp_file}" ]; then
+        rm -f "${temp_file}"
+      fi
+      if [ -f ontology-files.txt ]; then
+        rm -f ontology-files.txt
+      fi
+  artifacts:
+    paths:
+      - docs/
+    expire_in: 1 day
+
+pages:
+  stage: deploy
+  image: busybox:1.36
+  needs:
+    - job: build_lookup
+      artifacts: true
+  script:
+    - mkdir -p public
+    - cp -R docs/. public/
+    - |
+      built_at="${CI_JOB_STARTED_AT:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+      cat > public/build-info.json <<EOF
+      {
+        "ci": "gitlab-ci",
+        "commit": "${CI_COMMIT_SHA}",
+        "short_commit": "${CI_COMMIT_SHORT_SHA}",
+        "built_at": "${built_at}",
+        "pipeline_id": "${CI_PIPELINE_ID}",
+        "job_id": "${CI_JOB_ID}",
+        "ref": "${CI_COMMIT_REF_NAME}"
+      }
+      EOF
+  artifacts:
+    paths:
+      - public
