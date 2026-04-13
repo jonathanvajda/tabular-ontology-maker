@@ -18,7 +18,7 @@
   <!-- Public CSS -->
   <link rel="stylesheet" href="./styles/skeleton.css" />
   <!-- Vendor CSS -->
-  <link rel="stylesheet" href="./styles/handsontable.full.css" />
+  <link rel="stylesheet" href="./styles/glide-data-grid.min.css" />
   <!-- App Global CSS -->
   <script>
     (function () {
@@ -129,14 +129,15 @@
       <select id="exportFormat">
         <option value="ttl">Turtle (.ttl)</option>
         <!-- Not Supported Yet <option value="rdf">RDF/XML (.rdf)</option> -->
-        <!-- Not Supported Yet <option value="jsonld">JSON-LD (.jsonld)</option> -->
+        <option value="jsonld">JSON-LD (.jsonld)</option>
         <option value="nt">N-Triples (.nt)</option>
         <option value="trig">TriG (.trig)</option>
+        <option value="csv">CSV (.csv)</option>
       </select>
-      <button id="exportBtn">Download RDF</button>
+      <button id="exportBtn">Export Data</button>
     </div>
 
-    <div id="hot"></div>
+    <div id="ontology-grid" class="tom-grid-shell"></div>
 
     <!-- Change Number of Rows -->
     <div id="row-controls" style="margin: 1em 0; display:flex; align-items:center; gap:10px;">
@@ -152,8 +153,9 @@
   </main>
 
   <!-- Ontology Settings Modal -->
-  <div id="ontology-settings-modal" style="display:none; position:fixed; background: var(--ont-bg); border:1px solid gray; padding:20px; z-index:1000; top:20%; left:30%; width:40%;">
+  <div id="ontology-settings-modal" class="tom-modal" style="display:none; position:fixed; background: var(--ont-bg); border:1px solid gray; padding:20px; z-index:1000; top:20%; left:30%; width:40%;">
     <h2>Ontology Settings</h2>
+    <div class="tom-modal-scroll">
     <div>
       <label class="tom-modal-label" for="ontology-label-input">Ontology Label (rdfs:label):</label>
       <input type="text" class="tom-modal-input" id="ontology-label-input"><br>
@@ -198,7 +200,7 @@
       &nbsp;&nbsp;
       <label class="tom-modal-label">Starting #: <input id="opaque-start" type="number" class="tom-modal-input"  min="1" value="1" style="width: 5em; height: 2em; margin-left: 1rem;"></label>
       <div style="color:#666; font-size:12px; margin-top:4px;">
-        Example: <code>http://example.org#ont000042</code>
+        Entity IRI Preview: <code id="entity-iri-preview">http://example.org/ont000001</code>
       </div>
     </div>
 
@@ -230,28 +232,43 @@
       <label for="version-info-preview" style="display: inline;">Version Info:</label>
         <span id="version-info-preview">[auto-generated]</span>
     </div>
-
-    <button class="modal-window" id="ontologySettingsModalSaveSettingsBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Save & Close</button>
-    <button class="modal-window" id="ontologySettingsModalCancelSettingsBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Close</button>
-    <button class="modal-window" id="ontologySettingsModalResetSessionBtn" style="float:right; height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Reset Session</button>
+    </div>
+    <div class="tom-modal-footer">
+      <button class="modal-window" id="ontologySettingsModalSaveSettingsBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Save & Close</button>
+      <button class="modal-window" id="ontologySettingsModalCancelSettingsBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Close</button>
+      <button class="modal-window" id="ontologySettingsModalResetSessionBtn" style="margin-left:auto; height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Reset Session</button>
+    </div>
   </div>
 
   <!-- Ontology Imports Modal -->
-  <div id="ontology-imports-modal" style="display:none; position:fixed; background: var(--ont-bg); border:1px solid gray; padding:20px; z-index:1000; top:20%; left:30%; width:40%;">
+  <div id="ontology-imports-modal" class="tom-modal" style="display:none; position:fixed; background: var(--ont-bg); border:1px solid gray; padding:20px; z-index:1000; top:20%; left:30%; width:40%;">
     <h2>Ontology Imports</h2>
+    <div class="tom-modal-scroll">
+    <div style="margin-bottom:1rem;">
+      <label for="new-import-file">Add ontology file:</label><br>
+      <input type="file" id="new-import-file" accept=".ttl,.nt,.trig,.jsonld,.rdf" />
+      <div style="color:#666; font-size:12px; margin-top:4px;">
+        Uses owl:versionIRI when present; otherwise falls back to the ontology IRI.
+      </div>
+    </div>
+
     <div id="import-list" style="max-height:200px; overflow:auto; border:1px solid #ccc; padding:10px;"></div>
 
     <label for="new-import-iri">Add new import IRI:</label><br>
     <input type="text" id="new-import-iri" style="width:100%" placeholder="http://example.org/ontology"><br>
     <button class="modal-window" id="importSettingsModalAddOntologyBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Add Ontology</button><br><br>
-    <button class="modal-window" id="importSettingsModalSaveSettingsBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Save Imports</button>
-    <button class="modal-window" id="importSettingsModalCancelSettingsBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Cancel</button>
+    </div>
+    <div class="tom-modal-footer">
+      <button class="modal-window" id="importSettingsModalSaveSettingsBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Save Imports</button>
+      <button class="modal-window" id="importSettingsModalCancelSettingsBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Cancel</button>
+    </div>
   </div>
 
   <!-- Prefix Manager Modal -->
-  <div id="prefix-manager-modal" style="display:none; position:fixed; top:10%; left:25%; width:50%; z-index:1000; background: var(--ont-bg); border:1px solid #ccc; padding:20px; box-shadow: 0 0 10px rgba(0,0,0,0.3);">
+  <div id="prefix-manager-modal" class="tom-modal" style="display:none; position:fixed; top:10%; left:25%; width:50%; z-index:1000; background: var(--ont-bg); border:1px solid #ccc; padding:20px; box-shadow: 0 0 10px rgba(0,0,0,0.3);">
 
     <h2>Manage IRI Prefixes</h2>
+    <div class="tom-modal-scroll">
 
     <!-- Existing Prefix Table -->
     <table id="prefix-table" style="width:100%; margin-bottom:1em; border-collapse:collapse;">
@@ -273,9 +290,9 @@
       <input type="text" id="new-prefix-iri" placeholder="IRI" style="width:50%; margin-right:10px;" />
       <button id="add-prefix-btn" disabled style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Add Prefix</button>
     </div>
-
+    </div>
     <!-- Action Buttons -->
-    <div style="text-align:right;">
+    <div class="tom-modal-footer" style="text-align:right;">
       <button id="save-prefixes-btn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Save</button>
       <button id="cancel-prefixes-btn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Close</button>
     </div>
@@ -283,8 +300,9 @@
 
 
   <!-- Manage Predicate Modal -->
-  <div id="manage-predicates-modal" style="display:none; position:fixed; background: var(--ont-bg); border:1px solid gray; padding:20px; z-index:1000; top:25%; left:30%; width:40%;">
+  <div id="manage-predicates-modal" class="tom-modal" style="display:none; position:fixed; background: var(--ont-bg); border:1px solid gray; padding:20px; z-index:1000; top:25%; left:30%; width:40%;">
     <h2>Add Predicate Column</h2>
+    <div class="tom-modal-scroll">
 
     <label for="predicate-select">Select a common predicate:</label><br>
     <select id="predicate-select" style="width:100%">
@@ -312,8 +330,8 @@
 
     <hr>
     <div id="predicate-modes-list"></div>
-
-    <div style="margin-top:12px; text-align:right;">
+    </div>
+    <div class="tom-modal-footer" style="margin-top:12px; text-align:right;">
       <button id="manage-predicates-save-btn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Save & Close</button>
       <button id="manage-predicates-cancel-btn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Cancel</button>
     </div>
@@ -321,23 +339,24 @@
 
 
   <!-- Insert Data Modal -->
-  <div id="insert-data-modal" style="display:none; position:fixed; top:10%; left:25%; width:50%; z-index:1000; background: var(--ont-bg); border:1px solid #ccc; padding:20px; box-shadow: 0 0 10px rgba(0,0,0,0.3);">
+  <div id="insert-data-modal" class="tom-modal" style="display:none; position:fixed; top:10%; left:25%; width:50%; z-index:1000; background: var(--ont-bg); border:1px solid #ccc; padding:20px; box-shadow: 0 0 10px rgba(0,0,0,0.3);">
 
     <h2>Insert Data</h2>
+    <div class="tom-modal-scroll">
 
     <p>Download Starter Template: <a href="template.csv">CSV</a> or <a href="template.xlsx">XLSX</a></p>
 
     <!-- Drag & Drop -->
     <div id="drop-area" style="border:2px dashed #ccc; padding:20px; text-align:center; margin-bottom:1em;">
       <p>Drag & drop a file here</p>
-      <p>— or —</p>
+      <p>- or -</p>
       <input type="file" id="file-input" accept=".csv,.tsv,.xls,.xlsx,.ttl,.rdf,.jsonld,.nt" />
     </div>
 
     <!-- Filename display -->
     <div id="filename-display" style="margin-bottom:1em; display:none;">
       <span id="filename-text" style="font-weight:bold;"></span>
-      <button id="remove-file-btn" style="margin-left:10px; height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">❌</button>
+      <button id="remove-file-btn" style="margin-left:10px; height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">X</button>
     </div>
 
     <!-- File type radio -->
@@ -356,9 +375,9 @@
       <label><input type="radio" name="insert-mode" value="append" checked> Append Data</label>
       <label><input type="radio" name="insert-mode" value="replace"> Replace Data</label>
     </div>
-
+    </div>
     <!-- Action buttons -->
-    <div style="text-align:right;">
+    <div class="tom-modal-footer" style="text-align:right;">
       <button id="insert-data-save-btn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Save</button>
       <button id="insert-data-cancel-btn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Close</button>
     </div>
@@ -367,15 +386,20 @@
 
   <!-- Toast container -->
   <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+  <div id="portal"></div>
 
   <footer style="margin: 1em;">
-    <details><summary><b>Important User Data Notice</b></summary>By design, any data that a user inputs stays <i>local</i> to the user's device. Ontology settings and data can be saved in the browser ('Save Session' button), but users are encouraged to export their work ('Download RDF' button), since it <i>cannot</i> be otherwise recovered. This is on purpose: I do not harvest your data or process your data. This site does not receive data from a user, and therefore no user data is stored anywhere except locally. If you are interested in storing data on the cloud (on a server), please contact me (jonathan.vajda [at] gmail.com) so I know about your interest and so I can notify you if/when I add that feature.</details><br />
+    <details><summary><b>Important User Data Notice</b></summary>By design, any data that a user inputs stays <i>local</i> to the user's device. Ontology settings and data can be saved in the browser ('Save Session' button), but users are encouraged to export their work ('Export Data' button), since it <i>cannot</i> be otherwise recovered. This is on purpose: I do not harvest your data or process your data. This site does not receive data from a user, and therefore no user data is stored anywhere except locally. If you are interested in storing data on the cloud (on a server), please contact me (jonathan.vajda [at] gmail.com) so I know about your interest and so I can notify you if/when I add that feature.</details><br />
+    <div id="build-info" style="font-size:0.85rem; color:#666; margin-bottom:0.5rem;"></div>
     <span style="text-align:right"><small>Copyright 2026, Jonathan Vajda</small></span>
   </footer>
 
-  <script src="./app/handsontable.full.js"></script>
+  <script src="./app/glide-data-grid.min.js"></script>
   <script src="./app/xlsx.full.min.js"></script>
   <script src="./app/n3.min.js"></script>
+  <script src="./app/jsonld.min.js"></script>
+  <script src="./app/tom-core-utils.js"></script>
+  <script src="./app/build-info.js"></script>
 
   <script>
     (function () {
@@ -417,7 +441,7 @@
       })();
     })();
   </script>
-  <script src="./app/ontology_spreadsheet.js"></script>
+  <script type="module" src="./app/tom-app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
@@ -433,7 +457,7 @@
           // A new SW is waiting to activate
           if (reg.waiting) offerRefresh(reg.waiting);
 
-          // A new SW is installed but not yet waiting (it’s in installing state)
+          // A new SW is installed but not yet waiting (it's in installing state)
           reg.addEventListener('updatefound', () => {
             const newSW = reg.installing;
             if (!newSW) return;
@@ -456,7 +480,7 @@
           navigator.serviceWorker.addEventListener('message', (e) => {
             if (e.data?.type === 'json-updated') {
               console.info('[PWA] JSON updated:', e.data.url);
-              // Option: hot-reload specific panels, or show a toast “Data updated”
+              // Option: live-refresh specific panels, or show a toast "Data updated"
             }
           });
         } catch (err) {

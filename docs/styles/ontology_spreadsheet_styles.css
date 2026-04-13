@@ -1,5 +1,12 @@
 /* Copyright 2025 Jonathan Vajda */
 
+:root {
+  --tom-invalid-bg-light: #ffd6d6;
+  --tom-invalid-border-light: #c83a32;
+  --tom-invalid-bg-dark: #4b1f24;
+  --tom-invalid-border-dark: #ff7b72;
+}
+
 h2 {
   font-size: 3rem;
   margin-bottom: 1rem;
@@ -38,20 +45,55 @@ h3 {
   margin-left: auto;
 }
 
-
-
-
-
 #ontology-settings-modal {
   display: none;
   position: fixed;
-  background:white;
+  background: white;
   border: 1px solid gray;
   padding: 20px;
   z-index: 1000;
   top: 10%;
   left: 25%;
   width: 50%;
+}
+
+.tom-modal {
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%);
+  width: min(92vw, 760px) !important;
+  max-width: 92vw;
+  max-height: 90vh;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.tom-modal[style*="display:block"],
+.tom-modal[style*="display: block"],
+.tom-modal[style*="display:flex"],
+.tom-modal[style*="display: flex"] {
+  display: flex !important;
+}
+
+.tom-modal-scroll {
+  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-right: 0.35rem;
+}
+
+.tom-modal-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: sticky;
+  bottom: 0;
+  background: var(--ont-bg, #fff);
+  padding-top: 0.75rem;
+  margin-top: 0.75rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 .tom-modal-label {
@@ -74,61 +116,39 @@ h3 {
 }
 
 .prefix-table-cell td {
-    padding-top: 1px;
-    padding-bottom: 1px;
-    padding-left: 5px;
-    padding-right: 1px;
-    height: 20px;
-  }
+  padding-top: 1px;
+  padding-bottom: 1px;
+  padding-left: 5px;
+  padding-right: 1px;
+  height: 20px;
+}
 
 .prefix-table-cell button {
-    line-height: 20px;
-    height: 20px;
-    padding-top: 0px;
-    padding-bottom: 0px;
-    padding-left: 0px;
-    padding-right: 0px;
-    margin-bottom: 0px;
-  }
-
-.modal-window button {
-    height: 3.5em;
-    padding: 4px 8px;
-    font-size: 0.85rem;
-    line-height: normal;
+  line-height: 20px;
+  height: 20px;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 0;
+  padding-right: 0;
+  margin-bottom: 0;
 }
 
-#hot {
+#ontology-imports-modal,
+#prefix-manager-modal,
+#manage-predicates-modal,
+#insert-data-modal {
+  width: min(92vw, 760px) !important;
+}
+
+#ontology-grid {
   margin-bottom: 1em;
-}
-
-.ht_clone_top thead th {
-  position: relative;
-  font-weight: bold;
-  background-color: #f9f9f9;
-  border-bottom: 1px solid #ccc;
-}
-
-/* Only affect the Handsontable inside #hot */
-#hot .handsontable .htCore td,
-#hot .handsontable .htCore th {
-  font-size: 14px;     /* bump as you like: 14–16 is common */
-  line-height: 1.3;    /* optional: nicer spacing */
-}
-
-/* Optional: a smidge more row height for readability */
-#hot .handsontable .ht_master .wtHolder {
-  line-height: 1.3;
-}
-
-
-.header-menu {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  font-size: 0.9rem;
-  cursor: pointer;
-  color: #888;
+  display: block;
+  width: auto;
+  min-height: 0;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  overflow: auto;
+  background: var(--ont-panel-bg, #fff);
 }
 
 textarea {
@@ -136,18 +156,6 @@ textarea {
   height: 200px;
   font-family: monospace;
 }
-
-input.htFocusCatcher {
-  width: 0 !important;
-  height: 0 !important;
-  border: none !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  overflow: hidden !important;
-  position: absolute !important;
-  left: -9999px !important;
-}
-
 
 #toast-container {
   position: fixed;
@@ -166,7 +174,7 @@ input.htFocusCatcher {
   padding: 12px 16px;
   margin-top: 8px;
   border-radius: 6px;
-  font-size: 0.9rem;
+  font-size: 1.35rem;
   opacity: 0;
   transform: translateX(100%);
   transition: all 0.3s ease;
@@ -178,6 +186,141 @@ input.htFocusCatcher {
   transform: translateX(0);
 }
 
-.toast.success { background-color: #4caf50; }   /* Green */
-.toast.warning { background-color: #ff9800; }   /* Orange */
-.toast.error   { background-color: #f44336; }   /* Red */
+.toast.success {
+  background-color: #4caf50;
+}
+
+.toast.warning {
+  background-color: #ff9800;
+}
+
+.toast.error {
+  background-color: #f44336;
+}
+
+.tom-grid-shell,
+#portal {
+  --gdg-accent-color: var(--ont-accent, #2563eb);
+  --gdg-accent-fg: #ffffff;
+  --gdg-accent-light: var(--ont-accent-soft, #e0e7ff);
+  --gdg-bg-cell: var(--ont-panel-bg, #ffffff);
+  --gdg-bg-cell-medium: var(--ont-bg, #f8fafc);
+  --gdg-bg-header: var(--ont-bg, #f8fafc);
+  --gdg-bg-header-has-focus: var(--ont-panel-bg, #ffffff);
+  --gdg-bg-header-hovered: var(--ont-accent-soft, #e0e7ff);
+  --gdg-bg-bubble: var(--ont-accent-soft, #e0e7ff);
+  --gdg-bg-bubble-selected: var(--ont-accent-soft, #e0e7ff);
+  --gdg-border-color: var(--ont-border, #d0d7de);
+  --gdg-link-color: var(--ont-accent, #2563eb);
+  --gdg-text-dark: var(--ont-text, #1f2937);
+  --gdg-text-medium: var(--ont-muted, #4b5563);
+  --gdg-text-light: var(--ont-muted, #4b5563);
+  --gdg-text-header: var(--ont-text, #1f2937);
+  --gdg-font-family: var(
+    --ont-font-body,
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    sans-serif
+  );
+  --gdg-editor-font-size: 13px;
+}
+
+.tom-grid-shell {
+  box-shadow: 0 10px 30px rgba(24, 53, 77, 0.06);
+  font-size: 1rem;
+}
+
+.tom-grid-editor {
+  white-space: pre-wrap;
+  padding: 0.82rem 0.95rem !important;
+}
+
+#portal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: 10000;
+  pointer-events: none;
+}
+
+#portal > * {
+  pointer-events: auto;
+}
+
+.tom-autocomplete-popover {
+  position: fixed;
+  z-index: 10001;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  max-height: 260px;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--ont-panel-bg, #fff);
+  border: 1px solid var(--ont-border, #d0d7de);
+  border-radius: 10px;
+  box-shadow: 0 14px 32px rgba(24, 53, 77, 0.18);
+}
+
+.tom-autocomplete-popover-inline {
+  position: absolute;
+}
+
+.tom-autocomplete-options {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  justify-content: flex-start;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  overscroll-behavior: contain;
+}
+
+.tom-autocomplete-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 0.72rem 0.9rem;
+  border: 0;
+  background: transparent;
+  color: var(--ont-text, #1f2937);
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tom-autocomplete-option:hover,
+.tom-autocomplete-option.is-active {
+  background: var(--ont-accent-soft, #e0e7ff);
+}
+
+.tom-autocomplete-option-label {
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tom-autocomplete-option-meta {
+  color: var(--ont-muted, #4b5563);
+  font-size: 0.92em;
+}
+
+.tom-autocomplete-status {
+  padding: 0.8rem 0.9rem;
+  color: var(--ont-muted, #4b5563);
+}
+
+.tom-autocomplete-status-error {
+  color: #b42318;
+}
