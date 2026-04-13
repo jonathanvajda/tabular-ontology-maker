@@ -14,6 +14,8 @@ const GRID_LINE_HEIGHT = 1.25;
 const GRID_HORIZONTAL_PADDING = 10;
 const GRID_VERTICAL_PADDING = 8;
 const EDITOR_OPTION_LIMIT = 50;
+const AUTOCOMPLETE_MENU_MIN_WIDTH = 360;
+const AUTOCOMPLETE_MENU_MAX_WIDTH = 760;
 const autocompleteDrafts = new Map();
 let textMeasureContext = null;
 
@@ -163,6 +165,51 @@ function getTextMeasureContext() {
     textMeasureContext = document.createElement("canvas").getContext("2d");
   }
   return textMeasureContext;
+}
+
+function measureTextWidth(value, font) {
+  const text = String(value ?? "");
+  if (!text) return 0;
+
+  const context = getTextMeasureContext();
+  if (!context) {
+    return text.length * GRID_TEXT_FONT_SIZE * 0.62;
+  }
+
+  context.font = font;
+  return context.measureText(text).width;
+}
+
+function computeAutocompleteMenuWidth(options, inputWidth, status) {
+  const fontFamily = readCssVar(
+    "--ont-font-body",
+    "system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+  );
+  const labelFont = `${GRID_TEXT_FONT_SIZE}px ${fontFamily}`;
+  const metaFont = `${Math.round(GRID_TEXT_FONT_SIZE * 0.92)}px ${fontFamily}`;
+  const baseWidth = Math.max(
+    AUTOCOMPLETE_MENU_MIN_WIDTH,
+    Math.ceil(Number(inputWidth) || 0)
+  );
+  const statusText =
+    status === "loading"
+      ? "Loading matches..."
+      : status === "error"
+      ? "Lookup failed."
+      : status === "empty"
+      ? "No matches found."
+      : "Type to search.";
+  const widestOption = (Array.isArray(options) ? options : []).reduce(function (widest, option) {
+    const labelWidth = measureTextWidth(option?.label, labelFont);
+    const metaWidth = option?.description ? measureTextWidth(option.description, metaFont) : 0;
+    return Math.max(widest, labelWidth, metaWidth);
+  }, measureTextWidth(statusText, labelFont));
+  const viewportCap = Math.max(
+    baseWidth,
+    Math.min(AUTOCOMPLETE_MENU_MAX_WIDTH, (window.innerWidth || AUTOCOMPLETE_MENU_MAX_WIDTH) - 16)
+  );
+
+  return Math.min(viewportCap, Math.max(baseWidth, Math.ceil(widestOption + 40)));
 }
 
 function wrapTextLine(line, maxWidth, measureText) {
@@ -577,6 +624,7 @@ function AutocompleteEditor(props) {
   const [highlightedIndex, setHighlightedIndex] = React.useState(0);
   const inputRef = React.useRef(null);
   const listRef = React.useRef(null);
+  const rootRef = React.useRef(null);
   const lookupRequestRef = React.useRef(0);
   const cellIdentityRef = React.useRef("");
   const originalCellRef = React.useRef({
@@ -726,9 +774,13 @@ function AutocompleteEditor(props) {
   const activeOption =
     options.length > 0 ? options[Math.max(0, Math.min(highlightedIndex, options.length - 1))] : null;
   const inputRect = props.target || { x: 0, y: 0, width: 0, height: 0 };
-  const menuWidth = Math.max(360, Math.ceil(inputRect.width || 0));
+  const menuWidth = computeAutocompleteMenuWidth(options, inputRect.width, status);
   const viewportWidth = window.innerWidth || menuWidth;
   const viewportHeight = window.innerHeight || 0;
+  const overlayMaxWidth = Math.max(
+    AUTOCOMPLETE_MENU_MIN_WIDTH,
+    Math.min(menuWidth, viewportWidth - 16)
+  );
   const menuLeft = Math.max(8, Math.min(inputRect.x || 0, viewportWidth - menuWidth - 8));
   const preferredTop = (inputRect.y || 0) + (inputRect.height || 0) + 4;
   const menuHeight = 280;
@@ -807,6 +859,33 @@ function AutocompleteEditor(props) {
     );
   }
 
+  React.useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return undefined;
+
+    const overlay =
+      root.closest("[id^='gdg-overlay-']") || root.closest(".gdg-d19meir1");
+    if (!(overlay instanceof HTMLElement)) return undefined;
+
+    const previousVarWidth = overlay.style.getPropertyValue("--d19meir1-2");
+    const previousMinWidth = overlay.style.minWidth;
+    const previousMaxWidth = overlay.style.maxWidth;
+
+    overlay.style.setProperty("--d19meir1-2", `${overlayMaxWidth}px`);
+    overlay.style.minWidth = `${overlayMaxWidth}px`;
+    overlay.style.maxWidth = `${overlayMaxWidth}px`;
+
+    return () => {
+      if (previousVarWidth) {
+        overlay.style.setProperty("--d19meir1-2", previousVarWidth);
+      } else {
+        overlay.style.removeProperty("--d19meir1-2");
+      }
+      overlay.style.minWidth = previousMinWidth;
+      overlay.style.maxWidth = previousMaxWidth;
+    };
+  }, [overlayMaxWidth]);
+
   return React.createElement(
     React.Fragment,
     null,
@@ -815,9 +894,10 @@ function AutocompleteEditor(props) {
       {
         style: {
           position: "relative",
-          width: "100%",
+          width: `${overlayMaxWidth}px`,
           paddingBottom: !supportsPortal && isMenuOpen ? `${menuHeight + 8}px` : undefined,
         },
+        ref: rootRef,
         className: "tom-autocomplete-root click-outside-ignore",
       },
       React.createElement("input", {
@@ -888,7 +968,7 @@ function AutocompleteEditor(props) {
                 "tom-autocomplete-popover tom-autocomplete-popover-inline click-outside-ignore",
               style: {
                 left: "0",
-                width: "100%",
+                width: `${menuWidth}px`,
                 maxHeight: `${menuHeight}px`,
               },
               onMouseDown: (event) => {
