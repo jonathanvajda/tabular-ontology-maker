@@ -1,0 +1,10 @@
+{
+  "name": "tabular-ontology-maker",
+  "private": true,
+  "scripts": {
+    "test": "jest --runInBand"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}

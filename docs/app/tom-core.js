@@ -1,11 +1,13 @@
 // Copyright 2025 Jonathan Vajda
 (function () {
 const TOM = (window.TOM = window.TOM || {});
+const CoreUtils = window.TOMCoreUtils || {};
 
 let customPredicates = [];
 let hotInstance = null;
 let hotInitDone = false;
 let currentImportFile = null;
+let lastPreviewableRdfFormat = 'ttl';
 
 // Base spreadsheet columns (in order):
 // 0: iri, 1: label, 2: element type, 3: definition, 4: is a, 5: is curated in ontology
@@ -177,15 +179,20 @@ function getSelectedDelimiter() {
 
 function updateOntologyPreview() {
   try {
-    const base = (document.getElementById("ontology-base-iri-input").value || '').trim() || 'http://example.org';
+    const settings = getEffectiveOntologySettings();
+    const base = (settings.base || '').trim() || 'http://example.org';
     const label = (document.getElementById("ontology-label-input").value || '').trim() || 'Example Ontology';
-    const delimiter = getSelectedDelimiter();
+    const delimiter = settings.delimiter || getSelectedDelimiter();
     const { year, month, day } = getCurrentDateParts();
     const normalizedLabel = toPascalCase(label);
+    const entityPreview = settings.iriMode === 'readable'
+      ? buildReadableIri('Example Entity', settings, new Set())
+      : buildOpaqueIri(settings.opaqueStart || 1, settings);
 
     document.getElementById("version-iri-preview").textContent =
       `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`;
     document.getElementById("version-info-preview").textContent = `${year}-${month}-${day}`;
+    document.getElementById("entity-iri-preview").textContent = entityPreview;
   } catch (e) {
     console.error("[Preview] Failed to update preview", e);
   }
@@ -203,27 +210,40 @@ function generateOntologySettings(
   opaqueStart = 1,
   readableCase = "PascalCase"         // "PascalCase" | "camelCase" | "snake_case"
 ) {
+  if (CoreUtils.generateOntologySettings) {
+    return CoreUtils.generateOntologySettings({
+      base,
+      label,
+      creator,
+      description,
+      delimiter,
+      iriMode,
+      opaqueLeading,
+      opaqueDigits,
+      opaqueStart,
+      readableCase,
+      dateParts: getCurrentDateParts()
+    });
+  }
+
   const { year, month, day } = getCurrentDateParts();
   const normalizedLabel = toPascalCase(label);
 
-  const settings = {
+  return {
     iri: `${base}${delimiter}${normalizedLabel}`,
     "http://www.w3.org/2002/07/owl#versionIRI": `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`,
     "http://www.w3.org/2002/07/owl#versionInfo": `${year}-${month}-${day}`,
     "http://www.w3.org/2000/01/rdf-schema#label": label,
     "http://purl.org/dc/terms/creator": creator,
     "http://purl.org/dc/terms/description": description,
-
-    // NEW:
     iriMode,
     opaqueLeading,
     opaqueDigits,
     opaqueStart,
     readableCase,
-    delimiter,     // keep delimiter explicitly too
-    base           // store base, handy later
+    delimiter,
+    base
   };
-  return settings;
 }
 
 function getEffectiveOntologySettings() {
@@ -287,9 +307,6 @@ function openOntologySettingsModal() {
   document.getElementById("ontology-label-input").value = s[w3cIRI.RDFS_LABEL] || "";
   document.getElementById("ontology-creator-input").value = s[w3cIRI.DCTERMS_CREATOR] || "";
   document.getElementById("ontology-description-input").value = s[w3cIRI.DCTERMS_DESCRIPTION] || "";
-  toggleIriModeOptions();   // <- ensure sections reflect the currently checked mode
-  document.getElementById("ontology-settings-modal").style.display = "block";
-  updateOntologyPreview();
 
   // delimiter
   const delim = s.delimiter || getSelectedDelimiter();
@@ -312,6 +329,7 @@ function openOntologySettingsModal() {
   document.getElementById('readable-opts').style.display = (iriMode === 'readable') ? 'block' : 'none';
 
   modal.style.display = "block";
+  toggleIriModeOptions();
   updateOntologyPreview();
 }
 
@@ -342,6 +360,7 @@ function zeroPad(n, width) {
 }
 
 function toSnakeCase(str) {
+  if (CoreUtils.toSnakeCase) return CoreUtils.toSnakeCase(str);
   return String(str || '')
     .trim()
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
@@ -650,37 +669,24 @@ function getOntologyIRI() {
   return settings.iri || "http://example.org/ExampleOntology";
 }
 
-/**
- * Generates an RDF string from the given rows in the specified format.
- * @param {*} rows
- * @param {*} format 
- * @returns 
- */
-async function generateRdfString (rows, format = 'ttl') {
-  console.info('generateRdfString happened');
-  const formatMap = {
-    ttl: 'Turtle',
-    rdf: 'RDF/XML',
-    jsonld: 'JSON-LD',
-    nt: 'N-Triples',
-    trig: 'TriG'
-  };
-  const writer = new N3.Writer({ prefixes: iriPrefixes, format: formatMap[format] || 'Turtle' });
-
+function buildOntologyExportQuads(rows) {
+  const quads = [];
   const settings = getOntologySettings();
   const ontologyIRI = settings["iri"];
+  const namedNode = N3.DataFactory.namedNode;
+  const literal = N3.DataFactory.literal;
 
-  writer.addQuad(
-    N3.DataFactory.namedNode(ontologyIRI),
-    N3.DataFactory.namedNode(w3cIRI.RDF_TYPE),
-    N3.DataFactory.namedNode(w3cIRI.OWL_ONTOLOGY)
+  quads.push(
+    N3.DataFactory.quad(
+      namedNode(ontologyIRI),
+      namedNode(w3cIRI.RDF_TYPE),
+      namedNode(w3cIRI.OWL_ONTOLOGY)
+    )
   );
 
-  // helpers
   const isAbsoluteIri = (s) => typeof s === 'string' && /^https?:\/\//i.test(s);
   const resolvePredicate = (k) => {
     if (isAbsoluteIri(k)) return k;
-    // optionally support CURIE keys in settings:
     if (typeof k === 'string' && k.includes(':')) {
       try { const iri = curieToIri(k); if (iri) return iri; } catch (_) {}
     }
@@ -688,76 +694,75 @@ async function generateRdfString (rows, format = 'ttl') {
   };
 
   for (const [key, value] of Object.entries(settings)) {
-    if (key === 'iri') continue;                             // already handled
-    if (key === 'owlImportsLocal') continue;                 // app-internal cache: skip
-    if (key === w3cIRI.OWL_IMPORTS && Array.isArray(value)) { // emit imports as IRIs
+    if (key === 'iri' || key === 'owlImportsLocal') continue;
+    if (key === w3cIRI.OWL_IMPORTS && Array.isArray(value)) {
       for (const importIRI of value) {
-        writer.addQuad(
-          N3.DataFactory.namedNode(ontologyIRI),
-          N3.DataFactory.namedNode(w3cIRI.OWL_IMPORTS),
-          N3.DataFactory.namedNode(importIRI)
-        );
+        quads.push(N3.DataFactory.quad(
+          namedNode(ontologyIRI),
+          namedNode(w3cIRI.OWL_IMPORTS),
+          namedNode(importIRI)
+        ));
       }
       continue;
     }
 
-    // Emit only if predicate is an IRI (or resolvable CURIE) and value is scalar
     const pred = resolvePredicate(key);
-    const isScalar = ['string','number','boolean'].includes(typeof value);
+    const isScalar = ['string', 'number', 'boolean'].includes(typeof value);
     if (pred && isScalar) {
-      writer.addQuad(
-        N3.DataFactory.namedNode(ontologyIRI),
-        N3.DataFactory.namedNode(pred),
-        N3.DataFactory.literal(String(value))
-      );
+      quads.push(N3.DataFactory.quad(
+        namedNode(ontologyIRI),
+        namedNode(pred),
+        literal(String(value))
+      ));
     }
   }
-
 
   rows.forEach((row) => {
     const [subject, label, type, definition, isAObject, isCuratedInOntology] = row;
     if (!subject || !type) return;
 
-    writer.addQuad(N3.DataFactory.namedNode(subject),
-      N3.DataFactory.namedNode(w3cIRI.RDF_TYPE),
-      N3.DataFactory.namedNode(`http://www.w3.org/2002/07/owl#${type}`)
-    );
+    quads.push(N3.DataFactory.quad(
+      namedNode(subject),
+      namedNode(w3cIRI.RDF_TYPE),
+      namedNode(`http://www.w3.org/2002/07/owl#${type}`)
+    ));
 
     if (label) {
-      writer.addQuad(N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode(w3cIRI.RDFS_LABEL),
-        N3.DataFactory.literal(label));
+      quads.push(N3.DataFactory.quad(
+        namedNode(subject),
+        namedNode(w3cIRI.RDFS_LABEL),
+        literal(label)
+      ));
     }
 
     if (definition) {
-      writer.addQuad(N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode(w3cIRI.SKOS_DEFINITION),
-        N3.DataFactory.literal(definition));
+      quads.push(N3.DataFactory.quad(
+        namedNode(subject),
+        namedNode(w3cIRI.SKOS_DEFINITION),
+        literal(definition)
+      ));
     }
 
-    // Handle "Is A" relationships
     const isAPredicate = getIsAPredicate(type);
     if (isAPredicate && isAObject) {
       const objIri = resolveToIri(isAObject);
       if (objIri) {
-        writer.addQuad(
-          N3.DataFactory.namedNode(subject),
-          N3.DataFactory.namedNode(isAPredicate),
-          N3.DataFactory.namedNode(objIri)
-        );
+        quads.push(N3.DataFactory.quad(
+          namedNode(subject),
+          namedNode(isAPredicate),
+          namedNode(objIri)
+        ));
       } else {
         console.warn(`[export] Could not resolve IsA value "${isAObject}" to an IRI for subject ${subject}`);
       }
     }
 
-    // writer
     if (isCuratedInOntology) {
-      const obj = asObjectTerm(isCuratedInOntology);
-      writer.addQuad(
-        N3.DataFactory.namedNode(subject),
-        N3.DataFactory.namedNode(w3cIRI.CCO_CURATEDIN),
-        obj
-      );
+      quads.push(N3.DataFactory.quad(
+        namedNode(subject),
+        namedNode(w3cIRI.CCO_CURATEDIN),
+        asObjectTerm(isCuratedInOntology)
+      ));
     }
 
     customPredicates.forEach((predicate, idx) => {
@@ -766,52 +771,145 @@ async function generateRdfString (rows, format = 'ttl') {
       if (!cellValue) return;
 
       const mode = getPredicateValueMode(predicate) || defaultModeForPredicate(predicate);
+      const valueText = String(cellValue).trim();
 
       if (mode === 'iri') {
-        // Try to emit as resource (NamedNode); fallback to literal if not resolvable
-        const v = String(cellValue).trim();
         let obj = null;
-        if (/^<[^>\s]+>$/.test(v)) obj = N3.DataFactory.namedNode(v.slice(1, -1));
-        else if (/^https?:\/\/\S+$/i.test(v)) obj = N3.DataFactory.namedNode(v);
-        else if (/^[A-Za-z][\w-]*:[\w.-]+$/.test(v)) {
-          const iri = curieToIri(v);
-          if (iri) obj = N3.DataFactory.namedNode(iri);
+        if (/^<[^>\s]+>$/.test(valueText)) obj = namedNode(valueText.slice(1, -1));
+        else if (/^https?:\/\/\S+$/i.test(valueText)) obj = namedNode(valueText);
+        else if (/^[A-Za-z][\w-]*:[\w.-]+$/.test(valueText)) {
+          const iri = curieToIri(valueText);
+          if (iri) obj = namedNode(iri);
         }
 
-        writer.addQuad(
-          N3.DataFactory.namedNode(subject),
-          N3.DataFactory.namedNode(predicate),
-          obj || N3.DataFactory.literal(v)
-        );
+        quads.push(N3.DataFactory.quad(
+          namedNode(subject),
+          namedNode(predicate),
+          obj || literal(valueText)
+        ));
       } else {
-        // literal mode
-        writer.addQuad(
-          N3.DataFactory.namedNode(subject),
-          N3.DataFactory.namedNode(predicate),
-          N3.DataFactory.literal(String(cellValue))
-        );
+        quads.push(N3.DataFactory.quad(
+          namedNode(subject),
+          namedNode(predicate),
+          literal(String(cellValue))
+        ));
       }
     });
   });
 
+  return quads;
+}
+
+function serializeQuads(quads, format = 'ttl') {
+  const formatMap = {
+    ttl: 'Turtle',
+    nt: 'N-Triples',
+    trig: 'TriG',
+    nquads: 'N-Quads'
+  };
+  const writer = new N3.Writer({ prefixes: iriPrefixes, format: formatMap[format] || 'Turtle' });
+  quads.forEach((quad) => writer.addQuad(quad));
+
   return new Promise((resolve, reject) => {
     writer.end((error, result) => {
       if (error) {
-        console.error('generateRdfString failed:', error);
+        console.error('serializeQuads failed:', error);
         reject(error);
       } else {
         resolve(result);
       }
     });
   });
-};
+}
+
+function buildJsonLdContext() {
+  const context = {};
+  Object.entries(iriPrefixes).forEach(([prefix, iri]) => {
+    context[prefix] = iri;
+  });
+  return context;
+}
+
+async function convertNQuadsToJsonLd(nquads) {
+  if (!window.jsonld) {
+    throw new Error('jsonld.min.js is not loaded. Add it to docs/app/jsonld.min.js to enable JSON-LD support.');
+  }
+
+  const expanded = await window.jsonld.fromRDF(nquads, { format: 'application/n-quads' });
+  const compacted = await window.jsonld.compact(expanded, buildJsonLdContext());
+  return JSON.stringify(compacted, null, 2);
+}
+
+async function generateRdfString(rows, format = 'ttl') {
+  console.info('generateRdfString happened');
+  const quads = buildOntologyExportQuads(rows);
+  if (format === 'jsonld') {
+    const nquads = await serializeQuads(quads, 'nquads');
+    return convertNQuadsToJsonLd(nquads);
+  }
+  return serializeQuads(quads, format);
+}
+
+function escapeCsvField(value) {
+  if (CoreUtils.escapeCsvField) return CoreUtils.escapeCsvField(value);
+  const text = String(value ?? '');
+  if (/[",\r\n]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function buildCsvExportRows(rows) {
+  const headers = getColumnHeaders();
+  if (CoreUtils.buildCsvExportRows) {
+    return CoreUtils.buildCsvExportRows({
+      headers,
+      rows,
+      resolveCellValue: (_, index, raw) => {
+        if (index === 4) return resolveToIri(raw) || String(raw || '');
+        return String(raw ?? '');
+      }
+    });
+  }
+
+  const csvRows = [headers];
+  rows.forEach((row) => {
+    const next = headers.map((_, index) => {
+      const raw = row[index] ?? '';
+      if (index === 4) {
+        return resolveToIri(raw) || String(raw || '');
+      }
+      return String(raw ?? '');
+    });
+    csvRows.push(next);
+  });
+  return csvRows;
+}
+
+function generateCsvString(rows) {
+  return buildCsvExportRows(rows)
+    .map((row) => row.map(escapeCsvField).join(','))
+    .join('\r\n');
+}
+
+function getPreviewFormat(selectedFormat) {
+  if (selectedFormat === 'csv') return lastPreviewableRdfFormat || 'ttl';
+  lastPreviewableRdfFormat = selectedFormat;
+  return selectedFormat;
+}
+
+function getSaveableRdfFormat(selectedFormat) {
+  return selectedFormat === 'csv' ? (lastPreviewableRdfFormat || 'ttl') : selectedFormat;
+}
 
 const mimeTypes = {
   ttl: 'text/turtle',
   rdf: 'application/rdf+xml',
   jsonld: 'application/ld+json',
   nt: 'application/n-triples',
-  trig: 'application/trig'
+  trig: 'application/trig',
+  csv: 'text/csv',
+  nquads: 'application/n-quads'
 };
 
 const extensions = {
@@ -819,7 +917,8 @@ const extensions = {
   rdf: 'rdf',
   jsonld: 'jsonld',
   nt: 'nt',
-  trig: 'trig'
+  trig: 'trig',
+  csv: 'csv'
 };
 
 function idbRequest(req) {
@@ -849,14 +948,17 @@ async function clearOntologySettings() {
 const handleExport = async (shouldDownload = false) => {
   console.info('handleExport happened');
   const rows = hotInstance.getData();
-  const format = document.getElementById('exportFormat')?.value || 'ttl';
+  const selectedFormat = document.getElementById('exportFormat')?.value || 'ttl';
+  const format = shouldDownload ? selectedFormat : getPreviewFormat(selectedFormat);
 
   try {
-    const rdfString = await generateRdfString(rows, format);
-    output.value = rdfString;
+    const exportString = format === 'csv'
+      ? generateCsvString(rows)
+      : await generateRdfString(rows, format);
+    output.value = exportString;
 
     if (shouldDownload) {
-      const blob = new Blob([rdfString], { type: mimeTypes[format] });
+      const blob = new Blob([exportString], { type: mimeTypes[format] || 'text/plain' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -868,6 +970,7 @@ const handleExport = async (shouldDownload = false) => {
     }
   } catch (e) {
     console.error('handleExport failed:', e);
+    showToast(`Export failed: ${e.message}`, 'error');
   }
 };
 
@@ -880,8 +983,8 @@ const handleExport = async (shouldDownload = false) => {
 async function saveRDFtoIndexedDB() {
   console.info('saveRDFtoIndexedDB happened');
   const rows = hotInstance.getData();
-  // A <button> has no useful .value - read from the format <select>
-  const format = document.getElementById('exportFormat')?.value || 'ttl';
+  const selectedFormat = document.getElementById('exportFormat')?.value || 'ttl';
+  const format = getSaveableRdfFormat(selectedFormat);
 
   try {
     const rdfString = await generateRdfString(rows, format);
@@ -1190,15 +1293,19 @@ async function reloadSavedSession() {
  * @returns 
  */
 function getCurrentDateParts() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return { year, month, day };
+  return (CoreUtils.getCurrentDateParts || (() => {
+    const now = new Date();
+    return {
+      year: now.getFullYear(),
+      month: String(now.getMonth() + 1).padStart(2, '0'),
+      day: String(now.getDate()).padStart(2, '0')
+    };
+  }))();
 }
 
 // This is called by generateOntologySettings to get the camelCase version of the label
 function toCamelCase(str) {
+  if (CoreUtils.toCamelCase) return CoreUtils.toCamelCase(str);
   return str
     .toLowerCase()
     .replace(/[^a-z0-9]+(.)/g, (_, chr) => chr.toUpperCase());
@@ -1206,6 +1313,7 @@ function toCamelCase(str) {
 
 // Converts a string to PascalCase (e.g., "example term" -> "ExampleTerm")
 function toPascalCase(str) {
+  if (CoreUtils.toPascalCase) return CoreUtils.toPascalCase(str);
   return str
     .toLowerCase()
     .replace(/[^a-z0-9]+(.)/g, (_, chr) => chr.toUpperCase()) // handle word boundaries
@@ -1228,6 +1336,22 @@ function addToVocabIndex(entries, source = "External") {
       source: e.source || source,
       deprecated: !!e.deprecated
     };
+    if (!rec.iri) continue;
+    const existing = vocabByIri.get(rec.iri);
+    if (existing) {
+      existing.curie = rec.curie || existing.curie;
+      existing.label = rec.label || existing.label;
+      existing.type = rec.type || existing.type;
+      existing.altLabels = Array.isArray(rec.altLabels) ? rec.altLabels : existing.altLabels;
+      existing.source = rec.source || existing.source;
+      existing.deprecated = rec.deprecated || existing.deprecated;
+      if (existing.curie) vocabByCurie.set(existing.curie, existing);
+      if (existing.label) vocabByLabelLC.set(existing.label.toLowerCase(), existing);
+      for (const alt of existing.altLabels || []) {
+        if (alt) vocabByLabelLC.set(String(alt).toLowerCase(), existing);
+      }
+      continue;
+    }
     vocabIndex.push(rec);
     vocabByIri.set(rec.iri, rec);
     if (rec.curie) vocabByCurie.set(rec.curie, rec);
@@ -1236,6 +1360,42 @@ function addToVocabIndex(entries, source = "External") {
       if (alt) vocabByLabelLC.set(String(alt).toLowerCase(), rec);
     }
   }
+}
+
+function extractOntologyVocabEntries(quads, source = "Imported Ontology") {
+  const subjectData = new Map();
+
+  for (const quad of quads || []) {
+    const subject = quad.subject?.value;
+    const predicate = quad.predicate?.value;
+    const object = quad.object?.value;
+    if (!subject || !predicate || !object) continue;
+
+    if (!subjectData.has(subject)) {
+      subjectData.set(subject, { label: '', type: '', altLabels: [] });
+    }
+    const entry = subjectData.get(subject);
+
+    if (predicate === w3cIRI.RDFS_LABEL && !entry.label) entry.label = object;
+    if (predicate === 'http://www.w3.org/2004/02/skos/core#altLabel') entry.altLabels.push(object);
+    if (predicate === w3cIRI.RDF_TYPE) {
+      if (object === w3cIRI.OWL_CLASS) entry.type = 'Class';
+      else if (object === w3cIRI.OWL_OBJPROP) entry.type = 'ObjectProperty';
+      else if (object === w3cIRI.OWL_DATATYPE || object === w3cIRI.OWL_DATAPROP) entry.type = 'DatatypeProperty';
+      else if (object === w3cIRI.OWL_ANNOPROP) entry.type = 'AnnotationProperty';
+      else if (object === w3cIRI.OWL_NAMEDIND) entry.type = 'NamedIndividual';
+    }
+  }
+
+  return Array.from(subjectData.entries())
+    .filter(([iri, entry]) => iri && entry.type && iri !== getOntologyIRI())
+    .map(([iri, entry]) => ({
+      iri,
+      label: entry.label || '',
+      type: entry.type,
+      altLabels: Array.from(new Set(entry.altLabels)),
+      source
+    }));
 }
 
 // Fetch the lookup file file once at startup
@@ -1348,7 +1508,6 @@ function harvestRowsIntoVocab(rows) {
 // This function normalizes "Is A" edits by resolving them to IRIs.
 function normalizeIsAEdits(changes, source) {
   if (!Array.isArray(changes)) return;
-  if (source === 'edit') return;
   for (const ch of changes) {
     // [row, prop(or col index), oldValue, newValue]
     const row = ch[0];
@@ -1498,10 +1657,11 @@ function backfillIris() {
 }
 
 function isValidOntology(content) {
+  if (CoreUtils.isValidOntology) return CoreUtils.isValidOntology(content);
   return (
     typeof content === 'string' &&
     content.length > 0 &&
-    /rdf:RDF|@prefix|owl:Ontology/.test(content)
+    /rdf:RDF|@prefix|owl:Ontology|"@context"\s*:/.test(content)
   );
 }
 
@@ -1950,9 +2110,12 @@ function closeInsertDataModal() {
  */
 function resetFileSelection() {
   selectedFile = null;
+  currentImportFile = null;
   document.getElementById("file-input").value = "";
   document.getElementById("filename-display").style.display = "none";
   document.getElementById("filename-text").textContent = "";
+  document.querySelector('input[name="file-type"][value="spreadsheet"]').checked = true;
+  handleFileTypeChange();
   console.info("[File] File selection cleared");
 }
 
@@ -1986,6 +2149,7 @@ function setSelectedFile(file) {
   selectedFile = file;
   document.getElementById("filename-text").textContent = file.name;
   document.getElementById("filename-display").style.display = "block";
+  autoSelectFileType(file);
   console.info("[File] Selected:", file.name);
 }
 
@@ -2003,22 +2167,8 @@ function preventDefaults(event) {
 function handleFileTypeChange() {
   const fileType = document.querySelector('input[name="file-type"]:checked').value;
   const headerCheckbox = document.getElementById('header-checkbox-container');
-
-  if (fileType === 'ontology') {
-    headerCheckbox.style.display = 'none';
-    console.info("[UI] Hiding header row checkbox");
-  } else {
-    headerCheckbox.style.display = 'block';
-    console.info("[UI] Showing header row checkbox");
-  }
-
-  if (fileType === "spreadsheet") {
-    headerCheckbox.style.display = "block";
-    console.info("[UI] Showing header row checkbox");
-  } else {
-    headerCheckbox.style.display = "none";
-    console.info("[UI] Hiding header row checkbox");
-  }
+  headerCheckbox.style.display = fileType === 'ontology' ? 'none' : 'block';
+  console.info(fileType === 'ontology' ? "[UI] Hiding header row checkbox" : "[UI] Showing header row checkbox");
 }
 
 
@@ -2032,19 +2182,15 @@ function handleFileTypeChange() {
 function parseFileExtension(filename) {
   try {
     console.info(`[parseFileExtension] Received filename: ${filename}`);
-
-    if (typeof filename !== 'string') {
-      console.error("[parseFileExtension] Invalid input: expected string");
+    const ext = CoreUtils.parseFileExtension ? CoreUtils.parseFileExtension(filename) : '';
+    if (!ext) {
+      if (typeof filename !== 'string') {
+        console.error("[parseFileExtension] Invalid input: expected string");
+      } else {
+        console.warn("[parseFileExtension] No extension found or empty extension");
+      }
       return '';
     }
-
-    const lastDot = filename.lastIndexOf('.');
-    if (lastDot === -1 || lastDot === filename.length - 1) {
-      console.warn("[parseFileExtension] No extension found or empty extension");
-      return '';
-    }
-
-    const ext = filename.slice(lastDot + 1).toLowerCase();
     console.info(`[parseFileExtension] Parsed extension: ${ext}`);
     return ext;
   } catch (error) {
@@ -2064,28 +2210,18 @@ function parseFileExtension(filename) {
 function detectFormatByExtension(extension) {
   console.info(`[detectFormatByExtension] Checking extension: ${extension}`);
 
-  // Define supported extension sets
-  var spreadsheetExts = ["csv", "tsv", "xls", "xlsx"];
-  var ontologyExts = ["ttl", "nt", "rdf", "jsonld"];
-
   try {
-    if (typeof extension !== 'string') {
-      console.error("[detectFormatByExtension] Invalid input: expected string");
-      return 'unsupported';
-    }
-
-    if (spreadsheetExts.includes(extension)) {
+    const detected = CoreUtils.detectFormatByExtension
+      ? CoreUtils.detectFormatByExtension(extension)
+      : 'unsupported';
+    if (detected === 'spreadsheet') {
       console.info("[detectFormatByExtension] Detected spreadsheet format");
-      return 'spreadsheet';
-    }
-
-    if (ontologyExts.includes(extension)) {
+    } else if (detected === 'ontology') {
       console.info("[detectFormatByExtension] Detected ontology format");
-      return 'ontology';
+    } else {
+      console.warn("[detectFormatByExtension] Unsupported extension");
     }
-
-    console.warn("[detectFormatByExtension] Unsupported extension");
-    return 'unsupported';
+    return detected;
   } catch (error) {
     console.error("[detectFormatByExtension] Unexpected error:", error);
     return 'unsupported';
@@ -2219,44 +2355,74 @@ async function handleInsertDataSave() {
   }
 }
 
-/**
- * Parses an RDF file (Turtle, RDF/XML, JSON-LD, etc.) using N3.js.
- * @param {File} file - The file object from the drag-and-drop area.
- * @param {object} mimeTypes - Your mimeTypes constant.
- * @param {function} guessMediaType - Your guessMediaType function.
- * @param {function} parseFileExtension - Assumed function to get 'ttl', 'rdf', etc.
- * @returns {Promise<Array>} A promise that resolves with an array of N3.js quads.
- */
-function parseOntologyData(file, mimeTypes, guessMediaType, parseFileExtension) {
+function parseQuadsFromN3Text(text, mimeType) {
+  return new Promise((resolve, reject) => {
+    try {
+      const parser = new N3.Parser({ format: mimeType });
+      const quads = [];
+      parser.parse(text, (error, quad) => {
+        if (error) {
+          reject(new Error(`N3.js parsing error: ${error.message}`));
+          return;
+        }
+        if (quad) {
+          quads.push(quad);
+          return;
+        }
+        resolve(quads);
+      });
+    } catch (error) {
+      reject(new Error(`Parser initialization error: ${error.message}`));
+    }
+  });
+}
+
+async function parseQuadsFromJsonLdText(text) {
+  if (!window.jsonld) {
+    throw new Error('jsonld.min.js is not loaded. Add it to docs/app/jsonld.min.js to import JSON-LD.');
+  }
+
+  let doc;
+  try {
+    doc = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`Invalid JSON-LD: ${error.message}`);
+  }
+
+  const nquads = await window.jsonld.toRDF(doc, { format: 'application/n-quads' });
+  return parseQuadsFromN3Text(nquads, mimeTypes.nquads);
+}
+
+async function parseOntologyText(fileContent, fileName = '') {
+  const extension = parseFileExtension(fileName);
+  const mimeType = mimeTypes[extension] || guessMediaType(fileContent);
+
+  if (mimeType === 'application/rdf+xml') {
+    throw new Error('RDF/XML import is not supported yet. Please convert the file to Turtle, N-Triples, TriG, or JSON-LD first.');
+  }
+
+  if (mimeType === 'application/ld+json') {
+    return parseQuadsFromJsonLdText(fileContent);
+  }
+
+  if (mimeType === 'text/plain') {
+    throw new Error('Unsupported ontology file format.');
+  }
+
+  return parseQuadsFromN3Text(fileContent, mimeType);
+}
+
+function parseOntologyData(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const fileContent = event.target.result;
-        const extension = parseFileExtension(file.name);
-        
-        // Try to get MIME type from extension, fall back to guessing from content
-        const mimeType = mimeTypes[extension] || guessMediaType(fileContent);
-
-        const parser = new N3.Parser({ format: mimeType });
-        const quads = [];
-
-        parser.parse(fileContent, (error, quad, prefixes) => {
-          if (error) {
-            // Reject the promise on a parsing error
-            return reject(new Error(`N3.js parsing error: ${error.message}`));
-          }
-          if (quad) {
-            // Add valid quads (triples) to the array
-            quads.push(quad);
-          } else {
-            // Parsing is complete (no quad, no error)
-            resolve(quads);
-          }
-        });
+        const quads = await parseOntologyText(fileContent, file.name);
+        resolve(quads);
       } catch (error) {
-        reject(new Error(`File reading or parser initialization error: ${error.message}`));
+        reject(error instanceof Error ? error : new Error(String(error)));
       }
     };
 
@@ -2264,9 +2430,43 @@ function parseOntologyData(file, mimeTypes, guessMediaType, parseFileExtension) 
       reject(new Error('Failed to read the file.'));
     };
 
-    // Start reading the file as text
     reader.readAsText(file);
   });
+}
+
+function deriveOntologyImportTarget(quads) {
+  if (CoreUtils.deriveOntologyImportTarget) {
+    return CoreUtils.deriveOntologyImportTarget(quads, {
+      rdfTypeIri: w3cIRI.RDF_TYPE,
+      owlOntologyIri: w3cIRI.OWL_ONTOLOGY,
+      owlVersionIri: 'http://www.w3.org/2002/07/owl#versionIRI'
+    });
+  }
+
+  const ontologySubjects = new Set();
+  const versionIris = new Map();
+
+  for (const quad of quads || []) {
+    const subject = quad.subject?.value;
+    const predicate = quad.predicate?.value;
+    const object = quad.object?.value;
+    if (!subject || !predicate || !object) continue;
+
+    if (predicate === w3cIRI.RDF_TYPE && object === w3cIRI.OWL_ONTOLOGY) {
+      ontologySubjects.add(subject);
+    }
+    if (predicate === 'http://www.w3.org/2002/07/owl#versionIRI') {
+      versionIris.set(subject, object);
+    }
+  }
+
+  const ontologyIri = ontologySubjects.values().next().value || null;
+  const importIri = ontologyIri ? (versionIris.get(ontologyIri) || ontologyIri) : null;
+
+  return {
+    ontologyIri,
+    importIri
+  };
 }
 
 /**
@@ -2367,12 +2567,7 @@ async function handleInsertOntologySave() {
 
     // --- REPLACED BLOCK ---
     // Instead of parsing a spreadsheet, parse the ontology file
-    const quads = await parseOntologyData(
-        currentImportFile, 
-        mimeTypes, 
-        guessMediaType, 
-        parseFileExtension // Pass in your helper functions
-    );
+    const quads = await parseOntologyData(currentImportFile);
 
     // Pivot the quads (S-P-O) into a tabular structure (Subject, Predicate1, Predicate2, ...)
     const result = validateAndPivotOntologyData(quads, knownPredicates);
@@ -2461,28 +2656,15 @@ async function handlePrimarySave() {
 function autoSelectFileType(file) {
   if (!file) return;
 
-  const extension = parseFileExtension(file.name); // Your existing function
-  const headerCheckbox = document.getElementById('header-checkbox-container');
-  
-  // Your 'extensions' constant from the previous prompt
-  const ontologyExtensions = Object.values(extensions); // ['ttl', 'rdf', 'jsonld', 'nt', 'trig']
-  
-  if (ontologyExtensions.includes(extension)) {
-    // Select 'Ontology'
-    document.querySelector('input[name="file-type"][value="ontology"]').checked = true;
-    // Hide header row checkbox - it's not relevant for ontology
-    headerCheckbox.style.display = 'none';
-  } else {
-    // Default to 'Spreadsheet'
-    document.querySelector('input[name="file-type"][value="spreadsheet"]').checked = true;
-    // Show header row checkbox
-    headerCheckbox.style.display = 'block';
-  }
+  const extension = parseFileExtension(file.name);
+  const detectedType = detectFormatByExtension(extension);
+  const nextType = detectedType === 'ontology' ? 'ontology' : 'spreadsheet';
+  document.querySelector(`input[name="file-type"][value="${nextType}"]`).checked = true;
+  handleFileTypeChange();
 }
 
 function resetFileInput() {
-  const fileNameSpan = document.getElementById("file-input");
-  fileNameSpan.textContent = "No file selected";
+  resetFileSelection();
 }
 
 
@@ -2722,42 +2904,7 @@ document.getElementById('reloadSavedSessionBtn')?.addEventListener('click', relo
  */
 function openPrefixManagerModal() {
   try {
-    const tableBody = document.getElementById("prefix-table-body");
-    tableBody.innerHTML = ""; // Clear old rows
-
-    // Loop through iriPrefixes and create a row for each
-    Object.entries(iriPrefixes).forEach(([prefix, iri]) => {
-      const row = document.createElement("tr");
-      row.classList.add('prefix-table-cell');
-      Object.assign(row.style, {
-          height: "30px",
-          paddingLeft: "5px",
-          paddingRight: "5px",
-          paddingTop: "0px",
-          paddingBottom: "0px"
-      });
-      
-      const prefixCell = document.createElement("td");
-      prefixCell.textContent = prefix;
-      row.appendChild(prefixCell);
-
-      const iriCell = document.createElement("td");
-      iriCell.textContent = iri;
-      row.appendChild(iriCell);
-
-      const removeCell = document.createElement("td");
-      const removeBtn = document.createElement("button");
-      removeBtn.textContent = "X";
-      removeBtn.addEventListener("click", () => {
-        delete iriPrefixes[prefix];
-        openPrefixManagerModal(); // re-render the table
-      });
-      removeCell.appendChild(removeBtn);
-      row.appendChild(removeCell);
-
-      tableBody.appendChild(row);
-    });
-
+    populatePrefixTable();
     document.getElementById("prefix-manager-modal").style.display = "block";
   } catch (err) {
     console.error("[openPrefixManagerModal] Failed to populate prefix table:", err);
@@ -2778,6 +2925,7 @@ function populatePrefixTable() {
 
   Object.entries(iriPrefixes).forEach(([prefix, iri]) => {
     const row = document.createElement('tr');
+    row.classList.add('prefix-table-cell');
 
     const prefixCell = document.createElement('td');
     prefixCell.textContent = prefix;
@@ -2787,6 +2935,7 @@ function populatePrefixTable() {
 
     const removeCell = document.createElement('td');
     const removeBtn = document.createElement('button');
+    removeBtn.textContent = 'X';
     Object.assign(removeBtn.style, {
         paddingLeft: "5px",
         paddingRight: "5px",
@@ -2880,12 +3029,69 @@ async function setLocalImport(iri, { content, mediaType }) {
   await saveOntologySettings(settings);
 }
 
+function fileNameForMediaType(mediaType) {
+  switch (mediaType) {
+    case 'application/ld+json': return 'import.jsonld';
+    case 'application/n-triples': return 'import.nt';
+    case 'application/trig': return 'import.trig';
+    case 'application/rdf+xml': return 'import.rdf';
+    case 'text/turtle':
+    default:
+      return 'import.ttl';
+  }
+}
+
+async function cacheImportedOntology({ iri, ontologyIri, content, mediaType, quads }) {
+  const settings = getOntologySettings();
+  settings[w3cIRI.OWL_IMPORTS] = settings[w3cIRI.OWL_IMPORTS] || [];
+  if (!settings[w3cIRI.OWL_IMPORTS].includes(iri)) {
+    settings[w3cIRI.OWL_IMPORTS].push(iri);
+  }
+
+  settings.owlImportsLocal = settings.owlImportsLocal || {};
+  settings.owlImportsLocal[iri] = {
+    content,
+    mediaType,
+    ontologyIri: ontologyIri || iri,
+    updatedAt: new Date().toISOString()
+  };
+
+  addToVocabIndex(extractOntologyVocabEntries(quads, 'Imported Ontology'), 'Imported Ontology');
+  await saveOntologySettings(settings);
+}
+
+async function processOntologyImportFile(file, fallbackIri = null) {
+  const content = await file.text();
+  const mediaType = mimeTypes[parseFileExtension(file.name)] || guessMediaType(content);
+  const quads = await parseOntologyText(content, file.name);
+  const derived = deriveOntologyImportTarget(quads);
+  const targetIri = derived.importIri || fallbackIri;
+
+  if (!targetIri) {
+    throw new Error('Could not determine an import IRI from owl:versionIRI or the ontology IRI.');
+  }
+
+  await cacheImportedOntology({
+    iri: targetIri,
+    ontologyIri: derived.ontologyIri,
+    content,
+    mediaType,
+    quads
+  });
+
+  return {
+    iri: targetIri,
+    ontologyIri: derived.ontologyIri,
+    mediaType
+  };
+}
+
 // Simple media type guessing based on content
 function guessMediaType(text) {
-  // super-lightweight; expand if you like
-  if (/^\s*@prefix\b|@base\b|:\s/.test(text)) return "text/turtle";
+  if (CoreUtils.guessMediaType) return CoreUtils.guessMediaType(text);
+  if (/^\s*\{[\s\S]*"@context"\s*:/.test(text) || /^\s*\[[\s\S]*"@context"\s*:/.test(text)) return "application/ld+json";
   if (/<rdf:RDF\b/.test(text)) return "application/rdf+xml";
-  if (/"@context"\s*:/.test(text)) return "application/ld+json";
+  if (/^\s*@prefix\b|@base\b|:\s/.test(text)) return "text/turtle";
   if (/^\s*<[^>]+>\s+<[^>]+>\s+/.test(text)) return "application/n-triples";
   return "text/plain";
 }
@@ -2941,42 +3147,15 @@ async function handleImportFileUpload(event, iri) {
 
   const safeKey = btoa(iri).replace(/=/g, "");
   const validationMsg = document.getElementById(`validation-${safeKey}`);
-
-  const reader = new FileReader();
-  reader.onload = async (e) => {
-    const content = e.target.result;
-
-    if (!isValidOntology(content)) {
-      validationMsg.textContent = "Not a valid RDF/OWL text";
-      validationMsg.style.display = "inline";
-      return;
-    }
+  try {
+    const result = await processOntologyImportFile(file, iri);
     validationMsg.style.display = "none";
-
-    const settings = getOntologySettings();
-    const ext = parseFileExtension(file.name);
-    const mediaType = mimeTypes[ext] || "text/plain";
-
-    // Ensure owl:imports ARRAY exists and includes this IRI
-    settings[w3cIRI.OWL_IMPORTS] = settings[w3cIRI.OWL_IMPORTS] || [];
-    if (!settings[w3cIRI.OWL_IMPORTS].includes(iri)) {
-      settings[w3cIRI.OWL_IMPORTS].push(iri);
-    }
-
-    // Save the local cached content in a separate MAP
-    settings.owlImportsLocal = settings.owlImportsLocal || {};
-    settings.owlImportsLocal[iri] = {
-      content,
-      ext,
-      mediaType,
-      updatedAt: new Date().toISOString()
-    };
-
-    await saveOntologySettings(settings);
-    showToast("Ontology import saved", "success");
-    openImportsModal(); // refresh
-  };
-  reader.readAsText(file);
+    showToast(`Ontology import saved as ${result.iri}`, "success");
+    openImportsModal();
+  } catch (error) {
+    validationMsg.textContent = error.message;
+    validationMsg.style.display = "inline";
+  }
 }
 
 // This function retrieves the local import content for a given IRI from the ontology settings.
@@ -3000,6 +3179,35 @@ async function addImportIRI() {
 
   iriInput.value = "";
   openImportsModal();
+}
+
+async function handleNewImportFileSelection(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  try {
+    const result = await processOntologyImportFile(file);
+    showToast(`Ontology import saved as ${result.iri}`, 'success');
+    openImportsModal();
+  } catch (error) {
+    console.error('[imports] Failed to add ontology file', error);
+    showToast(`Import failed: ${error.message}`, 'error');
+  } finally {
+    event.target.value = '';
+  }
+}
+
+async function rehydrateImportedOntologies() {
+  const importsMap = getImportsMap();
+  for (const record of Object.values(importsMap)) {
+    if (!record?.content) continue;
+    try {
+      const quads = await parseOntologyText(record.content, fileNameForMediaType(record.mediaType));
+      addToVocabIndex(extractOntologyVocabEntries(quads, 'Imported Ontology'), 'Imported Ontology');
+    } catch (error) {
+      console.warn('[imports] Failed to rehydrate cached import', error);
+    }
+  }
 }
 
 // This function saves the ontology imports and closes the modal.
@@ -3064,9 +3272,16 @@ document.getElementById("ontology-base-iri-input").addEventListener("input", upd
 document.getElementById("ontology-label-input").addEventListener("input", updateOntologyPreview);
 document.getElementById("ontology-creator-input").addEventListener("input", updateOntologyPreview);
 document.getElementById("ontology-description-input").addEventListener("input", updateOntologyPreview);
+document.getElementById("opaque-leading").addEventListener("input", updateOntologyPreview);
+document.getElementById("opaque-digits").addEventListener("input", updateOntologyPreview);
+document.getElementById("opaque-start").addEventListener("input", updateOntologyPreview);
+document.getElementById("readable-case").addEventListener("change", updateOntologyPreview);
 document.querySelectorAll('input[name="base-iri-delimiter"]').forEach(radio => {
   radio.addEventListener("change", updateOntologyPreview);
-  initializeIriModeToggles()
+});
+initializeIriModeToggles();
+document.querySelectorAll('input[name="iri-mode"]').forEach(radio => {
+  radio.addEventListener("change", updateOntologyPreview);
 });
 
 // Event Listeners for Prefix Management
@@ -3082,6 +3297,7 @@ initializePrefixManagerListeners();
 
 // Event Listeners for Import Management
 document.getElementById("ontologyImportsBtn").addEventListener("click", openImportsModal);
+document.getElementById("new-import-file").addEventListener("change", handleNewImportFileSelection);
 
 // Event Listeners for Predicate Management
 document.getElementById('managePredicatesBtn').addEventListener('click', () => {
@@ -3150,10 +3366,12 @@ function populateSettingsUi() {
 
 async function bootstrapApp() {
   await settingsLoad();
+  await rehydrateImportedOntologies();
   initHandsontable();
   populateSettingsUi();
   setIsCuratedInForAllRows();
   updateReloadSessionButton();
+  handleFileTypeChange();
 }
 
 TOM.Core = {

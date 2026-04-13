@@ -57,6 +57,45 @@ h3 {
   width: 50%;
 }
 
+.tom-modal {
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%);
+  width: min(92vw, 760px) !important;
+  max-width: 92vw;
+  max-height: 90vh;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.tom-modal[style*="display:block"],
+.tom-modal[style*="display: block"],
+.tom-modal[style*="display:flex"],
+.tom-modal[style*="display: flex"] {
+  display: flex !important;
+}
+
+.tom-modal-scroll {
+  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-right: 0.35rem;
+}
+
+.tom-modal-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: sticky;
+  bottom: 0;
+  background: var(--ont-bg, #fff);
+  padding-top: 0.75rem;
+  margin-top: 0.75rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
 .tom-modal-label {
   display: inline-flex;
   font-weight: bold;
@@ -92,6 +131,13 @@ h3 {
   padding-left: 0;
   padding-right: 0;
   margin-bottom: 0;
+}
+
+#ontology-imports-modal,
+#prefix-manager-modal,
+#manage-predicates-modal,
+#insert-data-modal {
+  width: min(92vw, 760px) !important;
 }
 
 #ontology-grid {
