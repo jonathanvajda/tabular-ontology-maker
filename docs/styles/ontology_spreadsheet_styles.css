@@ -1,5 +1,12 @@
 /* Copyright 2025 Jonathan Vajda */
 
+:root {
+  --tom-invalid-bg-light: #ffd6d6;
+  --tom-invalid-border-light: #c83a32;
+  --tom-invalid-bg-dark: #4b1f24;
+  --tom-invalid-border-dark: #ff7b72;
+}
+
 h2 {
   font-size: 3rem;
   margin-bottom: 1rem;
