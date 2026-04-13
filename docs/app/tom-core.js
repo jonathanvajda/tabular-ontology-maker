@@ -1305,8 +1305,9 @@ function harvestRowsIntoVocab(rows) {
 }
 
 // This function normalizes "Is A" edits by resolving them to IRIs.
-function normalizeIsAEdits(changes) {
+function normalizeIsAEdits(changes, source) {
   if (!Array.isArray(changes)) return;
+  if (source === 'edit') return;
   for (const ch of changes) {
     // [row, prop(or col index), oldValue, newValue]
     const row = ch[0];
@@ -3136,4 +3137,3 @@ TOM.Core = {
   removeRowsFromBottom,
 };
 })();
-
