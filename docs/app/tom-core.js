@@ -1079,9 +1079,13 @@ function n3FormatForSaved(format) {
 }
 
 function firstLiteral(objs) {
-  // pick the first literal string from an array of objects (already stringified below)
+  // pick the first literal lexical form from an array of objects (already stringified below)
   for (const o of objs) {
-    if (o.startsWith('"')) return o.replace(/^"(.*)"(?:@[\w-]+|\^\^<[^>]+>)?$/, '$1');
+    if (!o.startsWith('"')) continue;
+    const lastQuote = o.lastIndexOf('"');
+    if (lastQuote <= 0) continue;
+    const lexical = o.slice(1, lastQuote).replace(/\\"/g, '"');
+    return lexical;
   }
   return '';
 }
@@ -2477,58 +2481,101 @@ function deriveOntologyImportTarget(quads) {
  * @returns {object} - An object { valid: true, cleanedRows: [...], errors: [] }
  */
 function validateAndPivotOntologyData(quads, knownPredicates) {
-  const subjectData = new Map(); // Key: subject URI, Value: { predicate: object }
+  const subjectData = new Map();
   const errors = [];
+  const customHeaders = (knownPredicates || []).slice(BASE_COLS);
+  const customPredicatesByIndex = customHeaders.map((header) => curieToIri(header) || header);
 
-  // 1. Group quads by subject
-  for (const quad of quads) {
-    const s = quad.subject.value;
-    const p = quad.predicate.value;
-    const o = quad.object.value;
+  for (const q of quads || []) {
+    if (!q?.subject?.value || q.subject.termType === 'BlankNode') continue;
 
-    if (!subjectData.has(s)) {
-      subjectData.set(s, {});
+    const s = q.subject.value;
+    const p = q.predicate.value;
+    let o;
+
+    if (q.object.termType === 'Literal') {
+      const lang = q.object.language ? `@${q.object.language}` : '';
+      const dt = q.object.datatype && q.object.datatype.value !== 'http://www.w3.org/2001/XMLSchema#string'
+        ? `^^<${q.object.datatype.value}>` : '';
+      o = `"${q.object.value}"${lang}${dt}`;
+    } else if (q.object.termType === 'BlankNode') {
+      o = `_:${q.object.value}`;
+    } else {
+      o = `<${q.object.value}>`;
     }
 
-    const predicates = subjectData.get(s);
-    
-    // Check if this predicate is already a column
-    if (knownPredicates.includes(p)) {
-        // Handle multiple values for the same predicate (e.g., multiple rdfs:comment)
-        // This simple version joins with a comma. You could also create duplicate rows.
-        if (predicates[p]) {
-            predicates[p] += `, ${o}`;
-        } else {
-            predicates[p] = o;
-        }
-    }
-    // You could add an 'else' here to collect unrecognized predicates as an error/warning
+    if (!subjectData.has(s)) subjectData.set(s, new Map());
+    const pMap = subjectData.get(s);
+    if (!pMap.has(p)) pMap.set(p, new Set());
+    pMap.get(p).add(o);
   }
 
-  // 2. Pivot the Map into an array of rows
+  const valueStringsForCustomColumn = (values) => {
+    return (values || [])
+      .map((value) => {
+        const iriMatch = /^<([^>]+)>$/.exec(value);
+        if (iriMatch) return iriMatch[1];
+        if (value.startsWith('"')) return firstLiteral([value]);
+        if (value.startsWith('_:')) return '';
+        return value;
+      })
+      .filter(Boolean)
+      .join(' ; ');
+  };
+
   const cleanedRows = [];
-  const subjectHeader = knownPredicates[0]; // Assumes first column is the Subject/IRI
+  for (const [subjectUri, pMap] of subjectData.entries()) {
+    if (!subjectUri || subjectUri.startsWith('_:')) continue;
 
-  for (const [subjectUri, predicates] of subjectData.entries()) {
-    // Create a new row array, initialized to null
-    const newRow = new Array(knownPredicates.length).fill(null);
-    
-    // Set the subject in the first column
-    newRow[0] = subjectUri;
+    const rdfTypes = Array.from(pMap.get(w3cIRI.RDF_TYPE)?.values() || []);
+    const hasType = iri => rdfTypes.includes(`<${iri}>`);
+    if (hasType(w3cIRI.OWL_ONTOLOGY)) continue;
 
-    // Map the predicates to their corresponding columns
-    for (const [predicateUri, objectValue] of Object.entries(predicates)) {
-      const colIndex = knownPredicates.indexOf(predicateUri);
-      if (colIndex > 0) { // colIndex 0 is subject, which we already set
-        newRow[colIndex] = objectValue;
-      }
+    let elementType = '';
+    if (hasType(w3cIRI.OWL_CLASS)) elementType = 'Class';
+    else if (hasType(w3cIRI.OWL_OBJPROP)) elementType = 'ObjectProperty';
+    else if (hasType(w3cIRI.OWL_DATATYPE)) elementType = 'DatatypeProperty';
+    else if (hasType(w3cIRI.OWL_ANNOPROP)) elementType = 'AnnotationProperty';
+    else if (hasType(w3cIRI.OWL_NAMEDIND)) elementType = 'NamedIndividual';
+    else {
+      const classish = getSemanticRdfTypes(rdfTypes);
+      if (classish.length) elementType = 'NamedIndividual';
     }
+
+    const label = firstLiteral(Array.from(pMap.get(w3cIRI.RDFS_LABEL)?.values() || []));
+    const definition = firstLiteral(Array.from(pMap.get(w3cIRI.SKOS_DEFINITION)?.values() || []));
+
+    let isA = '';
+    if (elementType === 'Class') {
+      isA = iriFromObjects(Array.from(pMap.get(w3cIRI.RDFS_SUBCLASS)?.values() || []));
+    } else if (elementType === 'ObjectProperty' || elementType === 'DatatypeProperty' || elementType === 'AnnotationProperty') {
+      isA = iriFromObjects(Array.from(pMap.get(w3cIRI.RDFS_SUBPROP)?.values() || []));
+    } else if (elementType === 'NamedIndividual') {
+      const classish = getSemanticRdfTypes(rdfTypes);
+      if (classish.length) isA = classish[0];
+    }
+
+    const curatedVals = Array.from(pMap.get(w3cIRI.CCO_CURATEDIN)?.values() || []);
+    const curatedIn = iriFromObjects(curatedVals) || firstLiteral(curatedVals);
+
+    const newRow = new Array(knownPredicates.length).fill('');
+    newRow[0] = subjectUri;
+    newRow[1] = label;
+    newRow[2] = elementType;
+    newRow[3] = definition;
+    newRow[4] = isA;
+    newRow[5] = curatedIn;
+
+    customPredicatesByIndex.forEach((predicateIri, idx) => {
+      const values = Array.from(pMap.get(predicateIri)?.values() || []);
+      newRow[BASE_COLS + idx] = valueStringsForCustomColumn(values);
+    });
+
     cleanedRows.push(newRow);
   }
-  
-  // For now, validation is simple. You could add more complex checks here.
+
   if (cleanedRows.length === 0 && quads.length > 0) {
-      errors.push("Data was parsed, but no subjects matched the known table columns.");
+    errors.push("Data was parsed, but no named subjects matched the current table columns.");
   }
 
   return { valid: errors.length === 0, cleanedRows, errors };
