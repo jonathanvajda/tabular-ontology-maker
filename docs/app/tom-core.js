@@ -13,6 +13,8 @@ const VIEW_LABELS = {
   [VIEW_KEYS.RELATA]: 'Relata'
 };
 
+const DEFAULT_VIEW = VIEW_KEYS.ONTOLOGY;
+
 const BASE_COLUMN_HEADERS = [
   'iri',
   'label',
@@ -22,7 +24,26 @@ const BASE_COLUMN_HEADERS = [
   'is curated in ontology'
 ];
 
+const RELATA_BASE_COLUMN_HEADERS = [
+  'subject',
+  'label',
+  'element type',
+  'definition',
+  'is a',
+  'is curated in ontology'
+];
+
+const DEFAULT_HIDDEN_COLUMNS_BY_VIEW = {
+  [VIEW_KEYS.ONTOLOGY]: [],
+  [VIEW_KEYS.RELATA]: [2, 3, 4, 5]
+};
+
 let predicateRegistry = [];
+let activeViewKey = DEFAULT_VIEW;
+const hiddenColumnsByView = {
+  [VIEW_KEYS.ONTOLOGY]: new Set(DEFAULT_HIDDEN_COLUMNS_BY_VIEW[VIEW_KEYS.ONTOLOGY]),
+  [VIEW_KEYS.RELATA]: new Set(DEFAULT_HIDDEN_COLUMNS_BY_VIEW[VIEW_KEYS.RELATA])
+};
 let hotInstance = null;
 let hotInitDone = false;
 let currentImportFile = null;
@@ -199,6 +220,36 @@ function getPredicateRecord(iri) {
 function getPredicateRecordByColumnIndex(colIndex) {
   if (colIndex < BASE_COLS) return null;
   return getPredicateRegistry()[colIndex - BASE_COLS] || null;
+}
+
+function getActiveViewKey() {
+  return activeViewKey;
+}
+
+function getBaseHeadersForView(viewKey = getActiveViewKey()) {
+  return viewKey === VIEW_KEYS.RELATA ? RELATA_BASE_COLUMN_HEADERS : BASE_COLUMN_HEADERS;
+}
+
+function getHiddenColumnsForView(viewKey = getActiveViewKey()) {
+  return hiddenColumnsByView[viewKey] || new Set();
+}
+
+function setHiddenColumnsForView(viewKey, hiddenIndexes) {
+  hiddenColumnsByView[viewKey] = new Set(Array.isArray(hiddenIndexes) ? hiddenIndexes : Array.from(hiddenIndexes || []));
+  return hiddenColumnsByView[viewKey];
+}
+
+function isColumnVisibleInView(viewKey, index) {
+  if (index < BASE_COLS) {
+    return !getHiddenColumnsForView(viewKey).has(index);
+  }
+
+  const record = getPredicateRecordByColumnIndex(index);
+  if (!record) return !getHiddenColumnsForView(viewKey).has(index);
+
+  return viewKey === VIEW_KEYS.RELATA
+    ? record.showInRelata !== false
+    : record.showInOntology !== false;
 }
 
 function getCustomPredicateIris() {
@@ -577,23 +628,25 @@ function buildReadableIri(label, settings, existingIris = new Set()) {
 
 
 // Gets the columns definitions for the Handsontable instance.
-const getColumnDefinitions = () => {
+const getColumnDefinitions = (viewKey = getActiveViewKey()) => {
   const baseColumns = [
-    { type: 'text' }, // IRI
-    { type: 'text' }, // Label
+    { type: 'text', hidden: !isColumnVisibleInView(viewKey, 0) ? true : undefined }, // IRI / Subject
+    { type: 'text', hidden: !isColumnVisibleInView(viewKey, 1) ? true : undefined }, // Label
     {
       type: 'dropdown',
       source: getElementTypes(),
       strict: true,
-      allowInvalid: false
+      allowInvalid: false,
+      hidden: !isColumnVisibleInView(viewKey, 2) ? true : undefined
     },                // Element Type
-    { type: 'text' }, // Definition
+    { type: 'text', hidden: !isColumnVisibleInView(viewKey, 3) ? true : undefined }, // Definition
     {
       // "Is A" with smart lookup
       editor: 'autocomplete',
       strict: false,
       filter: false,
       allowInvalid: true,
+      hidden: !isColumnVisibleInView(viewKey, 4) ? true : undefined,
       source: function (query, callback) {
         try {
           // infer type constraints from the row's Element Type
@@ -613,12 +666,12 @@ const getColumnDefinitions = () => {
       },
       // Display formatting now happens in the Glide adapter via getDisplayValue.
     },
-    { type: 'text' }, // is curated in ontology
+    { type: 'text', hidden: !isColumnVisibleInView(viewKey, 5) ? true : undefined }, // is curated in ontology
   ];
 
-  const predicateColumns = getPredicateRegistry().map((record) => ({
+  const predicateColumns = getPredicateRegistry().map((record, idx) => ({
     type: 'text',
-    hidden: record.showInOntology === false ? true : undefined
+    hidden: !isColumnVisibleInView(viewKey, BASE_COLS + idx) ? true : undefined
   }));
 
   return baseColumns.concat(predicateColumns);
@@ -637,9 +690,9 @@ const getInitialData = () => {
 };
 
 // Gets the column headers for the Handsontable instance.  
-const getColumnHeaders = () => {
+const getColumnHeaders = (viewKey = getActiveViewKey()) => {
   console.info('getColumnHeaders happened');
-  return BASE_COLUMN_HEADERS.concat(getCustomPredicateIris());
+  return getBaseHeadersForView(viewKey).concat(getCustomPredicateIris());
 };
 
 // Creates a Handsontable instance in the given container with the provided data and column definitions.
@@ -751,6 +804,46 @@ function setIsCuratedInForAllRows() {
   console.info(`[setIsCuratedInForAllRows] Set for ${updatedCount} of ${totalRows} rows (only empty cells updated)`);
 }
 
+function syncCurrentViewHiddenColumns() {
+  if (!hotInstance?.getHiddenColumns) return;
+  setHiddenColumnsForView(getActiveViewKey(), hotInstance.getHiddenColumns());
+}
+
+function updateViewToggleButtons() {
+  document.querySelectorAll('[data-view-switch]').forEach((button) => {
+    const isActive = button.dataset.viewSwitch === getActiveViewKey();
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    button.classList.toggle('is-active', isActive);
+    button.style.fontWeight = isActive ? '700' : '400';
+    button.style.outline = isActive ? '2px solid var(--ont-accent, #2563eb)' : '';
+  });
+}
+
+function applyViewSchema(viewKey, options = {}) {
+  if (!hotInstance) return;
+
+  const targetView = viewKey || DEFAULT_VIEW;
+  const previousView = getActiveViewKey();
+  if (options.captureCurrent !== false && hotInstance && previousView) {
+    syncCurrentViewHiddenColumns();
+  }
+
+  activeViewKey = targetView;
+  hotInstance.setSchema(getColumnHeaders(targetView), getColumnDefinitions(targetView));
+
+  const hidden = Array.from(getHiddenColumnsForView(targetView));
+  hotInstance.setHiddenColumns(hidden);
+  updateViewToggleButtons();
+}
+
+function switchView(nextViewKey) {
+  if (!hotInstance) return;
+  if (!Object.values(VIEW_KEYS).includes(nextViewKey)) return;
+  if (nextViewKey === getActiveViewKey()) return;
+  applyViewSchema(nextViewKey);
+  showToast(`Switched to ${VIEW_LABELS[nextViewKey]} view`, 'info');
+}
+
 /**
  * Initialize Handsontable once
  */
@@ -767,10 +860,12 @@ function initHandsontable() {
   // 2) Create HOT using 4-arg createTable
   hotInstance = createTable(container, rows, headers, columns);
   attachHotHooks?.();
+  applyViewSchema(getActiveViewKey(), { captureCurrent: false });
 
   // 3) Finish init
   harvestRowsIntoVocab?.(rows);
   hotInitDone = true;
+  updateViewToggleButtons();
 }
 
 
@@ -841,13 +936,23 @@ function buildOntologyExportQuads(rows) {
 
   rows.forEach((row) => {
     const [subject, label, type, definition, isAObject, isCuratedInOntology] = row;
-    if (!subject || !type) return;
+    if (!subject) return;
 
-    quads.push(N3.DataFactory.quad(
-      namedNode(subject),
-      namedNode(w3cIRI.RDF_TYPE),
-      namedNode(`http://www.w3.org/2002/07/owl#${type}`)
-    ));
+    const structuralTypeMap = {
+      Class: w3cIRI.OWL_CLASS,
+      NamedIndividual: w3cIRI.OWL_NAMEDIND,
+      ObjectProperty: w3cIRI.OWL_OBJPROP,
+      DatatypeProperty: w3cIRI.OWL_DATATYPE,
+      AnnotationProperty: w3cIRI.OWL_ANNOPROP,
+    };
+    const structuralTypeIri = structuralTypeMap[type];
+    if (structuralTypeIri) {
+      quads.push(N3.DataFactory.quad(
+        namedNode(subject),
+        namedNode(w3cIRI.RDF_TYPE),
+        namedNode(structuralTypeIri)
+      ));
+    }
 
     if (label) {
       quads.push(N3.DataFactory.quad(
@@ -1836,27 +1941,40 @@ function getHiddenColumnSet() {
   return new Set(getHiddenColumnIndexes());
 }
 
-function setOntologyColumnVisibility(index, visible) {
-  if (!hotInstance) return;
-
-  if (visible) {
-    hotInstance.showColumns(index);
+function setPredicateViewVisibility(record, viewKey, visible) {
+  if (!record) return;
+  if (viewKey === VIEW_KEYS.RELATA) {
+    record.showInRelata = visible;
   } else {
-    hotInstance.hideColumns(index);
-  }
-
-  const record = getPredicateRecordByColumnIndex(index);
-  if (record) {
     record.showInOntology = visible;
   }
 }
 
-function showAllOntologyColumns() {
-  if (!hotInstance) return;
-  hotInstance.showAllColumns();
+function setViewColumnVisibility(viewKey, index, visible) {
+  const hidden = new Set(getHiddenColumnsForView(viewKey));
+  if (visible) hidden.delete(index);
+  else hidden.add(index);
+  setHiddenColumnsForView(viewKey, hidden);
+
+  const record = getPredicateRecordByColumnIndex(index);
+  if (record) {
+    setPredicateViewVisibility(record, viewKey, visible);
+  }
+
+  if (viewKey === getActiveViewKey() && hotInstance) {
+    hotInstance.setHiddenColumns(Array.from(hidden));
+  }
+}
+
+function showAllViewColumns(viewKey) {
+  setHiddenColumnsForView(viewKey, []);
   getPredicateRegistry().forEach((record) => {
-    record.showInOntology = true;
+    setPredicateViewVisibility(record, viewKey, true);
   });
+
+  if (viewKey === getActiveViewKey() && hotInstance) {
+    hotInstance.showAllColumns();
+  }
 }
 
 /**
@@ -1870,29 +1988,43 @@ function renderPredicateModesChecklist(containerOrId) {
   if (!container) return;
 
   const headers = getColumnHeaders();
-  const hiddenColumns = getHiddenColumnSet();
+  const ontologyHiddenColumns = getHiddenColumnsForView(VIEW_KEYS.ONTOLOGY);
+  const relataHiddenColumns = getHiddenColumnsForView(VIEW_KEYS.RELATA);
 
   container.innerHTML = '';
 
   const intro = document.createElement('p');
   intro.style.margin = '0 0 0.75rem';
   intro.style.fontSize = '0.92rem';
-  intro.textContent = 'Ontology visibility is session-only. Save & Close persists predicate object mode choices.';
+  intro.textContent = 'Column visibility is session-only per view. Save & Close persists predicate object mode choices.';
   container.appendChild(intro);
 
   const controls = document.createElement('div');
   controls.style.display = 'flex';
-  controls.style.justifyContent = 'flex-end';
+  controls.style.justifyContent = 'space-between';
+  controls.style.alignItems = 'center';
   controls.style.marginBottom = '0.75rem';
 
-  const showAllBtn = document.createElement('button');
-  showAllBtn.type = 'button';
-  showAllBtn.textContent = 'Show All Columns';
-  showAllBtn.addEventListener('click', () => {
-    showAllOntologyColumns();
-    renderPredicateModesChecklist(container);
+  const viewLabel = document.createElement('span');
+  viewLabel.style.fontSize = '0.92rem';
+  viewLabel.textContent = `Active view: ${VIEW_LABELS[getActiveViewKey()]}`;
+
+  const buttonRow = document.createElement('div');
+  buttonRow.style.display = 'flex';
+  buttonRow.style.gap = '0.5rem';
+
+  [VIEW_KEYS.ONTOLOGY, VIEW_KEYS.RELATA].forEach((viewKey) => {
+    const showAllBtn = document.createElement('button');
+    showAllBtn.type = 'button';
+    showAllBtn.textContent = `Show All ${VIEW_LABELS[viewKey]} Columns`;
+    showAllBtn.addEventListener('click', () => {
+      showAllViewColumns(viewKey);
+      renderPredicateModesChecklist(container);
+    });
+    buttonRow.appendChild(showAllBtn);
   });
-  controls.appendChild(showAllBtn);
+  controls.appendChild(viewLabel);
+  controls.appendChild(buttonRow);
   container.appendChild(controls);
 
   const table = document.createElement('table');
@@ -1939,9 +2071,9 @@ function renderPredicateModesChecklist(containerOrId) {
     tdOntology.style.textAlign = 'center';
     const ontologyCheckbox = document.createElement('input');
     ontologyCheckbox.type = 'checkbox';
-    ontologyCheckbox.checked = !hiddenColumns.has(index);
+    ontologyCheckbox.checked = !ontologyHiddenColumns.has(index);
     ontologyCheckbox.addEventListener('change', (event) => {
-      setOntologyColumnVisibility(index, event.currentTarget.checked);
+      setViewColumnVisibility(VIEW_KEYS.ONTOLOGY, index, event.currentTarget.checked);
     });
     tdOntology.appendChild(ontologyCheckbox);
 
@@ -1955,15 +2087,15 @@ function renderPredicateModesChecklist(containerOrId) {
     tdMode.style.borderBottom = '1px solid #f0f0f0';
     tdMode.style.textAlign = 'center';
 
-    if (predicateRecord) {
-      const relataCheckbox = document.createElement('input');
-      relataCheckbox.type = 'checkbox';
-      relataCheckbox.checked = predicateRecord.showInRelata !== false;
-      relataCheckbox.addEventListener('change', (event) => {
-        predicateRecord.showInRelata = event.currentTarget.checked;
-      });
-      tdRelata.appendChild(relataCheckbox);
+    const relataCheckbox = document.createElement('input');
+    relataCheckbox.type = 'checkbox';
+    relataCheckbox.checked = !relataHiddenColumns.has(index);
+    relataCheckbox.addEventListener('change', (event) => {
+      setViewColumnVisibility(VIEW_KEYS.RELATA, index, event.currentTarget.checked);
+    });
+    tdRelata.appendChild(relataCheckbox);
 
+    if (predicateRecord) {
       const modeCheckbox = document.createElement('input');
       modeCheckbox.type = 'checkbox';
       modeCheckbox.checked = predicateRecord.objectMode === 'iri';
@@ -1974,9 +2106,7 @@ function renderPredicateModesChecklist(containerOrId) {
       });
       tdMode.appendChild(modeCheckbox);
     } else {
-      tdRelata.textContent = '-';
       tdMode.textContent = '-';
-      tdRelata.style.color = '#666';
       tdMode.style.color = '#666';
     }
 
@@ -2925,12 +3055,14 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
   const cleanedRows = [];
   const unmatchedHeaders = [];
   const ignoredColumns = [];
+  const activeSubjectHeader = getActiveViewKey() === VIEW_KEYS.RELATA ? 'subject' : 'iri';
 
   // Alias mapping to support variations in common headers
   const headerAliases = {
-    "iri": "iri",
-    "IRI": "iri",
-    "id": "iri",
+    "iri": activeSubjectHeader,
+    "IRI": activeSubjectHeader,
+    "id": activeSubjectHeader,
+    "subject": activeSubjectHeader,
     "label": "label",
     "rdfs:label": "label",
     "http://www.w3.org/2000/01/rdf-schema#label": "label",
@@ -2994,18 +3126,29 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
     const expectedCols = BASE_COLS + getPredicateRegistry().length;
 
     rows.forEach((row, i) => {
-      const cleanedRow = row.slice(0, expectedCols); // Trim excess columns
+      let cleanedRow;
 
-      if (row.length < expectedCols) {
-        console.info(`[validateTableData] Padding row ${i + 1} with empty cells`);
-        while (row.length < expectedCols) {
-          row.push("");
+      if (mappedHeader) {
+        cleanedRow = new Array(expectedCols).fill("");
+        mappedHeader.forEach((mappedName, sourceIndex) => {
+          const targetIndex = known.indexOf(mappedName);
+          if (targetIndex >= 0 && targetIndex < expectedCols) {
+            cleanedRow[targetIndex] = row[sourceIndex] ?? "";
+          }
+        });
+      } else {
+        cleanedRow = row.slice(0, expectedCols); // Trim excess columns
+        if (row.length < expectedCols) {
+          console.info(`[validateTableData] Padding row ${i + 1} with empty cells`);
+          while (cleanedRow.length < expectedCols) {
+            cleanedRow.push("");
+          }
         }
       }
 
       const typeValue = cleanedRow[2]; // Expecting "element type" column
       const validTypes = getElementTypes();
-      if (!validTypes.includes(typeValue)) {
+      if (typeValue && !validTypes.includes(typeValue)) {
         const msg2 = `Row ${i + 1} has invalid Element Type: "${typeValue}"`;
         console.warn(msg2);
         errors.push(msg2);
@@ -3542,6 +3685,12 @@ document.getElementById('managePredicatesBtn').addEventListener('click', () => {
   document.getElementById('manage-predicates-modal').style.display = 'block';
 });
 
+document.querySelectorAll('[data-view-switch]').forEach((button) => {
+  button.addEventListener('click', () => {
+    switchView(button.dataset.viewSwitch);
+  });
+});
+
 // Event Listener for Prefix Manager Button
 document.getElementById('managePrefixesBtn').addEventListener("click", function () {
   openPrefixManagerModal();
@@ -3615,6 +3764,7 @@ TOM.Core = {
   getHotInstance: () => hotInstance,
   getCustomPredicates: () => getCustomPredicateIris(),
   getPredicateRegistry: () => getPredicateRegistry().map((record) => ({ ...record })),
+  getActiveView: () => getActiveViewKey(),
   getOntologySettings,
   settingsLoad,
   showToast,
@@ -3631,5 +3781,6 @@ TOM.Core = {
   handleExport,
   addRowsToTable,
   removeRowsFromBottom,
+  switchView,
 };
 })();
