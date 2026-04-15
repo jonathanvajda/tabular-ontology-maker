@@ -38,8 +38,8 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm install
 
-      - name: Run Jest
-        run: npm test
+      - name: Run Jest with coverage
+        run: npm run test:coverage
 
       - name: Setup Python
         uses: actions/setup-python@v5

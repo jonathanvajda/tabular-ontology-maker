@@ -1,5 +1,7 @@
 # Feature Checklist
 
+Roadmap: [feature-roadmap.md](d:/GitHub/tabular-ontology-maker/docs/feature-roadmap.md)
+
 ## Export and Preview
 - [x] Rename `Download RDF` to `Export Data`
 - [x] Add `CSV` export option
@@ -34,9 +36,14 @@
 - [x] Fix the broken hidden-column checklist path in predicate management
 - [x] Preserve hidden-column state across grid schema rebuilds during the session
 - [x] Add grid adapter methods for `getHiddenColumns()`, `setHiddenColumns()`, `hideColumns()`, `showColumns()`, and `showAllColumns()`
+- [x] Add a grid context menu for column hide/show and row insertion/removal
+- [x] Hook context-menu column visibility into the active `Ontology` / `Relata` view state
+- [x] Hook context-menu row insertion/removal into the current grid selection
 - [x] Replace the loose custom predicate array with a central in-memory predicate registry
 - [x] Track predicate metadata for object mode plus `Ontology` and `Relata` visibility
 - [x] Update the Manage Predicates modal into a combined predicate and column visibility manager
+- [x] Add clearer predicate placement controls for `Ontology`, `Relata`, or both in the Manage Predicates modal
+- [x] Limit custom predicate input suggestions to property-like vocabulary entries and show friendly label-based matches
 - [x] Keep column visibility session-only and out of IndexedDB/settings persistence
 - [x] Keep export behavior based on stored row data rather than visible columns
 - [x] Add the `Relata` editing view on top of the predicate registry groundwork
@@ -49,6 +56,8 @@
 
 ## Verification
 - [x] Run the existing Jest suite after predicate and hidden-column stabilization
+- [x] Expand Jest coverage to include predicate/view/workspace regression helpers
+- [x] Add a coverage-reporting script and baseline Jest coverage thresholds
 - [ ] Verify saved-session reload restores rows, predicate modes, and active view from IndexedDB
 - [ ] Verify Turtle, N-Triples, TriG, and JSON-LD preview paths in browser
 - [ ] Verify CSV export content and escaping in browser
