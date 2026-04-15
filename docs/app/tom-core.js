@@ -2,8 +2,49 @@
 (function () {
 const TOM = (window.TOM = window.TOM || {});
 const CoreUtils = window.TOMCoreUtils || {};
+const FeatureUtils = window.TOMFeatureUtils || {};
 
-let customPredicates = [];
+const VIEW_KEYS = {
+  ONTOLOGY: 'ontology',
+  RELATA: 'relata'
+};
+
+const VIEW_LABELS = {
+  [VIEW_KEYS.ONTOLOGY]: 'Ontology',
+  [VIEW_KEYS.RELATA]: 'Relata'
+};
+
+const DEFAULT_VIEW = VIEW_KEYS.ONTOLOGY;
+
+const BASE_COLUMN_HEADERS = [
+  'iri',
+  'label',
+  'element type',
+  'definition',
+  'is a',
+  'is curated in ontology'
+];
+
+const RELATA_BASE_COLUMN_HEADERS = [
+  'subject',
+  'label',
+  'element type',
+  'definition',
+  'is a',
+  'is curated in ontology'
+];
+
+const DEFAULT_HIDDEN_COLUMNS_BY_VIEW = {
+  [VIEW_KEYS.ONTOLOGY]: [],
+  [VIEW_KEYS.RELATA]: [2, 3, 4, 5]
+};
+
+let predicateRegistry = [];
+let activeViewKey = DEFAULT_VIEW;
+const hiddenColumnsByView = {
+  [VIEW_KEYS.ONTOLOGY]: new Set(DEFAULT_HIDDEN_COLUMNS_BY_VIEW[VIEW_KEYS.ONTOLOGY]),
+  [VIEW_KEYS.RELATA]: new Set(DEFAULT_HIDDEN_COLUMNS_BY_VIEW[VIEW_KEYS.RELATA])
+};
 let hotInstance = null;
 let hotInitDone = false;
 let currentImportFile = null;
@@ -18,8 +59,9 @@ const output = document.getElementById('rdfOutput');
 
 // --- Constants so you can rename easily ---
 const DB_NAME = 'TabularOntologyDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'rdfStore';
+const WORKSPACE_STORE = 'workspaceStore';
 let SETTINGS_CACHE = null;
 const SETTINGS_STORE = 'ontologySettingsStore';
 
@@ -145,6 +187,137 @@ function getOntologySettings() {
   return SETTINGS_CACHE;
 }
 
+function normalizePredicateMode(mode, iri) {
+  if (FeatureUtils.normalizePredicateMode) {
+    return FeatureUtils.normalizePredicateMode(mode, iri, defaultModeForPredicate);
+  }
+  return mode === 'iri' ? 'iri' : (mode === 'literal' ? 'literal' : defaultModeForPredicate(iri));
+}
+
+function normalizePredicateIri(iri) {
+  return String(iri || '').trim();
+}
+
+function normalizePredicateRecord(record, fallback = {}) {
+  if (FeatureUtils.normalizePredicateRecord) {
+    return FeatureUtils.normalizePredicateRecord(record, fallback, {
+      normalizePredicateMode,
+    });
+  }
+  const iri = normalizePredicateIri(record?.iri ?? fallback?.iri);
+  if (!iri) return null;
+
+  return {
+    iri,
+    objectMode: normalizePredicateMode(
+      record?.objectMode ?? fallback?.objectMode ?? getPredicateValueModes()[iri],
+      iri
+    ),
+    showInOntology: record?.showInOntology ?? fallback?.showInOntology ?? true,
+    showInRelata: record?.showInRelata ?? fallback?.showInRelata ?? true,
+  };
+}
+
+function getPredicateRegistry() {
+  return predicateRegistry;
+}
+
+function getPredicateRecord(iri) {
+  const normalized = normalizePredicateIri(iri);
+  return getPredicateRegistry().find((record) => record.iri === normalized) || null;
+}
+
+function getPredicateRecordByColumnIndex(colIndex) {
+  if (colIndex < BASE_COLS) return null;
+  return getPredicateRegistry()[colIndex - BASE_COLS] || null;
+}
+
+function getActiveViewKey() {
+  return activeViewKey;
+}
+
+function getBaseHeadersForView(viewKey = getActiveViewKey()) {
+  return viewKey === VIEW_KEYS.RELATA ? RELATA_BASE_COLUMN_HEADERS : BASE_COLUMN_HEADERS;
+}
+
+function getHiddenColumnsForView(viewKey = getActiveViewKey()) {
+  return hiddenColumnsByView[viewKey] || new Set();
+}
+
+function setHiddenColumnsForView(viewKey, hiddenIndexes) {
+  hiddenColumnsByView[viewKey] = new Set(Array.isArray(hiddenIndexes) ? hiddenIndexes : Array.from(hiddenIndexes || []));
+  return hiddenColumnsByView[viewKey];
+}
+
+function isPredicateUsedInView(record, viewKey) {
+  if (!record) return false;
+  return viewKey === VIEW_KEYS.RELATA
+    ? record.showInRelata !== false
+    : record.showInOntology !== false;
+}
+
+function isColumnVisibleInView(viewKey, index) {
+  if (index < BASE_COLS) {
+    return !getHiddenColumnsForView(viewKey).has(index);
+  }
+
+  const record = getPredicateRecordByColumnIndex(index);
+  if (!record) return !getHiddenColumnsForView(viewKey).has(index);
+
+  return isPredicateUsedInView(record, viewKey) && !getHiddenColumnsForView(viewKey).has(index);
+}
+
+function getCustomPredicateIris() {
+  return getPredicateRegistry().map((record) => record.iri);
+}
+
+function replacePredicateRegistry(nextEntries) {
+  const previousByIri = new Map(getPredicateRegistry().map((record) => [record.iri, record]));
+  const nextRegistry = (Array.isArray(nextEntries) ? nextEntries : [])
+    .map((entry) => {
+      if (typeof entry === 'string') {
+        return normalizePredicateRecord({ iri: entry }, previousByIri.get(normalizePredicateIri(entry)));
+      }
+
+      const iri = normalizePredicateIri(entry?.iri);
+      return normalizePredicateRecord(entry, previousByIri.get(iri));
+    })
+    .filter(Boolean);
+
+  predicateRegistry.splice(0, predicateRegistry.length, ...nextRegistry);
+  predicateRegistry.forEach((record) => {
+    const modes = getPredicateValueModes();
+    modes[record.iri] = record.objectMode;
+  });
+  return getPredicateRegistry();
+}
+
+function upsertPredicateRecord(iri, overrides = {}) {
+  const normalizedIri = normalizePredicateIri(iri);
+  if (!normalizedIri) return null;
+
+  const existingIndex = getPredicateRegistry().findIndex((record) => record.iri === normalizedIri);
+  const existing = existingIndex >= 0 ? getPredicateRegistry()[existingIndex] : null;
+  const nextRecord = normalizePredicateRecord({
+    iri: normalizedIri,
+    objectMode: overrides.objectMode ?? existing?.objectMode,
+    showInOntology: overrides.showInOntology ?? existing?.showInOntology,
+    showInRelata: overrides.showInRelata ?? existing?.showInRelata,
+  }, existing || {});
+
+  if (!nextRecord) return null;
+
+  if (existingIndex >= 0) {
+    getPredicateRegistry()[existingIndex] = nextRecord;
+  } else {
+    getPredicateRegistry().push(nextRecord);
+  }
+
+  const modes = getPredicateValueModes();
+  modes[nextRecord.iri] = nextRecord.objectMode;
+  return nextRecord;
+}
+
 // === Predicate Value Modes =====================================
 // Store per-predicate value mode: 'iri' | 'literal' (default inferred)
 function getPredicateValueModes() {
@@ -153,20 +326,39 @@ function getPredicateValueModes() {
   return s.predicateValueModes;
 }
 function getPredicateValueMode(iri) {
+  const record = getPredicateRecord(iri);
+  if (record?.objectMode) return record.objectMode;
   const m = getPredicateValueModes();
   return m[iri] || null; // null => not set
 }
 function setPredicateValueMode(iri, mode) {
+  const normalizedIri = normalizePredicateIri(iri);
+  const normalizedMode = normalizePredicateMode(mode, normalizedIri);
   const s = getOntologySettings();
   s.predicateValueModes = s.predicateValueModes || {};
-  s.predicateValueModes[iri] = mode; // 'iri' | 'literal'
+  s.predicateValueModes[normalizedIri] = normalizedMode;
+  const record = getPredicateRecord(normalizedIri);
+  if (record) {
+    record.objectMode = normalizedMode;
+  }
 }
 async function savePredicateValueModes() {
   await saveOntologySettings(getOntologySettings());
 }
-// A tiny default heuristic for new predicates (tweak later if you like)
+
 function defaultModeForPredicate(iri) {
-  // simple heuristic: assume object-like if ends with '#...Property' or contains 'sameAs'
+  const rec = getKnownVocabRecordForIriish(iri);
+  if (FeatureUtils.defaultPredicateObjectMode) {
+    return FeatureUtils.defaultPredicateObjectMode(rec?.type, iri);
+  }
+  const type = String(rec?.type || '').trim();
+
+  if (type === 'ObjectProperty') return 'iri';
+  if (type === 'DatatypeProperty' || type === 'AnnotationProperty') return 'literal';
+  if (/ObjectProperty$/i.test(type)) return 'iri';
+  if (/DatatypeProperty$/i.test(type) || /AnnotationProperty$/i.test(type)) return 'literal';
+
+  // fallback heuristic when TOM does not know the predicate type yet
   if (/#.+Property$/.test(iri) || /sameAs$/i.test(iri)) return 'iri';
   return 'literal';
 }
@@ -462,23 +654,26 @@ function buildReadableIri(label, settings, existingIris = new Set()) {
 
 
 // Gets the columns definitions for the Handsontable instance.
-const getColumnDefinitions = () => {
-  return [
-    { type: 'text' }, // IRI
-    { type: 'text' }, // Label
+const getColumnDefinitions = (viewKey = getActiveViewKey()) => {
+  const baseColumns = [
+    { type: 'text', hidden: !isColumnVisibleInView(viewKey, 0) ? true : undefined }, // IRI / Subject
+    { type: 'text', hidden: !isColumnVisibleInView(viewKey, 1) ? true : undefined }, // Label
     {
-      type: 'dropdown',
+      type: 'text',
+      editor: 'autocomplete',
       source: getElementTypes(),
       strict: true,
-      allowInvalid: false
+      allowInvalid: false,
+      hidden: !isColumnVisibleInView(viewKey, 2) ? true : undefined
     },                // Element Type
-    { type: 'text' }, // Definition
+    { type: 'text', hidden: !isColumnVisibleInView(viewKey, 3) ? true : undefined }, // Definition
     {
       // "Is A" with smart lookup
       editor: 'autocomplete',
       strict: false,
       filter: false,
       allowInvalid: true,
+      hidden: !isColumnVisibleInView(viewKey, 4) ? true : undefined,
       source: function (query, callback) {
         try {
           // infer type constraints from the row's Element Type
@@ -498,8 +693,16 @@ const getColumnDefinitions = () => {
       },
       // Display formatting now happens in the Glide adapter via getDisplayValue.
     },
-    { type: 'text' }, // is curated in ontology
+    { type: 'text', hidden: !isColumnVisibleInView(viewKey, 5) ? true : undefined }, // is curated in ontology
   ];
+
+  const predicateColumns = getPredicateRegistry().map((record, idx) => ({
+    type: 'text',
+    displayHeader: formatPredicateHeaderTitle(record.iri),
+    hidden: !isColumnVisibleInView(viewKey, BASE_COLS + idx) ? true : undefined
+  }));
+
+  return baseColumns.concat(predicateColumns);
 };
 
 
@@ -515,9 +718,9 @@ const getInitialData = () => {
 };
 
 // Gets the column headers for the Handsontable instance.  
-const getColumnHeaders = () => {
+const getColumnHeaders = (viewKey = getActiveViewKey()) => {
   console.info('getColumnHeaders happened');
-  return ["iri", "label", "element type", "definition", "is a", "is curated in ontology"].concat(customPredicates);
+  return getBaseHeadersForView(viewKey).concat(getCustomPredicateIris());
 };
 
 // Creates a Handsontable instance in the given container with the provided data and column definitions.
@@ -528,6 +731,7 @@ const createTable = (container, data, colHeaders, columns) => {
     data,
     colHeaders,
     columns,
+    editOnType: true,
 
     // inject validator for first column across all rows
     cells: (row, col) => {
@@ -537,21 +741,14 @@ const createTable = (container, data, colHeaders, columns) => {
 
       // For custom predicate columns, enforce IRI vs literal
       if (col >= BASE_COLS) {
-        const predIri = customPredicates[col - BASE_COLS];
+        const predIri = getPredicateRecordByColumnIndex(col)?.iri;
         const mode = getPredicateValueMode(predIri) || defaultModeForPredicate(predIri);
 
         if (mode === 'iri') {
           // basic validator: must resolve to IRI (absolute or CURIE)
           cellProps.validator = (value, cb) => {
             if (value == null || String(value).trim() === '') return cb(true); // allow empty
-            const v = String(value).trim();
-            // already <IRI>
-            if (/^<[^>\s]+>$/.test(v)) return cb(true);
-            // absolute IRI
-            if (/^https?:\/\/\S+$/i.test(v)) return cb(true);
-            // curie
-            if (/^[A-Za-z][\w-]*:[\w.-]+$/.test(v) && curieToIri(v)) return cb(true);
-            cb(false);
+            return cb(Boolean(resolveNamedNodeIri(value)));
           };
           // Optionally a nice tooltip:
           cellProps.allowInvalid = false;
@@ -574,22 +771,26 @@ const createTable = (container, data, colHeaders, columns) => {
         return Boolean(resolveToIri(value));
       }
 
+      if (colIndex === 2) {
+        if (value == null || String(value).trim() === '') return true;
+        return getElementTypes().includes(String(value).trim());
+      }
+
       if (colIndex >= BASE_COLS) {
-        const predIri = customPredicates[colIndex - BASE_COLS];
+        const predIri = getPredicateRecordByColumnIndex(colIndex)?.iri;
         const mode = getPredicateValueMode(predIri) || defaultModeForPredicate(predIri);
 
         if (mode === 'iri') {
           if (value == null || String(value).trim() === '') return true;
-          const v = String(value).trim();
-          if (/^<[^>\s]+>$/.test(v)) return true;
-          if (/^https?:\/\/\S+$/i.test(v)) return true;
-          if (/^[A-Za-z][\w-]*:[\w.-]+$/.test(v) && curieToIri(v)) return true;
-          return false;
+          return Boolean(resolveNamedNodeIri(value));
         }
       }
 
       return true;
-    }
+    },
+    getContextMenuItems(context) {
+      return buildGridContextMenuItems(context);
+    },
     
   });
 };
@@ -629,6 +830,46 @@ function setIsCuratedInForAllRows() {
   console.info(`[setIsCuratedInForAllRows] Set for ${updatedCount} of ${totalRows} rows (only empty cells updated)`);
 }
 
+function syncCurrentViewHiddenColumns() {
+  if (!hotInstance?.getHiddenColumns) return;
+  setHiddenColumnsForView(getActiveViewKey(), hotInstance.getHiddenColumns());
+}
+
+function updateViewToggleButtons() {
+  document.querySelectorAll('[data-view-switch]').forEach((button) => {
+    const isActive = button.dataset.viewSwitch === getActiveViewKey();
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    button.classList.toggle('is-active', isActive);
+    button.style.fontWeight = isActive ? '700' : '400';
+    button.style.outline = isActive ? '2px solid var(--ont-accent, #2563eb)' : '';
+  });
+}
+
+function applyViewSchema(viewKey, options = {}) {
+  if (!hotInstance) return;
+
+  const targetView = viewKey || DEFAULT_VIEW;
+  const previousView = getActiveViewKey();
+  if (options.captureCurrent !== false && hotInstance && previousView) {
+    syncCurrentViewHiddenColumns();
+  }
+
+  activeViewKey = targetView;
+  hotInstance.setSchema(getColumnHeaders(targetView), getColumnDefinitions(targetView));
+
+  const hidden = Array.from(getHiddenColumnsForView(targetView));
+  hotInstance.setHiddenColumns(hidden);
+  updateViewToggleButtons();
+}
+
+function switchView(nextViewKey) {
+  if (!hotInstance) return;
+  if (!Object.values(VIEW_KEYS).includes(nextViewKey)) return;
+  if (nextViewKey === getActiveViewKey()) return;
+  applyViewSchema(nextViewKey);
+  showToast(`Switched to ${VIEW_LABELS[nextViewKey]} view`, 'info');
+}
+
 /**
  * Initialize Handsontable once
  */
@@ -645,10 +886,12 @@ function initHandsontable() {
   // 2) Create HOT using 4-arg createTable
   hotInstance = createTable(container, rows, headers, columns);
   attachHotHooks?.();
+  applyViewSchema(getActiveViewKey(), { captureCurrent: false });
 
   // 3) Finish init
   harvestRowsIntoVocab?.(rows);
   hotInitDone = true;
+  updateViewToggleButtons();
 }
 
 
@@ -684,13 +927,8 @@ function buildOntologyExportQuads(rows) {
     )
   );
 
-  const isAbsoluteIri = (s) => typeof s === 'string' && /^https?:\/\//i.test(s);
   const resolvePredicate = (k) => {
-    if (isAbsoluteIri(k)) return k;
-    if (typeof k === 'string' && k.includes(':')) {
-      try { const iri = curieToIri(k); if (iri) return iri; } catch (_) {}
-    }
-    return null;
+    return resolveNamedNodeIri(k);
   };
 
   for (const [key, value] of Object.entries(settings)) {
@@ -719,13 +957,23 @@ function buildOntologyExportQuads(rows) {
 
   rows.forEach((row) => {
     const [subject, label, type, definition, isAObject, isCuratedInOntology] = row;
-    if (!subject || !type) return;
+    if (!subject) return;
 
-    quads.push(N3.DataFactory.quad(
-      namedNode(subject),
-      namedNode(w3cIRI.RDF_TYPE),
-      namedNode(`http://www.w3.org/2002/07/owl#${type}`)
-    ));
+    const structuralTypeMap = {
+      Class: w3cIRI.OWL_CLASS,
+      NamedIndividual: w3cIRI.OWL_NAMEDIND,
+      ObjectProperty: w3cIRI.OWL_OBJPROP,
+      DatatypeProperty: w3cIRI.OWL_DATATYPE,
+      AnnotationProperty: w3cIRI.OWL_ANNOPROP,
+    };
+    const structuralTypeIri = structuralTypeMap[type];
+    if (structuralTypeIri) {
+      quads.push(N3.DataFactory.quad(
+        namedNode(subject),
+        namedNode(w3cIRI.RDF_TYPE),
+        namedNode(structuralTypeIri)
+      ));
+    }
 
     if (label) {
       quads.push(N3.DataFactory.quad(
@@ -765,22 +1013,18 @@ function buildOntologyExportQuads(rows) {
       ));
     }
 
-    customPredicates.forEach((predicate, idx) => {
+    getPredicateRegistry().forEach((predicateRecord, idx) => {
+      const predicate = predicateRecord.iri;
       const colIndex = BASE_COLS + idx;
       const cellValue = row[colIndex];
       if (!cellValue) return;
 
-      const mode = getPredicateValueMode(predicate) || defaultModeForPredicate(predicate);
+      const mode = predicateRecord.objectMode || getPredicateValueMode(predicate);
       const valueText = String(cellValue).trim();
 
       if (mode === 'iri') {
-        let obj = null;
-        if (/^<[^>\s]+>$/.test(valueText)) obj = namedNode(valueText.slice(1, -1));
-        else if (/^https?:\/\/\S+$/i.test(valueText)) obj = namedNode(valueText);
-        else if (/^[A-Za-z][\w-]*:[\w.-]+$/.test(valueText)) {
-          const iri = curieToIri(valueText);
-          if (iri) obj = namedNode(iri);
-        }
+        const namedNodeIri = resolveNamedNodeIri(valueText);
+        const obj = namedNodeIri ? namedNode(namedNodeIri) : null;
 
         quads.push(N3.DataFactory.quad(
           namedNode(subject),
@@ -936,6 +1180,117 @@ function idbTransactionDone(tx) {
   });
 }
 
+function cloneRowsForWorkspace(rows, expectedColumnCount = null) {
+  if (FeatureUtils.cloneRowsForWorkspace) {
+    return FeatureUtils.cloneRowsForWorkspace(rows, expectedColumnCount);
+  }
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    const nextRow = Array.isArray(row) ? row.slice() : [];
+    if (expectedColumnCount == null) return nextRow;
+    if (nextRow.length < expectedColumnCount) {
+      nextRow.push(...Array.from({ length: expectedColumnCount - nextRow.length }, () => ''));
+    }
+    return nextRow.slice(0, expectedColumnCount);
+  });
+}
+
+function isValidViewKey(viewKey) {
+  return Object.values(VIEW_KEYS).includes(viewKey);
+}
+
+function getPersistablePredicateRegistry() {
+  return getPredicateRegistry().map((record) => ({
+    iri: record.iri,
+    objectMode: normalizePredicateMode(record.objectMode, record.iri),
+  }));
+}
+
+function buildWorkspaceSnapshot(timestamp = new Date().toISOString()) {
+  const predicates = getPersistablePredicateRegistry();
+  return {
+    version: 1,
+    timestamp,
+    activeView: isValidViewKey(getActiveViewKey()) ? getActiveViewKey() : DEFAULT_VIEW,
+    predicates,
+    rows: cloneRowsForWorkspace(hotInstance?.getData?.() || [], BASE_COLS + predicates.length),
+  };
+}
+
+function normalizeWorkspaceSnapshot(snapshot) {
+  if (FeatureUtils.normalizeWorkspaceSnapshot) {
+    return FeatureUtils.normalizeWorkspaceSnapshot(snapshot, {
+      baseCols: BASE_COLS,
+      defaultView: DEFAULT_VIEW,
+      isValidViewKey,
+      normalizePredicateMode,
+      normalizePredicateRecord,
+    });
+  }
+  if (!snapshot || typeof snapshot !== 'object') return null;
+
+  const seen = new Set();
+  const predicates = (Array.isArray(snapshot.predicates) ? snapshot.predicates : [])
+    .map((entry) => {
+      const record = normalizePredicateRecord(entry);
+      if (!record || seen.has(record.iri)) return null;
+      seen.add(record.iri);
+      return {
+        iri: record.iri,
+        objectMode: normalizePredicateMode(record.objectMode, record.iri),
+      };
+    })
+    .filter(Boolean);
+
+  const expectedColumnCount = BASE_COLS + predicates.length;
+  return {
+    version: Number(snapshot.version) || 1,
+    timestamp: snapshot.timestamp || new Date().toISOString(),
+    activeView: isValidViewKey(snapshot.activeView) ? snapshot.activeView : DEFAULT_VIEW,
+    predicates,
+    rows: cloneRowsForWorkspace(snapshot.rows, expectedColumnCount),
+  };
+}
+
+function getRecordOrderValue(record) {
+  if (FeatureUtils.getRecordOrderValue) {
+    return FeatureUtils.getRecordOrderValue(record);
+  }
+  const parsedTimestamp = Date.parse(record?.timestamp || '');
+  if (Number.isFinite(parsedTimestamp)) return parsedTimestamp;
+  return typeof record?.id === 'number' ? record.id : -1;
+}
+
+async function getLatestSavedRecord(db, storeName) {
+  const tx = db.transaction(storeName, 'readonly');
+  const records = await storeGetAll(tx.objectStore(storeName));
+  await idbTransactionDone(tx);
+
+  if (!records.length) return null;
+  if (FeatureUtils.selectLatestRecord) {
+    return FeatureUtils.selectLatestRecord(records);
+  }
+  return records.reduce((latest, current) => {
+    if (!latest) return current;
+    return getRecordOrderValue(current) >= getRecordOrderValue(latest) ? current : latest;
+  }, null);
+}
+
+function applyWorkspaceSnapshot(snapshot) {
+  const normalized = normalizeWorkspaceSnapshot(snapshot);
+  if (!normalized || !hotInstance) return null;
+
+  replacePredicateRegistry(normalized.predicates);
+  applyViewSchema(normalized.activeView, { captureCurrent: false });
+  hotInstance.replaceRows(normalized.rows, 'LoadData');
+  harvestRowsIntoVocab?.(normalized.rows);
+
+  try {
+    renderPredicateModesChecklist('predicate-modes-list');
+  } catch (_) {}
+
+  return normalized;
+}
+
 // Delete (optional)
 async function clearOntologySettings() {
   const db = await ensureDb();
@@ -991,18 +1346,21 @@ async function saveRDFtoIndexedDB() {
     output.value = rdfString;
 
     const db = await ensureDb();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const timestamp = new Date().toISOString();
+    const tx = db.transaction([STORE_NAME, WORKSPACE_STORE], 'readwrite');
     const store = tx.objectStore(STORE_NAME);
-    store.add({ rdfData: rdfString, format, timestamp: new Date().toISOString() });
+    const workspaceStore = tx.objectStore(WORKSPACE_STORE);
+    store.add({ rdfData: rdfString, format, timestamp });
+    workspaceStore.add(buildWorkspaceSnapshot(timestamp));
     await idbTransactionDone(tx);
 
-    console.info('RDF data saved to IndexedDB successfully.');
-    showToast('RDF data saved to database successfully.', 'success');
+    console.info('Workspace and RDF data saved to IndexedDB successfully.');
+    showToast('Workspace and RDF data saved to database successfully.', 'success');
 
     updateReloadSessionButton(); // reflect availability immediately
   } catch (e) {
     console.error('saveRDFtoIndexedDB failed:', e);
-    showToast('Failed to save RDF data to database.', 'error');
+    showToast('Failed to save workspace data to database.', 'error');
   }
 };
 
@@ -1013,11 +1371,11 @@ async function saveRDFtoIndexedDB() {
  */
 async function hasPriorSession() {
   const db = await ensureDb();
-  const tx = db.transaction(STORE_NAME, 'readonly');
-  const store = tx.objectStore(STORE_NAME);
-  const count = await idbRequest(store.count());
+  const tx = db.transaction([STORE_NAME, WORKSPACE_STORE], 'readonly');
+  const rdfCount = await idbRequest(tx.objectStore(STORE_NAME).count());
+  const workspaceCount = await idbRequest(tx.objectStore(WORKSPACE_STORE).count());
   await idbTransactionDone(tx);
-  return count > 0;
+  return rdfCount > 0 || workspaceCount > 0;
 }
 
 /**
@@ -1033,6 +1391,9 @@ function ensureDb() {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains(WORKSPACE_STORE)) {
+        db.createObjectStore(WORKSPACE_STORE, { keyPath: 'id', autoIncrement: true });
       }
       if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
         db.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
@@ -1114,22 +1475,33 @@ function getSemanticRdfTypes(rdfTypes) {
     .filter(u => u && !structuralTypes.has(u));
 }
 
+function resolveNamedNodeIri(value) {
+  if (value == null) return null;
+  const v = String(value).trim();
+  if (!v) return null;
+
+  if (/^<[^>\s]+>$/.test(v)) {
+    return v.slice(1, -1);
+  }
+
+  if (/^[A-Za-z][\w-]*:[\w.-]+$/.test(v)) {
+    const iri = curieToIri(v);
+    if (iri) return iri;
+  }
+
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:[^\s]+$/.test(v)) {
+    return v;
+  }
+
+  return null;
+}
+
 function asObjectTerm(value) {
   if (value == null) return null;
   const v = String(value).trim();
-
-  // Already wrapped <IRI>
-  if (/^<[^>\s]+>$/.test(v)) {
-    return N3.DataFactory.namedNode(v.slice(1, -1));
-  }
-  // Absolute IRI
-  if (/^https?:\/\/\S+$/i.test(v)) {
-    return N3.DataFactory.namedNode(v);
-  }
-  // CURIE -> IRI (uses your curieToIri)
-  if (/^[A-Za-z][\w-]*:[\w.-]+$/.test(v)) {
-    const iri = curieToIri(v);
-    if (iri) return N3.DataFactory.namedNode(iri);
+  const namedNodeIri = resolveNamedNodeIri(v);
+  if (namedNodeIri) {
+    return N3.DataFactory.namedNode(namedNodeIri);
   }
   // Fallback: literal
   return N3.DataFactory.literal(v);
@@ -1153,21 +1525,33 @@ async function storeGetAll(store) {
 async function reloadSavedSession() {
   try {
     const db = await ensureDb();
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
+    const latestWorkspace = await getLatestSavedRecord(db, WORKSPACE_STORE);
+    const latestRdfRecord = await getLatestSavedRecord(db, STORE_NAME);
 
-    // getAll is widely supported; cursor fallback shown below if you need it
-    let all = await storeGetAll(store);
-    await idbTransactionDone(tx);
-
-    if (!all || !all.length) {
+    if (!latestWorkspace && !latestRdfRecord) {
       console.warn('No prior session found in IndexedDB.');
       showToast('No prior session found.', 'info');
       return;
     }
 
-    // Use the latest record
-    const { rdfData, format } = all[all.length - 1];
+    const shouldUseWorkspace = latestWorkspace &&
+      (!latestRdfRecord || getRecordOrderValue(latestWorkspace) >= getRecordOrderValue(latestRdfRecord));
+
+    if (shouldUseWorkspace) {
+      const restoredWorkspace = applyWorkspaceSnapshot(latestWorkspace);
+      if (restoredWorkspace) {
+        showToast(`Reloaded ${restoredWorkspace.rows.length} row${restoredWorkspace.rows.length !== 1 ? 's' : ''} from latest saved workspace`, 'success');
+        return;
+      }
+    }
+
+    if (!latestRdfRecord) {
+      console.warn('Latest workspace snapshot could not be restored and no RDF fallback was found.');
+      showToast('No compatible saved session was found.', 'info');
+      return;
+    }
+
+    const { rdfData, format } = latestRdfRecord;
 
     // Parse RDF -> quads
     const parser = new N3.Parser({ format: n3FormatForSaved(format) });
@@ -1268,7 +1652,7 @@ async function reloadSavedSession() {
 
     // adopt discovered extra predicates as your custom columns (sorted for stability)
     const extraList = Array.from(extraPreds).sort();
-    customPredicates.splice(0, customPredicates.length, ...extraList);
+    replacePredicateRegistry(extraList);
 
     const finalRows = rowsTmp.map(({ row, pMap }) => {
       const extended = row.concat(extraList.map(() => ''));
@@ -1279,8 +1663,8 @@ async function reloadSavedSession() {
       return extended;
     });
 
-    const newHeaders = getColumnHeaders(); // base + customPredicates
-    const newColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
+    const newHeaders = getColumnHeaders();
+    const newColumns = getColumnDefinitions();
     hotInstance.setSchema(newHeaders, newColumns);
     hotInstance.replaceRows(finalRows, 'LoadData');
     harvestRowsIntoVocab?.(finalRows);
@@ -1420,6 +1804,14 @@ async function loadVocabFrom(url, source = "External") {
 // Load BFO+CCO compact index (your path)
 loadVocabFrom('./json/bfo-cco-lookup.json', 'BFO/CCO');
 
+const PREDICATE_LOOKUP_TYPES = ['AnnotationProperty', 'ObjectProperty', 'DatatypeProperty', 'Property'];
+
+function isPredicateVocabRecord(rec) {
+  const type = String(rec?.type || '').trim();
+  if (!type) return false;
+  return PREDICATE_LOOKUP_TYPES.includes(type) || /Property$/i.test(type);
+}
+
 // quick CURIE builder using your existing prefixes
 function iriToCurie(iri) {
   for (const [pfx, base] of Object.entries(iriPrefixes)) {
@@ -1434,7 +1826,15 @@ function searchVocab(q, { max = 50, typeHint = null } = {}) {
   const term = (q || "").trim().toLowerCase();
   if (!term) return [];
 
-  const pool = typeHint ? vocabIndex.filter(x => x.type === typeHint) : vocabIndex;
+  const typeHints =
+    typeHint == null
+      ? null
+      : Array.isArray(typeHint)
+      ? typeHint
+      : typeHint instanceof Set
+      ? Array.from(typeHint)
+      : [typeHint];
+  const pool = typeHints ? vocabIndex.filter((x) => typeHints.includes(x.type)) : vocabIndex;
 
   const score = (rec) => {
     const fields = [
@@ -1461,6 +1861,112 @@ function searchVocab(q, { max = 50, typeHint = null } = {}) {
 
 function displayLabelAndCurie(rec) {
   return `${rec.label || rec.curie || rec.iri} - ${(rec.curie || rec.iri)}`;
+}
+
+function normalizeIriishToken(value) {
+  const v = String(value || '').trim();
+  const displayParts = v.split(/\s(?:-|::)\s/);
+  return displayParts.length > 1 ? displayParts[displayParts.length - 1].trim() : v;
+}
+
+function searchPredicateVocab(q, { max = 20 } = {}) {
+  return searchVocab(q, { max, typeHint: PREDICATE_LOOKUP_TYPES }).filter(isPredicateVocabRecord);
+}
+
+function getKnownVocabRecordForIriish(value) {
+  if (!value) return null;
+  const v = String(value).trim();
+  const token = normalizeIriishToken(v);
+
+  if (vocabByIri.has(token)) return vocabByIri.get(token);
+  if (vocabByCurie.has(token)) return vocabByCurie.get(token);
+
+  const fullIri = curieToIri(token);
+  if (fullIri && vocabByIri.has(fullIri)) return vocabByIri.get(fullIri);
+  return null;
+}
+
+function formatPredicateDisplayValue(value) {
+  const rec = getKnownVocabRecordForIriish(value);
+  if (rec && isPredicateVocabRecord(rec)) return displayLabelAndCurie(rec);
+  return iriToCurie?.(String(value || '').trim()) || String(value || '').trim();
+}
+
+function formatPredicateHeaderTitle(value) {
+  const rec = getKnownVocabRecordForIriish(value);
+  return rec?.label || rec?.curie || rec?.iri || iriToCurie?.(String(value || '').trim()) || String(value || '').trim();
+}
+
+function resolvePredicateInputToIri(value) {
+  if (!value) return null;
+  const v = String(value).trim();
+  const token = normalizeIriishToken(v);
+
+  if (/^https?:\/\/\S+$/i.test(token) || /^urn:[^:\s]+:.+/i.test(token) || /^<[^>\s]+>$/.test(token)) {
+    return token.replace(/^<|>$/g, '');
+  }
+
+  if (token.includes(':')) {
+    const [pfx, local] = token.split(':');
+    const base = iriPrefixes[pfx];
+    if (base) return base + local;
+
+    const rec = vocabByCurie.get(token);
+    if (rec && isPredicateVocabRecord(rec)) return rec.iri;
+  }
+
+  const predicateMatches = searchPredicateVocab(v, { max: 20 });
+  const loweredToken = token.toLowerCase();
+  const loweredValue = v.toLowerCase();
+  const exactMatch = predicateMatches.find((rec) => {
+    const fields = [rec.label, rec.curie, rec.iri, ...(rec.altLabels || [])]
+      .filter(Boolean)
+      .map((field) => String(field).toLowerCase());
+    return fields.includes(loweredToken) || fields.includes(loweredValue);
+  });
+
+  return exactMatch?.iri || null;
+}
+
+function updatePredicateIriSuggestions() {
+  const input = document.getElementById('predicate-iri');
+  const datalist = document.getElementById('predicate-iri-suggestions');
+  const help = document.getElementById('predicate-iri-help');
+  if (!input || !datalist || !help) return;
+
+  const query = String(input.value || '').trim();
+  datalist.innerHTML = '';
+
+  if (!query) {
+    help.textContent = 'Suggestions only include annotation, object, and datatype properties.';
+    return;
+  }
+
+  const matches = searchPredicateVocab(query, { max: 12 });
+  matches.forEach((rec) => {
+    const option = document.createElement('option');
+    option.value = displayLabelAndCurie(rec);
+    datalist.appendChild(option);
+  });
+
+  const resolved = resolvePredicateInputToIri(query);
+  const resolvedRecord = getKnownVocabRecordForIriish(resolved);
+  if (resolvedRecord && isPredicateVocabRecord(resolvedRecord)) {
+    help.textContent = `Will use ${displayLabelAndCurie(resolvedRecord)}.`;
+    return;
+  }
+
+  if (matches.length) {
+    help.textContent = `Showing ${matches.length} property match${matches.length !== 1 ? 'es' : ''}.`;
+    return;
+  }
+
+  if (curieToIri(query) || /^https?:\/\/\S+$/i.test(query) || /^urn:[^:\s]+:.+/i.test(query) || /^<[^>\s]+>$/.test(query)) {
+    help.textContent = 'Custom IRI/CURIE will be used as entered.';
+    return;
+  }
+
+  help.textContent = 'No property match found yet. Enter a full IRI or CURIE to add a custom predicate.';
 }
 
 // Try to resolve whatever the user typed to an IRI
@@ -1705,8 +2211,193 @@ function getCustomPredicateColumns() {
   return out;
 }
 
+function getHiddenColumnIndexes() {
+  return hotInstance?.getHiddenColumns?.() || [];
+}
+
+function getHiddenColumnSet() {
+  return new Set(getHiddenColumnIndexes());
+}
+
+function setPredicateViewVisibility(record, viewKey, visible) {
+  if (!record) return;
+  if (viewKey === VIEW_KEYS.RELATA) {
+    record.showInRelata = visible;
+  } else {
+    record.showInOntology = visible;
+  }
+}
+
+function getPredicateViewPlacement(record) {
+  if (FeatureUtils.getPredicateViewPlacement) {
+    return FeatureUtils.getPredicateViewPlacement(record);
+  }
+  if (!record) return 'hidden';
+  const inOntology = record.showInOntology !== false;
+  const inRelata = record.showInRelata !== false;
+  if (inOntology && inRelata) return 'both';
+  if (inOntology) return 'ontology';
+  if (inRelata) return 'relata';
+  return 'hidden';
+}
+
+function applyPredicateViewPlacement(record, placement) {
+  if (FeatureUtils.applyPredicateViewPlacement) {
+    return FeatureUtils.applyPredicateViewPlacement(record, placement);
+  }
+  if (!record) return null;
+  const normalized = String(placement || 'both').trim().toLowerCase();
+  record.showInOntology = normalized === 'both' || normalized === 'ontology';
+  record.showInRelata = normalized === 'both' || normalized === 'relata';
+  return record;
+}
+
+function syncPredicatePlacementToHiddenState(index, record) {
+  if (!record || !Number.isInteger(index) || index < BASE_COLS) return;
+
+  const ontologyHidden = new Set(getHiddenColumnsForView(VIEW_KEYS.ONTOLOGY));
+  const relataHidden = new Set(getHiddenColumnsForView(VIEW_KEYS.RELATA));
+
+  if (record.showInOntology === false) ontologyHidden.add(index);
+  else ontologyHidden.delete(index);
+
+  if (record.showInRelata === false) relataHidden.add(index);
+  else relataHidden.delete(index);
+
+  setHiddenColumnsForView(VIEW_KEYS.ONTOLOGY, ontologyHidden);
+  setHiddenColumnsForView(VIEW_KEYS.RELATA, relataHidden);
+}
+
+function setColumnsVisibilityForView(viewKey, indexes, visible) {
+  const hidden = new Set(getHiddenColumnsForView(viewKey));
+  (Array.isArray(indexes) ? indexes : []).forEach((index) => {
+    if (!Number.isInteger(index) || index < 0) return;
+    if (visible) hidden.delete(index);
+    else hidden.add(index);
+  });
+
+  setHiddenColumnsForView(viewKey, hidden);
+  if (viewKey === getActiveViewKey() && hotInstance) {
+    hotInstance.setHiddenColumns(Array.from(hidden));
+  }
+
+  try {
+    renderPredicateModesChecklist('predicate-modes-list');
+  } catch (_) {}
+
+  return Array.from(hidden).sort((a, b) => a - b);
+}
+
+function setViewColumnVisibility(viewKey, index, visible) {
+  setColumnsVisibilityForView(viewKey, [index], visible);
+}
+
+function showAllViewColumns(viewKey) {
+  setColumnsVisibilityForView(viewKey, hotInstance?.getColHeader?.().map((_, index) => index) || [], true);
+}
+
+function openManagePredicatesModal() {
+  document.getElementById('predicate-iri').value = '';
+  document.getElementById('predicate-target-view').value = 'both';
+  document.getElementById('predicate-object-mode').value = 'auto';
+  updatePredicateIriSuggestions();
+  renderPredicateModesChecklist('predicate-modes-list');
+  document.getElementById('manage-predicates-modal').style.display = 'block';
+}
+
+function buildGridContextMenuItems(context) {
+  if (!hotInstance || !context) return [];
+
+  const activeView = getActiveViewKey();
+  const totalColumns = hotInstance.getColHeader().length;
+  const hiddenColumns = new Set(getHiddenColumnsForView(activeView));
+  const selectedColumnIndexes = Array.from(new Set(context.colIndexes || []))
+    .filter((index) => Number.isInteger(index) && index >= 0 && index < totalColumns);
+  const selectedRowIndexes = Array.from(new Set(context.rowIndexes || []))
+    .filter((index) => Number.isInteger(index) && index >= 0 && index < hotInstance.countRows())
+    .sort((a, b) => a - b);
+
+  const items = [];
+
+  if (context.kind === 'header' && selectedColumnIndexes.length) {
+    const visibleColumns = Array.from({ length: totalColumns }, (_, index) => index)
+      .filter((index) => isColumnVisibleInView(activeView, index))
+      .length;
+    const canHideColumns = selectedColumnIndexes.length < visibleColumns;
+    const hideLabel = selectedColumnIndexes.length === 1 ? 'Hide Column' : `Hide ${selectedColumnIndexes.length} Columns`;
+
+    items.push({
+      id: 'hide-columns',
+      label: hideLabel,
+      disabled: !canHideColumns,
+      onSelect: () => {
+        setColumnsVisibilityForView(activeView, selectedColumnIndexes, false);
+        showToast(`${selectedColumnIndexes.length} column${selectedColumnIndexes.length !== 1 ? 's' : ''} hidden in ${VIEW_LABELS[activeView]} view`, 'info');
+      },
+    });
+    items.push({
+      id: 'show-all-columns',
+      label: `Show All ${VIEW_LABELS[activeView]} Columns`,
+      disabled: hiddenColumns.size === 0,
+      onSelect: () => {
+        showAllViewColumns(activeView);
+        showToast(`Showing all ${VIEW_LABELS[activeView]} columns`, 'success');
+      },
+    });
+    items.push({ separator: true });
+    items.push({
+      id: 'manage-columns',
+      label: 'Manage Predicates & Columns',
+      onSelect: openManagePredicatesModal,
+    });
+  }
+
+  if (context.kind === 'cell' && selectedRowIndexes.length) {
+    const startRow = selectedRowIndexes[0];
+    const rowCount = selectedRowIndexes.length;
+    const endRow = selectedRowIndexes[rowCount - 1];
+    const rowLabel = rowCount === 1 ? 'Row' : `${rowCount} Rows`;
+
+    items.push({
+      id: 'insert-rows-above',
+      label: rowCount === 1 ? 'Insert Row Above' : `Insert ${rowCount} Rows Above`,
+      onSelect: () => {
+        hotInstance.insertRows(startRow, rowCount);
+        showToast(`${rowCount} row${rowCount !== 1 ? 's' : ''} inserted above`, 'success');
+      },
+    });
+    items.push({
+      id: 'insert-rows-below',
+      label: rowCount === 1 ? 'Insert Row Below' : `Insert ${rowCount} Rows Below`,
+      onSelect: () => {
+        hotInstance.insertRows(endRow + 1, rowCount);
+        showToast(`${rowCount} row${rowCount !== 1 ? 's' : ''} inserted below`, 'success');
+      },
+    });
+    items.push({
+      id: 'add-row-end',
+      label: 'Add Row at End',
+      onSelect: () => {
+        hotInstance.insertRows(hotInstance.countRows(), 1);
+        showToast('1 row added at end', 'success');
+      },
+    });
+    items.push({ separator: true });
+    items.push({
+      id: 'remove-rows',
+      label: rowCount === 1 ? 'Remove Row' : `Remove ${rowLabel}`,
+      onSelect: () => {
+        hotInstance.removeRows(startRow, rowCount);
+        showToast(`${rowCount} row${rowCount !== 1 ? 's' : ''} removed`, 'info');
+      },
+    });
+  }
+
+  return items;
+}
+
 /**
- * Build the predicate modes checklist (custom predicates only).
+ * Build the predicate and column management table.
  * containerOrId: element or element id where the list goes.
  */
 function renderPredicateModesChecklist(containerOrId) {
@@ -1715,87 +2406,180 @@ function renderPredicateModesChecklist(containerOrId) {
     : containerOrId;
   if (!container) return;
 
-  // Collect custom predicate IRIs from your known list
-  // You already track them in `customPredicates` and align by BASE_COLS.
-  const preds = Array.isArray(customPredicates) ? [...customPredicates] : [];
-  const modes = getPredicateValueModes();
-
-  // Clear container
+  const headers = getColumnHeaders();
   container.innerHTML = '';
 
-  // Build table
+  const intro = document.createElement('p');
+  intro.style.margin = '0 0 0.75rem';
+  intro.style.fontSize = '0.92rem';
+  intro.textContent = 'Use In controls whether a predicate belongs to Ontology, Relata, or both. Show is a session-only visibility toggle for predicates already used in that view.';
+  container.appendChild(intro);
+
+  const controls = document.createElement('div');
+  controls.style.display = 'flex';
+  controls.style.justifyContent = 'space-between';
+  controls.style.alignItems = 'center';
+  controls.style.marginBottom = '0.75rem';
+
+  const viewLabel = document.createElement('span');
+  viewLabel.style.fontSize = '0.92rem';
+  viewLabel.textContent = `Active view: ${VIEW_LABELS[getActiveViewKey()]}`;
+
+  const buttonRow = document.createElement('div');
+  buttonRow.style.display = 'flex';
+  buttonRow.style.gap = '0.5rem';
+
+  [VIEW_KEYS.ONTOLOGY, VIEW_KEYS.RELATA].forEach((viewKey) => {
+    const showAllBtn = document.createElement('button');
+    showAllBtn.type = 'button';
+    showAllBtn.textContent = `Show All ${VIEW_LABELS[viewKey]} Columns`;
+    showAllBtn.addEventListener('click', () => {
+      showAllViewColumns(viewKey);
+      renderPredicateModesChecklist(container);
+    });
+    buttonRow.appendChild(showAllBtn);
+  });
+  controls.appendChild(viewLabel);
+  controls.appendChild(buttonRow);
+  container.appendChild(controls);
+
   const table = document.createElement('table');
-  table.style.width = '80%';
+  table.style.width = '100%';
   table.style.borderCollapse = 'collapse';
   table.style.padding = '0';
   table.style.margin = '0';
 
-  // Header
   const tableHead = document.createElement('thead');
   const headerRow = document.createElement('tr');
-
-  const thPredicate = document.createElement('th');
-  thPredicate.textContent = 'Predicate';
-  thPredicate.style.textAlign = 'left';
-  thPredicate.style.padding = '2px 4px';
-  thPredicate.style.borderBottom = '1px solid #ccc';
-
-  const thIRI = document.createElement('th');
-  thIRI.textContent = 'Object is IRI?';
-  thIRI.style.textAlign = 'center';
-  thIRI.style.padding = '2px 4px';
-  thIRI.style.borderBottom = '1px solid #ccc';
-
-  // Build DOM heirarchy
-  headerRow.appendChild(thPredicate);
-  headerRow.appendChild(thIRI);
+  [
+    { label: 'Column', align: 'left' },
+    { label: 'Use In', align: 'center' },
+    { label: `Show in ${VIEW_LABELS[VIEW_KEYS.ONTOLOGY]}`, align: 'center' },
+    { label: `Show in ${VIEW_LABELS[VIEW_KEYS.RELATA]}`, align: 'center' },
+    { label: 'Object is IRI?', align: 'center' },
+  ].forEach(({ label, align }) => {
+    const th = document.createElement('th');
+    th.textContent = label;
+    th.style.textAlign = align;
+    th.style.padding = '2px 4px';
+    th.style.borderBottom = '1px solid #ccc';
+    headerRow.appendChild(th);
+  });
   tableHead.appendChild(headerRow);
   table.appendChild(tableHead);
 
-  // Populate rows
   const tBody = document.createElement('tbody');
-  
 
-  preds.forEach((iri, i) => {
+  headers.forEach((header, index) => {
+    const predicateRecord = getPredicateRecordByColumnIndex(index);
     const tr = document.createElement('tr');
 
-    // predicate label (left)
     const tdLabel = document.createElement('td');
-    tdLabel.style.padding = '2px';
+    tdLabel.style.padding = '4px';
     tdLabel.style.borderBottom = '1px solid #f0f0f0';
-
-    const nice = (typeof iriToNiceLabel === 'function' ? iriToNiceLabel(iri) : iri);
     const label = document.createElement('label');
-    const checkboxId = `pred-mode-${i}`;
-    label.setAttribute('for', checkboxId);
-    label.textContent = nice;
-    label.title = iri; // hover shows full IRI
+    label.textContent = predicateRecord ? formatPredicateDisplayValue(header) : header;
+    label.title = header;
     tdLabel.appendChild(label);
 
-    // checkbox (right)
-    const tdChk = document.createElement('td');
-    tdChk.style.padding = '2px';
-    tdChk.style.borderBottom = '1px solid #f0f0f0';
-    tdChk.style.textAlign = 'center';
+    const tdOntology = document.createElement('td');
+    tdOntology.style.padding = '4px';
+    tdOntology.style.borderBottom = '1px solid #f0f0f0';
+    tdOntology.style.textAlign = 'center';
 
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.id = checkboxId;
-    checkbox.dataset.predicateIri = iri;
+    const tdPlacement = document.createElement('td');
+    tdPlacement.style.padding = '4px';
+    tdPlacement.style.borderBottom = '1px solid #f0f0f0';
+    tdPlacement.style.textAlign = 'center';
 
-    const current = modes[iri] || defaultModeForPredicate(iri);
-    checkbox.checked = (current === 'iri');
-
-    checkbox.addEventListener('change', (ev) => {
-      const pred = ev.currentTarget.dataset.predicateIri;
-      setPredicateValueMode(pred, ev.currentTarget.checked ? 'iri' : 'literal');
-      // no save here; your Save button calls savePredicateValueModes()
+    const ontologyCheckbox = document.createElement('input');
+    ontologyCheckbox.type = 'checkbox';
+    const predicateUsedInOntology = isPredicateUsedInView(predicateRecord, VIEW_KEYS.ONTOLOGY);
+    ontologyCheckbox.checked = predicateRecord
+      ? isColumnVisibleInView(VIEW_KEYS.ONTOLOGY, index)
+      : isColumnVisibleInView(VIEW_KEYS.ONTOLOGY, index);
+    ontologyCheckbox.disabled = Boolean(predicateRecord) && !predicateUsedInOntology;
+    if (ontologyCheckbox.disabled) {
+      ontologyCheckbox.title = `Not used in ${VIEW_LABELS[VIEW_KEYS.ONTOLOGY]}`;
+    }
+    ontologyCheckbox.addEventListener('change', (event) => {
+      setViewColumnVisibility(VIEW_KEYS.ONTOLOGY, index, event.currentTarget.checked);
     });
+    tdOntology.appendChild(ontologyCheckbox);
 
-    tdChk.appendChild(checkbox);
+    const tdRelata = document.createElement('td');
+    tdRelata.style.padding = '4px';
+    tdRelata.style.borderBottom = '1px solid #f0f0f0';
+    tdRelata.style.textAlign = 'center';
+
+    const tdMode = document.createElement('td');
+    tdMode.style.padding = '4px';
+    tdMode.style.borderBottom = '1px solid #f0f0f0';
+    tdMode.style.textAlign = 'center';
+
+    const relataCheckbox = document.createElement('input');
+    relataCheckbox.type = 'checkbox';
+    const predicateUsedInRelata = isPredicateUsedInView(predicateRecord, VIEW_KEYS.RELATA);
+    relataCheckbox.checked = predicateRecord
+      ? isColumnVisibleInView(VIEW_KEYS.RELATA, index)
+      : isColumnVisibleInView(VIEW_KEYS.RELATA, index);
+    relataCheckbox.disabled = Boolean(predicateRecord) && !predicateUsedInRelata;
+    if (relataCheckbox.disabled) {
+      relataCheckbox.title = `Not used in ${VIEW_LABELS[VIEW_KEYS.RELATA]}`;
+    }
+    relataCheckbox.addEventListener('change', (event) => {
+      setViewColumnVisibility(VIEW_KEYS.RELATA, index, event.currentTarget.checked);
+    });
+    tdRelata.appendChild(relataCheckbox);
+
+    if (predicateRecord) {
+      const placementSelect = document.createElement('select');
+      placementSelect.style.width = '100%';
+      [
+        { value: 'both', label: 'Both views' },
+        { value: 'ontology', label: 'Ontology only' },
+        { value: 'relata', label: 'Relata only' },
+        { value: 'hidden', label: 'Hidden in both' },
+      ].forEach((option) => {
+        const optionEl = document.createElement('option');
+        optionEl.value = option.value;
+        optionEl.textContent = option.label;
+        placementSelect.appendChild(optionEl);
+      });
+      placementSelect.value = getPredicateViewPlacement(predicateRecord);
+      placementSelect.addEventListener('change', (event) => {
+        applyPredicateViewPlacement(predicateRecord, event.currentTarget.value);
+        syncPredicatePlacementToHiddenState(index, predicateRecord);
+
+        const currentView = getActiveViewKey();
+        if (hotInstance) {
+          hotInstance.setHiddenColumns(Array.from(getHiddenColumnsForView(currentView)));
+        }
+        renderPredicateModesChecklist(container);
+      });
+      tdPlacement.appendChild(placementSelect);
+
+      const modeCheckbox = document.createElement('input');
+      modeCheckbox.type = 'checkbox';
+      modeCheckbox.checked = predicateRecord.objectMode === 'iri';
+      modeCheckbox.dataset.predicateIri = predicateRecord.iri;
+      modeCheckbox.addEventListener('change', (event) => {
+        const pred = event.currentTarget.dataset.predicateIri;
+        setPredicateValueMode(pred, event.currentTarget.checked ? 'iri' : 'literal');
+      });
+      tdMode.appendChild(modeCheckbox);
+    } else {
+      tdPlacement.textContent = 'Base column';
+      tdPlacement.style.color = '#666';
+      tdMode.textContent = '-';
+      tdMode.style.color = '#666';
+    }
 
     tr.appendChild(tdLabel);
-    tr.appendChild(tdChk);
+    tr.appendChild(tdPlacement);
+    tr.appendChild(tdOntology);
+    tr.appendChild(tdRelata);
+    tr.appendChild(tdMode);
     tBody.appendChild(tr);
   });
 
@@ -1832,6 +2616,7 @@ function renderCustomPredicateChecklist(containerOrId, opts = {}) {
 
   // Build list of items
   const items = getCustomPredicateColumns();
+  const hiddenColumns = getHiddenColumnSet();
 
   // Clear and render
   container.innerHTML = '';
@@ -1861,7 +2646,7 @@ function renderCustomPredicateChecklist(containerOrId, opts = {}) {
     checkbox.checked = startChecked;
 
     // (Optional) show if currently hidden in HOT
-    const hiddenBadge = hidden.includes(index) ? ' (hidden)' : '';
+    const hiddenBadge = hiddenColumns.has(index) ? ' (hidden)' : '';
 
     const label = document.createElement('label');
     label.setAttribute('for', id);
@@ -1888,29 +2673,42 @@ async function confirmAddPredicate() {
     // 1) Handle add predicate (existing flow)
     const select = document.getElementById('predicate-select');
     const iriInput = document.getElementById('predicate-iri');
+    const targetViewSelect = document.getElementById('predicate-target-view');
+    const objectModeSelect = document.getElementById('predicate-object-mode');
     const selectedIRI = select?.value.trim() || '';
-    const customIRI  = iriInput?.value.trim() || '';
+    const rawCustomInput = iriInput?.value.trim() || '';
+    const customIRI = resolvePredicateInputToIri(rawCustomInput);
     const finalIRI = customIRI || selectedIRI;
 
+    if (rawCustomInput && !customIRI) {
+      showToast('Custom predicate input must resolve to a property label, CURIE, or full IRI.', 'error');
+      return;
+    }
+
     if (finalIRI) {
-      if (customPredicates.includes(finalIRI)) {
+      if (getPredicateRecord(finalIRI)) {
         alert("Predicate already added.");
       } else {
-        customPredicates.push(finalIRI);
-
-         // Initialize value mode for this new predicate (once)
-         if (!getPredicateValueMode(finalIRI)) {
-           setPredicateValueMode(finalIRI, defaultModeForPredicate(finalIRI));
-           //await savePredicateValueModes();
-         }
+        const placement = targetViewSelect?.value || 'both';
+        const selectedMode = objectModeSelect?.value || 'auto';
+        const nextRecord = upsertPredicateRecord(finalIRI, {
+          objectMode:
+            selectedMode === 'iri' || selectedMode === 'literal'
+              ? selectedMode
+              : (getPredicateValueMode(finalIRI) || defaultModeForPredicate(finalIRI)),
+          showInOntology: true,
+          showInRelata: true,
+        });
+        applyPredicateViewPlacement(nextRecord, placement);
+        syncPredicatePlacementToHiddenState(BASE_COLS + getPredicateRegistry().findIndex((record) => record.iri === finalIRI), nextRecord);
 
         const newHeaders = getColumnHeaders(); // base + customs
-        const newColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
+        const newColumns = getColumnDefinitions();
         const oldData = hotInstance.getData();
         const validTypes = getElementTypes();
 
         const cleanedRows = oldData.map(row => {
-          const fixed = Array.from({ length: BASE_COLS + customPredicates.length }, (_, i) => row[i] ?? '');
+          const fixed = Array.from({ length: BASE_COLS + getPredicateRegistry().length }, (_, i) => row[i] ?? '');
 
           // sanitize element type
           if (!validTypes.includes(fixed[2])) fixed[2] = '';
@@ -1985,7 +2783,9 @@ function collectPredicateIrisFromHeaders() {
   if (!hotInstance) return [];
   const headers = hotInstance.getColHeader(); // includes hidden
   const set = new Set();
-  for (const h of headers) set.add(p);
+  for (const h of headers) {
+    headerToPredicateIrisForRules(h).forEach((iri) => set.add(iri));
+  }
   return Array.from(set);
 }
 
@@ -2318,7 +3118,7 @@ async function handleInsertDataSave() {
     const extension = parseFileExtension(currentImportFile.name);
     const parsed = await parseSpreadsheetData(currentImportFile, extension, hasHeader);
     const allHeaders = getColumnHeaders(); // already includes customs
-    const allColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
+    const allColumns = getColumnDefinitions();
 
     const knownPredicates = allHeaders; // use as the canonical expected headers
 
@@ -2606,7 +3406,7 @@ async function handleInsertOntologySave() {
 
     // Get all current column headers and definitions
     const allHeaders = getColumnHeaders(); // already includes customs
-    const allColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
+    const allColumns = getColumnDefinitions();
 
     // The "known predicates" are all column headers.
     // We assume the first header is the Subject (e.g., "IRI").
@@ -2736,12 +3536,14 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
   const cleanedRows = [];
   const unmatchedHeaders = [];
   const ignoredColumns = [];
+  const activeSubjectHeader = getActiveViewKey() === VIEW_KEYS.RELATA ? 'subject' : 'iri';
 
   // Alias mapping to support variations in common headers
   const headerAliases = {
-    "iri": "iri",
-    "IRI": "iri",
-    "id": "iri",
+    "iri": activeSubjectHeader,
+    "IRI": activeSubjectHeader,
+    "id": activeSubjectHeader,
+    "subject": activeSubjectHeader,
     "label": "label",
     "rdfs:label": "label",
     "http://www.w3.org/2000/01/rdf-schema#label": "label",
@@ -2802,21 +3604,32 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
       return { valid: false, errors: ['File could not be parsed or is empty'] };
     }
 
-    const expectedCols = BASE_COLS + customPredicates.length;
+    const expectedCols = BASE_COLS + getPredicateRegistry().length;
 
     rows.forEach((row, i) => {
-      const cleanedRow = row.slice(0, expectedCols); // Trim excess columns
+      let cleanedRow;
 
-      if (row.length < expectedCols) {
-        console.info(`[validateTableData] Padding row ${i + 1} with empty cells`);
-        while (row.length < expectedCols) {
-          row.push("");
+      if (mappedHeader) {
+        cleanedRow = new Array(expectedCols).fill("");
+        mappedHeader.forEach((mappedName, sourceIndex) => {
+          const targetIndex = known.indexOf(mappedName);
+          if (targetIndex >= 0 && targetIndex < expectedCols) {
+            cleanedRow[targetIndex] = row[sourceIndex] ?? "";
+          }
+        });
+      } else {
+        cleanedRow = row.slice(0, expectedCols); // Trim excess columns
+        if (row.length < expectedCols) {
+          console.info(`[validateTableData] Padding row ${i + 1} with empty cells`);
+          while (cleanedRow.length < expectedCols) {
+            cleanedRow.push("");
+          }
         }
       }
 
       const typeValue = cleanedRow[2]; // Expecting "element type" column
       const validTypes = getElementTypes();
-      if (!validTypes.includes(typeValue)) {
+      if (typeValue && !validTypes.includes(typeValue)) {
         const msg2 = `Row ${i + 1} has invalid Element Type: "${typeValue}"`;
         console.warn(msg2);
         errors.push(msg2);
@@ -3348,9 +4161,15 @@ document.getElementById("new-import-file").addEventListener("change", handleNewI
 
 // Event Listeners for Predicate Management
 document.getElementById('managePredicatesBtn').addEventListener('click', () => {
-  document.getElementById('predicate-iri').value = '';
-  renderPredicateModesChecklist('predicate-modes-list');
-  document.getElementById('manage-predicates-modal').style.display = 'block';
+  openManagePredicatesModal();
+});
+document.getElementById('predicate-iri')?.addEventListener('input', updatePredicateIriSuggestions);
+document.getElementById('predicate-iri')?.addEventListener('focus', updatePredicateIriSuggestions);
+
+document.querySelectorAll('[data-view-switch]').forEach((button) => {
+  button.addEventListener('click', () => {
+    switchView(button.dataset.viewSwitch);
+  });
 });
 
 // Event Listener for Prefix Manager Button
@@ -3424,7 +4243,9 @@ async function bootstrapApp() {
 TOM.Core = {
   bootstrap: bootstrapApp,
   getHotInstance: () => hotInstance,
-  getCustomPredicates: () => customPredicates.slice(),
+  getCustomPredicates: () => getCustomPredicateIris(),
+  getPredicateRegistry: () => getPredicateRegistry().map((record) => ({ ...record })),
+  getActiveView: () => getActiveViewKey(),
   getOntologySettings,
   settingsLoad,
   showToast,
@@ -3441,5 +4262,6 @@ TOM.Core = {
   handleExport,
   addRowsToTable,
   removeRowsFromBottom,
+  switchView,
 };
 })();
