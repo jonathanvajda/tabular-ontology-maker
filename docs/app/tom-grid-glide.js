@@ -517,6 +517,10 @@ function buildSchema(headers, columns, previousSchema) {
       strict: column.strict,
       allowInvalid: column.allowInvalid,
       source: column.source,
+      hidden:
+        typeof column.hidden === "boolean"
+          ? column.hidden
+          : previous?.hidden === true,
       allowWrapping:
         column.allowWrapping === true ||
         field === "definition" ||
@@ -1141,6 +1145,55 @@ function createGrid(container, config) {
     return state.schema.filter((meta) => !meta.hidden);
   }
 
+  function flattenColumnSelectors(selectors) {
+    return selectors.flatMap((selector) => (Array.isArray(selector) ? flattenColumnSelectors(selector) : [selector]));
+  }
+
+  function resolveSchemaIndexes(selectors) {
+    return flattenColumnSelectors(selectors)
+      .map((selector) => {
+        if (typeof selector === "number" && Number.isFinite(selector)) {
+          return selector;
+        }
+
+        if (typeof selector === "string") {
+          const byHeader = state.schema.find((meta) => meta.header === selector);
+          if (byHeader) return byHeader.index;
+
+          const byField = state.schema.find((meta) => meta.field === selector);
+          if (byField) return byField.index;
+        }
+
+        if (selector && typeof selector === "object") {
+          if (typeof selector.index === "number" && Number.isFinite(selector.index)) {
+            return selector.index;
+          }
+
+          if (typeof selector.header === "string") {
+            const byHeader = state.schema.find((meta) => meta.header === selector.header);
+            if (byHeader) return byHeader.index;
+          }
+
+          if (typeof selector.field === "string") {
+            const byField = state.schema.find((meta) => meta.field === selector.field);
+            if (byField) return byField.index;
+          }
+        }
+
+        return -1;
+      })
+      .filter((index) => index >= 0 && index < state.schema.length);
+  }
+
+  function setHiddenColumnsInternal(selectors) {
+    const hiddenIndexes = new Set(resolveSchemaIndexes(selectors));
+    state.schema.forEach((meta) => {
+      meta.hidden = hiddenIndexes.has(meta.index);
+    });
+    render();
+    return Array.from(hiddenIndexes).sort((a, b) => a - b);
+  }
+
   function getSchemaIndexForVisibleCol(visibleColIndex) {
     const meta = visibleSchema()[visibleColIndex];
     return meta ? meta.index : -1;
@@ -1407,6 +1460,11 @@ function createGrid(container, config) {
     getColHeader() {
       return state.schema.map((meta) => meta.header);
     },
+    getHiddenColumns() {
+      return state.schema
+        .filter((meta) => meta.hidden === true)
+        .map((meta) => meta.index);
+    },
     getSourceDataAtRow(rowIndex) {
       return objectRowToArray(getRowObject(rowIndex), state.schema);
     },
@@ -1469,6 +1527,24 @@ function createGrid(container, config) {
       const count = Math.max(0, amount || 0);
       state.rows.splice(safeIndex, count);
       render();
+    },
+    setHiddenColumns(...selectors) {
+      return setHiddenColumnsInternal(selectors);
+    },
+    hideColumns(...selectors) {
+      const nextHidden = new Set(this.getHiddenColumns());
+      resolveSchemaIndexes(selectors).forEach((index) => {
+        nextHidden.add(index);
+      });
+      return setHiddenColumnsInternal(Array.from(nextHidden));
+    },
+    showColumns(...selectors) {
+      const visibleIndexes = new Set(resolveSchemaIndexes(selectors));
+      const nextHidden = this.getHiddenColumns().filter((index) => !visibleIndexes.has(index));
+      return setHiddenColumnsInternal(nextHidden);
+    },
+    showAllColumns() {
+      return setHiddenColumnsInternal([]);
     },
     setSchema(nextHeaders, nextColumns) {
       const headers = Array.isArray(nextHeaders)

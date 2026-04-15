@@ -3,7 +3,26 @@
 const TOM = (window.TOM = window.TOM || {});
 const CoreUtils = window.TOMCoreUtils || {};
 
-let customPredicates = [];
+const VIEW_KEYS = {
+  ONTOLOGY: 'ontology',
+  RELATA: 'relata'
+};
+
+const VIEW_LABELS = {
+  [VIEW_KEYS.ONTOLOGY]: 'Ontology',
+  [VIEW_KEYS.RELATA]: 'Relata'
+};
+
+const BASE_COLUMN_HEADERS = [
+  'iri',
+  'label',
+  'element type',
+  'definition',
+  'is a',
+  'is curated in ontology'
+];
+
+let predicateRegistry = [];
 let hotInstance = null;
 let hotInitDone = false;
 let currentImportFile = null;
@@ -145,6 +164,94 @@ function getOntologySettings() {
   return SETTINGS_CACHE;
 }
 
+function normalizePredicateMode(mode, iri) {
+  return mode === 'iri' ? 'iri' : (mode === 'literal' ? 'literal' : defaultModeForPredicate(iri));
+}
+
+function normalizePredicateIri(iri) {
+  return String(iri || '').trim();
+}
+
+function normalizePredicateRecord(record, fallback = {}) {
+  const iri = normalizePredicateIri(record?.iri ?? fallback?.iri);
+  if (!iri) return null;
+
+  return {
+    iri,
+    objectMode: normalizePredicateMode(
+      record?.objectMode ?? fallback?.objectMode ?? getPredicateValueModes()[iri],
+      iri
+    ),
+    showInOntology: record?.showInOntology ?? fallback?.showInOntology ?? true,
+    showInRelata: record?.showInRelata ?? fallback?.showInRelata ?? true,
+  };
+}
+
+function getPredicateRegistry() {
+  return predicateRegistry;
+}
+
+function getPredicateRecord(iri) {
+  const normalized = normalizePredicateIri(iri);
+  return getPredicateRegistry().find((record) => record.iri === normalized) || null;
+}
+
+function getPredicateRecordByColumnIndex(colIndex) {
+  if (colIndex < BASE_COLS) return null;
+  return getPredicateRegistry()[colIndex - BASE_COLS] || null;
+}
+
+function getCustomPredicateIris() {
+  return getPredicateRegistry().map((record) => record.iri);
+}
+
+function replacePredicateRegistry(nextEntries) {
+  const previousByIri = new Map(getPredicateRegistry().map((record) => [record.iri, record]));
+  const nextRegistry = (Array.isArray(nextEntries) ? nextEntries : [])
+    .map((entry) => {
+      if (typeof entry === 'string') {
+        return normalizePredicateRecord({ iri: entry }, previousByIri.get(normalizePredicateIri(entry)));
+      }
+
+      const iri = normalizePredicateIri(entry?.iri);
+      return normalizePredicateRecord(entry, previousByIri.get(iri));
+    })
+    .filter(Boolean);
+
+  predicateRegistry.splice(0, predicateRegistry.length, ...nextRegistry);
+  predicateRegistry.forEach((record) => {
+    const modes = getPredicateValueModes();
+    modes[record.iri] = record.objectMode;
+  });
+  return getPredicateRegistry();
+}
+
+function upsertPredicateRecord(iri, overrides = {}) {
+  const normalizedIri = normalizePredicateIri(iri);
+  if (!normalizedIri) return null;
+
+  const existingIndex = getPredicateRegistry().findIndex((record) => record.iri === normalizedIri);
+  const existing = existingIndex >= 0 ? getPredicateRegistry()[existingIndex] : null;
+  const nextRecord = normalizePredicateRecord({
+    iri: normalizedIri,
+    objectMode: overrides.objectMode ?? existing?.objectMode,
+    showInOntology: overrides.showInOntology ?? existing?.showInOntology,
+    showInRelata: overrides.showInRelata ?? existing?.showInRelata,
+  }, existing || {});
+
+  if (!nextRecord) return null;
+
+  if (existingIndex >= 0) {
+    getPredicateRegistry()[existingIndex] = nextRecord;
+  } else {
+    getPredicateRegistry().push(nextRecord);
+  }
+
+  const modes = getPredicateValueModes();
+  modes[nextRecord.iri] = nextRecord.objectMode;
+  return nextRecord;
+}
+
 // === Predicate Value Modes =====================================
 // Store per-predicate value mode: 'iri' | 'literal' (default inferred)
 function getPredicateValueModes() {
@@ -153,13 +260,21 @@ function getPredicateValueModes() {
   return s.predicateValueModes;
 }
 function getPredicateValueMode(iri) {
+  const record = getPredicateRecord(iri);
+  if (record?.objectMode) return record.objectMode;
   const m = getPredicateValueModes();
   return m[iri] || null; // null => not set
 }
 function setPredicateValueMode(iri, mode) {
+  const normalizedIri = normalizePredicateIri(iri);
+  const normalizedMode = normalizePredicateMode(mode, normalizedIri);
   const s = getOntologySettings();
   s.predicateValueModes = s.predicateValueModes || {};
-  s.predicateValueModes[iri] = mode; // 'iri' | 'literal'
+  s.predicateValueModes[normalizedIri] = normalizedMode;
+  const record = getPredicateRecord(normalizedIri);
+  if (record) {
+    record.objectMode = normalizedMode;
+  }
 }
 async function savePredicateValueModes() {
   await saveOntologySettings(getOntologySettings());
@@ -463,7 +578,7 @@ function buildReadableIri(label, settings, existingIris = new Set()) {
 
 // Gets the columns definitions for the Handsontable instance.
 const getColumnDefinitions = () => {
-  return [
+  const baseColumns = [
     { type: 'text' }, // IRI
     { type: 'text' }, // Label
     {
@@ -500,6 +615,13 @@ const getColumnDefinitions = () => {
     },
     { type: 'text' }, // is curated in ontology
   ];
+
+  const predicateColumns = getPredicateRegistry().map((record) => ({
+    type: 'text',
+    hidden: record.showInOntology === false ? true : undefined
+  }));
+
+  return baseColumns.concat(predicateColumns);
 };
 
 
@@ -517,7 +639,7 @@ const getInitialData = () => {
 // Gets the column headers for the Handsontable instance.  
 const getColumnHeaders = () => {
   console.info('getColumnHeaders happened');
-  return ["iri", "label", "element type", "definition", "is a", "is curated in ontology"].concat(customPredicates);
+  return BASE_COLUMN_HEADERS.concat(getCustomPredicateIris());
 };
 
 // Creates a Handsontable instance in the given container with the provided data and column definitions.
@@ -537,7 +659,7 @@ const createTable = (container, data, colHeaders, columns) => {
 
       // For custom predicate columns, enforce IRI vs literal
       if (col >= BASE_COLS) {
-        const predIri = customPredicates[col - BASE_COLS];
+        const predIri = getPredicateRecordByColumnIndex(col)?.iri;
         const mode = getPredicateValueMode(predIri) || defaultModeForPredicate(predIri);
 
         if (mode === 'iri') {
@@ -575,7 +697,7 @@ const createTable = (container, data, colHeaders, columns) => {
       }
 
       if (colIndex >= BASE_COLS) {
-        const predIri = customPredicates[colIndex - BASE_COLS];
+        const predIri = getPredicateRecordByColumnIndex(colIndex)?.iri;
         const mode = getPredicateValueMode(predIri) || defaultModeForPredicate(predIri);
 
         if (mode === 'iri') {
@@ -765,12 +887,13 @@ function buildOntologyExportQuads(rows) {
       ));
     }
 
-    customPredicates.forEach((predicate, idx) => {
+    getPredicateRegistry().forEach((predicateRecord, idx) => {
+      const predicate = predicateRecord.iri;
       const colIndex = BASE_COLS + idx;
       const cellValue = row[colIndex];
       if (!cellValue) return;
 
-      const mode = getPredicateValueMode(predicate) || defaultModeForPredicate(predicate);
+      const mode = predicateRecord.objectMode || getPredicateValueMode(predicate);
       const valueText = String(cellValue).trim();
 
       if (mode === 'iri') {
@@ -1268,7 +1391,7 @@ async function reloadSavedSession() {
 
     // adopt discovered extra predicates as your custom columns (sorted for stability)
     const extraList = Array.from(extraPreds).sort();
-    customPredicates.splice(0, customPredicates.length, ...extraList);
+    replacePredicateRegistry(extraList);
 
     const finalRows = rowsTmp.map(({ row, pMap }) => {
       const extended = row.concat(extraList.map(() => ''));
@@ -1279,8 +1402,8 @@ async function reloadSavedSession() {
       return extended;
     });
 
-    const newHeaders = getColumnHeaders(); // base + customPredicates
-    const newColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
+    const newHeaders = getColumnHeaders();
+    const newColumns = getColumnDefinitions();
     hotInstance.setSchema(newHeaders, newColumns);
     hotInstance.replaceRows(finalRows, 'LoadData');
     harvestRowsIntoVocab?.(finalRows);
@@ -1705,8 +1828,39 @@ function getCustomPredicateColumns() {
   return out;
 }
 
+function getHiddenColumnIndexes() {
+  return hotInstance?.getHiddenColumns?.() || [];
+}
+
+function getHiddenColumnSet() {
+  return new Set(getHiddenColumnIndexes());
+}
+
+function setOntologyColumnVisibility(index, visible) {
+  if (!hotInstance) return;
+
+  if (visible) {
+    hotInstance.showColumns(index);
+  } else {
+    hotInstance.hideColumns(index);
+  }
+
+  const record = getPredicateRecordByColumnIndex(index);
+  if (record) {
+    record.showInOntology = visible;
+  }
+}
+
+function showAllOntologyColumns() {
+  if (!hotInstance) return;
+  hotInstance.showAllColumns();
+  getPredicateRegistry().forEach((record) => {
+    record.showInOntology = true;
+  });
+}
+
 /**
- * Build the predicate modes checklist (custom predicates only).
+ * Build the predicate and column management table.
  * containerOrId: element or element id where the list goes.
  */
 function renderPredicateModesChecklist(containerOrId) {
@@ -1715,87 +1869,121 @@ function renderPredicateModesChecklist(containerOrId) {
     : containerOrId;
   if (!container) return;
 
-  // Collect custom predicate IRIs from your known list
-  // You already track them in `customPredicates` and align by BASE_COLS.
-  const preds = Array.isArray(customPredicates) ? [...customPredicates] : [];
-  const modes = getPredicateValueModes();
+  const headers = getColumnHeaders();
+  const hiddenColumns = getHiddenColumnSet();
 
-  // Clear container
   container.innerHTML = '';
 
-  // Build table
+  const intro = document.createElement('p');
+  intro.style.margin = '0 0 0.75rem';
+  intro.style.fontSize = '0.92rem';
+  intro.textContent = 'Ontology visibility is session-only. Save & Close persists predicate object mode choices.';
+  container.appendChild(intro);
+
+  const controls = document.createElement('div');
+  controls.style.display = 'flex';
+  controls.style.justifyContent = 'flex-end';
+  controls.style.marginBottom = '0.75rem';
+
+  const showAllBtn = document.createElement('button');
+  showAllBtn.type = 'button';
+  showAllBtn.textContent = 'Show All Columns';
+  showAllBtn.addEventListener('click', () => {
+    showAllOntologyColumns();
+    renderPredicateModesChecklist(container);
+  });
+  controls.appendChild(showAllBtn);
+  container.appendChild(controls);
+
   const table = document.createElement('table');
-  table.style.width = '80%';
+  table.style.width = '100%';
   table.style.borderCollapse = 'collapse';
   table.style.padding = '0';
   table.style.margin = '0';
 
-  // Header
   const tableHead = document.createElement('thead');
   const headerRow = document.createElement('tr');
-
-  const thPredicate = document.createElement('th');
-  thPredicate.textContent = 'Predicate';
-  thPredicate.style.textAlign = 'left';
-  thPredicate.style.padding = '2px 4px';
-  thPredicate.style.borderBottom = '1px solid #ccc';
-
-  const thIRI = document.createElement('th');
-  thIRI.textContent = 'Object is IRI?';
-  thIRI.style.textAlign = 'center';
-  thIRI.style.padding = '2px 4px';
-  thIRI.style.borderBottom = '1px solid #ccc';
-
-  // Build DOM heirarchy
-  headerRow.appendChild(thPredicate);
-  headerRow.appendChild(thIRI);
+  [
+    { label: 'Column', align: 'left' },
+    { label: `Show in ${VIEW_LABELS[VIEW_KEYS.ONTOLOGY]}`, align: 'center' },
+    { label: `Show in ${VIEW_LABELS[VIEW_KEYS.RELATA]}`, align: 'center' },
+    { label: 'Object is IRI?', align: 'center' },
+  ].forEach(({ label, align }) => {
+    const th = document.createElement('th');
+    th.textContent = label;
+    th.style.textAlign = align;
+    th.style.padding = '2px 4px';
+    th.style.borderBottom = '1px solid #ccc';
+    headerRow.appendChild(th);
+  });
   tableHead.appendChild(headerRow);
   table.appendChild(tableHead);
 
-  // Populate rows
   const tBody = document.createElement('tbody');
-  
 
-  preds.forEach((iri, i) => {
+  headers.forEach((header, index) => {
+    const predicateRecord = getPredicateRecordByColumnIndex(index);
     const tr = document.createElement('tr');
 
-    // predicate label (left)
     const tdLabel = document.createElement('td');
-    tdLabel.style.padding = '2px';
+    tdLabel.style.padding = '4px';
     tdLabel.style.borderBottom = '1px solid #f0f0f0';
-
-    const nice = (typeof iriToNiceLabel === 'function' ? iriToNiceLabel(iri) : iri);
     const label = document.createElement('label');
-    const checkboxId = `pred-mode-${i}`;
-    label.setAttribute('for', checkboxId);
-    label.textContent = nice;
-    label.title = iri; // hover shows full IRI
+    label.textContent = predicateRecord ? iriToNiceLabel(header) : header;
+    label.title = header;
     tdLabel.appendChild(label);
 
-    // checkbox (right)
-    const tdChk = document.createElement('td');
-    tdChk.style.padding = '2px';
-    tdChk.style.borderBottom = '1px solid #f0f0f0';
-    tdChk.style.textAlign = 'center';
-
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.id = checkboxId;
-    checkbox.dataset.predicateIri = iri;
-
-    const current = modes[iri] || defaultModeForPredicate(iri);
-    checkbox.checked = (current === 'iri');
-
-    checkbox.addEventListener('change', (ev) => {
-      const pred = ev.currentTarget.dataset.predicateIri;
-      setPredicateValueMode(pred, ev.currentTarget.checked ? 'iri' : 'literal');
-      // no save here; your Save button calls savePredicateValueModes()
+    const tdOntology = document.createElement('td');
+    tdOntology.style.padding = '4px';
+    tdOntology.style.borderBottom = '1px solid #f0f0f0';
+    tdOntology.style.textAlign = 'center';
+    const ontologyCheckbox = document.createElement('input');
+    ontologyCheckbox.type = 'checkbox';
+    ontologyCheckbox.checked = !hiddenColumns.has(index);
+    ontologyCheckbox.addEventListener('change', (event) => {
+      setOntologyColumnVisibility(index, event.currentTarget.checked);
     });
+    tdOntology.appendChild(ontologyCheckbox);
 
-    tdChk.appendChild(checkbox);
+    const tdRelata = document.createElement('td');
+    tdRelata.style.padding = '4px';
+    tdRelata.style.borderBottom = '1px solid #f0f0f0';
+    tdRelata.style.textAlign = 'center';
+
+    const tdMode = document.createElement('td');
+    tdMode.style.padding = '4px';
+    tdMode.style.borderBottom = '1px solid #f0f0f0';
+    tdMode.style.textAlign = 'center';
+
+    if (predicateRecord) {
+      const relataCheckbox = document.createElement('input');
+      relataCheckbox.type = 'checkbox';
+      relataCheckbox.checked = predicateRecord.showInRelata !== false;
+      relataCheckbox.addEventListener('change', (event) => {
+        predicateRecord.showInRelata = event.currentTarget.checked;
+      });
+      tdRelata.appendChild(relataCheckbox);
+
+      const modeCheckbox = document.createElement('input');
+      modeCheckbox.type = 'checkbox';
+      modeCheckbox.checked = predicateRecord.objectMode === 'iri';
+      modeCheckbox.dataset.predicateIri = predicateRecord.iri;
+      modeCheckbox.addEventListener('change', (event) => {
+        const pred = event.currentTarget.dataset.predicateIri;
+        setPredicateValueMode(pred, event.currentTarget.checked ? 'iri' : 'literal');
+      });
+      tdMode.appendChild(modeCheckbox);
+    } else {
+      tdRelata.textContent = '-';
+      tdMode.textContent = '-';
+      tdRelata.style.color = '#666';
+      tdMode.style.color = '#666';
+    }
 
     tr.appendChild(tdLabel);
-    tr.appendChild(tdChk);
+    tr.appendChild(tdOntology);
+    tr.appendChild(tdRelata);
+    tr.appendChild(tdMode);
     tBody.appendChild(tr);
   });
 
@@ -1832,6 +2020,7 @@ function renderCustomPredicateChecklist(containerOrId, opts = {}) {
 
   // Build list of items
   const items = getCustomPredicateColumns();
+  const hiddenColumns = getHiddenColumnSet();
 
   // Clear and render
   container.innerHTML = '';
@@ -1861,7 +2050,7 @@ function renderCustomPredicateChecklist(containerOrId, opts = {}) {
     checkbox.checked = startChecked;
 
     // (Optional) show if currently hidden in HOT
-    const hiddenBadge = hidden.includes(index) ? ' (hidden)' : '';
+    const hiddenBadge = hiddenColumns.has(index) ? ' (hidden)' : '';
 
     const label = document.createElement('label');
     label.setAttribute('for', id);
@@ -1893,24 +2082,22 @@ async function confirmAddPredicate() {
     const finalIRI = customIRI || selectedIRI;
 
     if (finalIRI) {
-      if (customPredicates.includes(finalIRI)) {
+      if (getPredicateRecord(finalIRI)) {
         alert("Predicate already added.");
       } else {
-        customPredicates.push(finalIRI);
-
-         // Initialize value mode for this new predicate (once)
-         if (!getPredicateValueMode(finalIRI)) {
-           setPredicateValueMode(finalIRI, defaultModeForPredicate(finalIRI));
-           //await savePredicateValueModes();
-         }
+        upsertPredicateRecord(finalIRI, {
+          objectMode: getPredicateValueMode(finalIRI) || defaultModeForPredicate(finalIRI),
+          showInOntology: true,
+          showInRelata: true,
+        });
 
         const newHeaders = getColumnHeaders(); // base + customs
-        const newColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
+        const newColumns = getColumnDefinitions();
         const oldData = hotInstance.getData();
         const validTypes = getElementTypes();
 
         const cleanedRows = oldData.map(row => {
-          const fixed = Array.from({ length: BASE_COLS + customPredicates.length }, (_, i) => row[i] ?? '');
+          const fixed = Array.from({ length: BASE_COLS + getPredicateRegistry().length }, (_, i) => row[i] ?? '');
 
           // sanitize element type
           if (!validTypes.includes(fixed[2])) fixed[2] = '';
@@ -1985,7 +2172,9 @@ function collectPredicateIrisFromHeaders() {
   if (!hotInstance) return [];
   const headers = hotInstance.getColHeader(); // includes hidden
   const set = new Set();
-  for (const h of headers) set.add(p);
+  for (const h of headers) {
+    headerToPredicateIrisForRules(h).forEach((iri) => set.add(iri));
+  }
   return Array.from(set);
 }
 
@@ -2318,7 +2507,7 @@ async function handleInsertDataSave() {
     const extension = parseFileExtension(currentImportFile.name);
     const parsed = await parseSpreadsheetData(currentImportFile, extension, hasHeader);
     const allHeaders = getColumnHeaders(); // already includes customs
-    const allColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
+    const allColumns = getColumnDefinitions();
 
     const knownPredicates = allHeaders; // use as the canonical expected headers
 
@@ -2606,7 +2795,7 @@ async function handleInsertOntologySave() {
 
     // Get all current column headers and definitions
     const allHeaders = getColumnHeaders(); // already includes customs
-    const allColumns = getColumnDefinitions().concat(customPredicates.map(() => ({ type: 'text' })));
+    const allColumns = getColumnDefinitions();
 
     // The "known predicates" are all column headers.
     // We assume the first header is the Subject (e.g., "IRI").
@@ -2802,7 +2991,7 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
       return { valid: false, errors: ['File could not be parsed or is empty'] };
     }
 
-    const expectedCols = BASE_COLS + customPredicates.length;
+    const expectedCols = BASE_COLS + getPredicateRegistry().length;
 
     rows.forEach((row, i) => {
       const cleanedRow = row.slice(0, expectedCols); // Trim excess columns
@@ -3424,7 +3613,8 @@ async function bootstrapApp() {
 TOM.Core = {
   bootstrap: bootstrapApp,
   getHotInstance: () => hotInstance,
-  getCustomPredicates: () => customPredicates.slice(),
+  getCustomPredicates: () => getCustomPredicateIris(),
+  getPredicateRegistry: () => getPredicateRegistry().map((record) => ({ ...record })),
   getOntologySettings,
   settingsLoad,
   showToast,
