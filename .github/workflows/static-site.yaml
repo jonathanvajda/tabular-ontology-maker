@@ -33,18 +33,18 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "latest"
 
       - name: Install JavaScript dependencies
         run: npm install
 
-      - name: Run Jest
-        run: npm test
+      - name: Run Jest with coverage
+        run: npm run test:coverage
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "latest"
 
       - name: Install Python dependencies
         run: python -m pip install --upgrade pip rdflib

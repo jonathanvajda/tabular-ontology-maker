@@ -63,7 +63,7 @@ h3 {
   transform: translate(-50%, -50%);
   width: min(92vw, 760px) !important;
   max-width: 92vw;
-  max-height: 90vh;
+  max-height: calc(100vh - 2rem);
   display: none;
   flex-direction: column;
   overflow: hidden;
@@ -138,6 +138,70 @@ h3 {
 #manage-predicates-modal,
 #insert-data-modal {
   width: min(92vw, 760px) !important;
+}
+
+#manage-predicates-modal {
+  top: 5% !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: min(80vw, 1400px) !important;
+  max-width: 80vw;
+  max-height: 90vh;
+}
+
+.predicate-modal-scroll {
+  overflow: auto;
+}
+
+.predicate-modal-layout {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.predicate-modal-panel {
+  min-width: 0;
+  background: rgba(127, 127, 127, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.predicate-modal-add-panel {
+  flex: 0 1 42%;
+}
+
+.predicate-modal-manage-panel {
+  flex: 1 1 58%;
+}
+
+.predicate-modal-panel h3 {
+  font-size: 2rem;
+  margin-top: 0;
+}
+
+.predicate-lookup-help {
+  margin-top: 0.4rem;
+  color: var(--ont-muted, #4b5563);
+  font-size: 1.35rem;
+  line-height: 1.35;
+}
+
+@media (max-width: 900px) {
+  #manage-predicates-modal {
+    width: min(94vw, 1400px) !important;
+    max-width: 94vw;
+  }
+
+  .predicate-modal-layout {
+    flex-direction: column;
+  }
+
+  .predicate-modal-add-panel,
+  .predicate-modal-manage-panel {
+    flex: 1 1 auto;
+  }
 }
 
 #ontology-grid {
