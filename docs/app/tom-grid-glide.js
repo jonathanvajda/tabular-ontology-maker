@@ -1084,11 +1084,12 @@ function buildEditorDescriptor(cell) {
 
 function remapRowsToSchema(rows, oldSchema, newSchema) {
   const previousByHeader = new Map((oldSchema || []).map((meta) => [meta.header, meta]));
+  const previousByField = new Map((oldSchema || []).map((meta) => [meta.field, meta]));
 
   return (rows || []).map((row) => {
     const next = blankObjectRow(newSchema);
     newSchema.forEach((meta) => {
-      const previous = previousByHeader.get(meta.header);
+      const previous = previousByHeader.get(meta.header) || previousByField.get(meta.field);
       if (previous) {
         next[meta.field] = row?.[previous.field] ?? "";
       }

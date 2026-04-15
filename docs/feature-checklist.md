@@ -39,7 +39,10 @@
 - [x] Update the Manage Predicates modal into a combined predicate and column visibility manager
 - [x] Keep column visibility session-only and out of IndexedDB/settings persistence
 - [x] Keep export behavior based on stored row data rather than visible columns
-- [ ] Add the `Relata` editing view on top of the predicate registry groundwork
+- [x] Add the `Relata` editing view on top of the predicate registry groundwork
+- [x] Add view switching between `Ontology` and `Relata`
+- [x] Support header-based spreadsheet import mapping so `Relata` sheets can omit hidden ontology columns
+- [x] Allow RDF export of relation rows even when structural element type is blank
 - [ ] Revisit broader workspace/data persistence after the column/predicate baseline is stable
 
 ## Verification
