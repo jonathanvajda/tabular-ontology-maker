@@ -43,10 +43,13 @@
 - [x] Add view switching between `Ontology` and `Relata`
 - [x] Support header-based spreadsheet import mapping so `Relata` sheets can omit hidden ontology columns
 - [x] Allow RDF export of relation rows even when structural element type is blank
-- [ ] Revisit broader workspace/data persistence after the column/predicate baseline is stable
+- [x] Revisit broader workspace/data persistence after the column/predicate baseline is stable
+- [x] Save a workspace snapshot alongside RDF session exports in IndexedDB
+- [x] Prefer workspace snapshot reloads and fall back to legacy RDF-only session reloads
 
 ## Verification
 - [x] Run the existing Jest suite after predicate and hidden-column stabilization
+- [ ] Verify saved-session reload restores rows, predicate modes, and active view from IndexedDB
 - [ ] Verify Turtle, N-Triples, TriG, and JSON-LD preview paths in browser
 - [ ] Verify CSV export content and escaping in browser
 - [ ] Verify JSON-LD import with a sample `.jsonld` ontology file

@@ -58,8 +58,9 @@ const output = document.getElementById('rdfOutput');
 
 // --- Constants so you can rename easily ---
 const DB_NAME = 'TabularOntologyDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'rdfStore';
+const WORKSPACE_STORE = 'workspaceStore';
 let SETTINGS_CACHE = null;
 const SETTINGS_STORE = 'ontologySettingsStore';
 
@@ -1164,6 +1165,99 @@ function idbTransactionDone(tx) {
   });
 }
 
+function cloneRowsForWorkspace(rows, expectedColumnCount = null) {
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    const nextRow = Array.isArray(row) ? row.slice() : [];
+    if (expectedColumnCount == null) return nextRow;
+    if (nextRow.length < expectedColumnCount) {
+      nextRow.push(...Array.from({ length: expectedColumnCount - nextRow.length }, () => ''));
+    }
+    return nextRow.slice(0, expectedColumnCount);
+  });
+}
+
+function isValidViewKey(viewKey) {
+  return Object.values(VIEW_KEYS).includes(viewKey);
+}
+
+function getPersistablePredicateRegistry() {
+  return getPredicateRegistry().map((record) => ({
+    iri: record.iri,
+    objectMode: normalizePredicateMode(record.objectMode, record.iri),
+  }));
+}
+
+function buildWorkspaceSnapshot(timestamp = new Date().toISOString()) {
+  const predicates = getPersistablePredicateRegistry();
+  return {
+    version: 1,
+    timestamp,
+    activeView: isValidViewKey(getActiveViewKey()) ? getActiveViewKey() : DEFAULT_VIEW,
+    predicates,
+    rows: cloneRowsForWorkspace(hotInstance?.getData?.() || [], BASE_COLS + predicates.length),
+  };
+}
+
+function normalizeWorkspaceSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return null;
+
+  const seen = new Set();
+  const predicates = (Array.isArray(snapshot.predicates) ? snapshot.predicates : [])
+    .map((entry) => {
+      const record = normalizePredicateRecord(entry);
+      if (!record || seen.has(record.iri)) return null;
+      seen.add(record.iri);
+      return {
+        iri: record.iri,
+        objectMode: normalizePredicateMode(record.objectMode, record.iri),
+      };
+    })
+    .filter(Boolean);
+
+  const expectedColumnCount = BASE_COLS + predicates.length;
+  return {
+    version: Number(snapshot.version) || 1,
+    timestamp: snapshot.timestamp || new Date().toISOString(),
+    activeView: isValidViewKey(snapshot.activeView) ? snapshot.activeView : DEFAULT_VIEW,
+    predicates,
+    rows: cloneRowsForWorkspace(snapshot.rows, expectedColumnCount),
+  };
+}
+
+function getRecordOrderValue(record) {
+  const parsedTimestamp = Date.parse(record?.timestamp || '');
+  if (Number.isFinite(parsedTimestamp)) return parsedTimestamp;
+  return typeof record?.id === 'number' ? record.id : -1;
+}
+
+async function getLatestSavedRecord(db, storeName) {
+  const tx = db.transaction(storeName, 'readonly');
+  const records = await storeGetAll(tx.objectStore(storeName));
+  await idbTransactionDone(tx);
+
+  if (!records.length) return null;
+  return records.reduce((latest, current) => {
+    if (!latest) return current;
+    return getRecordOrderValue(current) >= getRecordOrderValue(latest) ? current : latest;
+  }, null);
+}
+
+function applyWorkspaceSnapshot(snapshot) {
+  const normalized = normalizeWorkspaceSnapshot(snapshot);
+  if (!normalized || !hotInstance) return null;
+
+  replacePredicateRegistry(normalized.predicates);
+  applyViewSchema(normalized.activeView, { captureCurrent: false });
+  hotInstance.replaceRows(normalized.rows, 'LoadData');
+  harvestRowsIntoVocab?.(normalized.rows);
+
+  try {
+    renderPredicateModesChecklist('predicate-modes-list');
+  } catch (_) {}
+
+  return normalized;
+}
+
 // Delete (optional)
 async function clearOntologySettings() {
   const db = await ensureDb();
@@ -1219,18 +1313,21 @@ async function saveRDFtoIndexedDB() {
     output.value = rdfString;
 
     const db = await ensureDb();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const timestamp = new Date().toISOString();
+    const tx = db.transaction([STORE_NAME, WORKSPACE_STORE], 'readwrite');
     const store = tx.objectStore(STORE_NAME);
-    store.add({ rdfData: rdfString, format, timestamp: new Date().toISOString() });
+    const workspaceStore = tx.objectStore(WORKSPACE_STORE);
+    store.add({ rdfData: rdfString, format, timestamp });
+    workspaceStore.add(buildWorkspaceSnapshot(timestamp));
     await idbTransactionDone(tx);
 
-    console.info('RDF data saved to IndexedDB successfully.');
-    showToast('RDF data saved to database successfully.', 'success');
+    console.info('Workspace and RDF data saved to IndexedDB successfully.');
+    showToast('Workspace and RDF data saved to database successfully.', 'success');
 
     updateReloadSessionButton(); // reflect availability immediately
   } catch (e) {
     console.error('saveRDFtoIndexedDB failed:', e);
-    showToast('Failed to save RDF data to database.', 'error');
+    showToast('Failed to save workspace data to database.', 'error');
   }
 };
 
@@ -1241,11 +1338,11 @@ async function saveRDFtoIndexedDB() {
  */
 async function hasPriorSession() {
   const db = await ensureDb();
-  const tx = db.transaction(STORE_NAME, 'readonly');
-  const store = tx.objectStore(STORE_NAME);
-  const count = await idbRequest(store.count());
+  const tx = db.transaction([STORE_NAME, WORKSPACE_STORE], 'readonly');
+  const rdfCount = await idbRequest(tx.objectStore(STORE_NAME).count());
+  const workspaceCount = await idbRequest(tx.objectStore(WORKSPACE_STORE).count());
   await idbTransactionDone(tx);
-  return count > 0;
+  return rdfCount > 0 || workspaceCount > 0;
 }
 
 /**
@@ -1261,6 +1358,9 @@ function ensureDb() {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains(WORKSPACE_STORE)) {
+        db.createObjectStore(WORKSPACE_STORE, { keyPath: 'id', autoIncrement: true });
       }
       if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
         db.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
@@ -1381,21 +1481,33 @@ async function storeGetAll(store) {
 async function reloadSavedSession() {
   try {
     const db = await ensureDb();
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
+    const latestWorkspace = await getLatestSavedRecord(db, WORKSPACE_STORE);
+    const latestRdfRecord = await getLatestSavedRecord(db, STORE_NAME);
 
-    // getAll is widely supported; cursor fallback shown below if you need it
-    let all = await storeGetAll(store);
-    await idbTransactionDone(tx);
-
-    if (!all || !all.length) {
+    if (!latestWorkspace && !latestRdfRecord) {
       console.warn('No prior session found in IndexedDB.');
       showToast('No prior session found.', 'info');
       return;
     }
 
-    // Use the latest record
-    const { rdfData, format } = all[all.length - 1];
+    const shouldUseWorkspace = latestWorkspace &&
+      (!latestRdfRecord || getRecordOrderValue(latestWorkspace) >= getRecordOrderValue(latestRdfRecord));
+
+    if (shouldUseWorkspace) {
+      const restoredWorkspace = applyWorkspaceSnapshot(latestWorkspace);
+      if (restoredWorkspace) {
+        showToast(`Reloaded ${restoredWorkspace.rows.length} row${restoredWorkspace.rows.length !== 1 ? 's' : ''} from latest saved workspace`, 'success');
+        return;
+      }
+    }
+
+    if (!latestRdfRecord) {
+      console.warn('Latest workspace snapshot could not be restored and no RDF fallback was found.');
+      showToast('No compatible saved session was found.', 'info');
+      return;
+    }
+
+    const { rdfData, format } = latestRdfRecord;
 
     // Parse RDF -> quads
     const parser = new N3.Parser({ format: n3FormatForSaved(format) });
