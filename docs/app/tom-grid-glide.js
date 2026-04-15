@@ -510,6 +510,7 @@ function buildSchema(headers, columns, previousSchema) {
     return {
       field,
       header: String(header),
+      displayHeader: String(column.displayHeader || previous?.displayHeader || header),
       index,
       width: previous?.width || column.width || defaultWidthForField(field, header),
       type: column.type || "text",
@@ -574,6 +575,16 @@ function getRangeForSelection(selection) {
 function getSelectionAnchor(selection) {
   if (!selection || !selection.current || !selection.current.cell) return null;
   return selection.current.cell;
+}
+
+function rangeContainsCell(range, visibleColIndex, rowIndex) {
+  if (!range) return false;
+  return (
+    visibleColIndex >= range.x &&
+    visibleColIndex < range.x + range.width &&
+    rowIndex >= range.y &&
+    rowIndex < range.y + range.height
+  );
 }
 
 function normalizePasteMatrix(values) {
@@ -1112,6 +1123,10 @@ function createGrid(container, config) {
     destroyed: false,
     themeObserver: null,
     mediaQueryList: null,
+    contextMenu: null,
+    contextMenuNode: null,
+    lastContextMenuPoint: null,
+    portalNode: ensurePortal(),
   };
 
   state.rows = cloneObjectRows(config.data || [], state.schema);
@@ -1142,8 +1157,45 @@ function createGrid(container, config) {
     state.mediaQueryList = { mediaQueryList, handleThemeChange };
   }
 
+  const rememberContextMenuPoint = (event) => {
+    state.lastContextMenuPoint = {
+      x: Number(event?.clientX) || 0,
+      y: Number(event?.clientY) || 0,
+    };
+  };
+
+  const handleDocumentPointerDown = (event) => {
+    if (!state.contextMenu) return;
+    if (state.contextMenuNode && state.contextMenuNode.contains(event.target)) return;
+    closeContextMenu();
+  };
+
+  const handleDocumentKeyDown = (event) => {
+    if (event.key === "Escape" && state.contextMenu) {
+      closeContextMenu();
+    }
+  };
+
+  const handleWindowViewportChange = () => {
+    if (state.contextMenu) {
+      closeContextMenu();
+    }
+  };
+
+  container.addEventListener("contextmenu", rememberContextMenuPoint);
+  document.addEventListener("pointerdown", handleDocumentPointerDown, true);
+  document.addEventListener("keydown", handleDocumentKeyDown, true);
+  window.addEventListener("resize", handleWindowViewportChange);
+  window.addEventListener("scroll", handleWindowViewportChange, true);
+
   function visibleSchema() {
     return state.schema.filter((meta) => !meta.hidden);
+  }
+
+  function closeContextMenu() {
+    if (!state.contextMenu) return;
+    state.contextMenu = null;
+    render();
   }
 
   function flattenColumnSelectors(selectors) {
@@ -1198,6 +1250,180 @@ function createGrid(container, config) {
   function getSchemaIndexForVisibleCol(visibleColIndex) {
     const meta = visibleSchema()[visibleColIndex];
     return meta ? meta.index : -1;
+  }
+
+  function getSchemaIndexesForVisibleSpan(start, width) {
+    const indexes = [];
+    for (let visibleColIndex = start; visibleColIndex < start + width; visibleColIndex += 1) {
+      const schemaIndex = getSchemaIndexForVisibleCol(visibleColIndex);
+      if (schemaIndex >= 0) {
+        indexes.push(schemaIndex);
+      }
+    }
+    return indexes;
+  }
+
+  function buildContextMenuRequest(gridEvent, overrides) {
+    const kind = gridEvent?.kind;
+    const location = Array.isArray(gridEvent?.location) ? gridEvent.location : [];
+    const overrideVisibleColIndex = overrides?.visibleColIndex;
+    const overrideRowIndex = overrides?.rowIndex;
+    const visibleColIndex = Number.isFinite(overrideVisibleColIndex)
+      ? Number(overrideVisibleColIndex)
+      : Number(location[0]);
+    const rowIndex = Number.isFinite(overrideRowIndex) ? Number(overrideRowIndex) : Number(location[1]);
+
+    if (!Number.isFinite(visibleColIndex) || visibleColIndex < 0) return null;
+    if (kind === "cell" && (!Number.isFinite(rowIndex) || rowIndex < 0)) return null;
+    if (kind !== "cell" && kind !== "header") return null;
+
+    const schemaIndex = getSchemaIndexForVisibleCol(visibleColIndex);
+    if (schemaIndex < 0) return null;
+
+    const selectedRange = getRangeForSelection(state.selection);
+    const effectiveRange =
+      kind === "cell" && rangeContainsCell(selectedRange, visibleColIndex, rowIndex)
+        ? selectedRange
+        : kind === "header" &&
+          selectedRange &&
+          visibleColIndex >= selectedRange.x &&
+          visibleColIndex < selectedRange.x + selectedRange.width
+        ? { x: selectedRange.x, width: selectedRange.width }
+        : null;
+
+    const rowIndexes =
+      kind === "cell"
+        ? Array.from(
+            { length: effectiveRange?.height || 1 },
+            (_, offset) => (effectiveRange?.y ?? rowIndex) + offset
+          )
+        : [];
+
+    const colIndexes = effectiveRange
+      ? getSchemaIndexesForVisibleSpan(effectiveRange.x, effectiveRange.width)
+      : [schemaIndex];
+
+    return {
+      kind,
+      point: state.lastContextMenuPoint || { x: 0, y: 0 },
+      rowIndex: kind === "cell" ? rowIndex : -1,
+      rowIndexes,
+      colIndex: schemaIndex,
+      colIndexes,
+      visibleColIndex,
+      header: state.schema[schemaIndex]?.header || "",
+      field: state.schema[schemaIndex]?.field || "",
+      closeMenu: closeContextMenu,
+    };
+  }
+
+  function getContextMenuOverlay() {
+    if (!state.contextMenu || !state.contextMenu.items?.length) return null;
+
+    const viewportWidth = window.innerWidth || 0;
+    const viewportHeight = window.innerHeight || 0;
+    const menuWidth = 220;
+    const estimatedHeight = state.contextMenu.items.length * 34 + 12;
+    const left = Math.max(8, Math.min(state.contextMenu.x, Math.max(8, viewportWidth - menuWidth - 8)));
+    const top = Math.max(8, Math.min(state.contextMenu.y, Math.max(8, viewportHeight - estimatedHeight - 8)));
+
+    const menu = React.createElement(
+      "div",
+      {
+        ref: (node) => {
+          state.contextMenuNode = node;
+        },
+        onContextMenu: (event) => {
+          event.preventDefault();
+        },
+        style: {
+          position: "fixed",
+          left: `${left}px`,
+          top: `${top}px`,
+          minWidth: `${menuWidth}px`,
+          maxWidth: "320px",
+          background: readCssVar("--ont-panel-bg", "#ffffff"),
+          color: readCssVar("--ont-text", "#1f2937"),
+          border: `1px solid ${readCssVar("--ont-border", "#d0d7de")}`,
+          borderRadius: "10px",
+          boxShadow: "0 18px 40px rgba(15, 23, 42, 0.18)",
+          padding: "0.35rem",
+          zIndex: 5000,
+        },
+      },
+      state.contextMenu.items.map((item, index) => {
+        if (item?.separator) {
+          return React.createElement("div", {
+            key: `separator-${index}`,
+            style: {
+              height: "1px",
+              background: readCssVar("--ont-border", "#d0d7de"),
+              margin: "0.3rem 0",
+            },
+          });
+        }
+
+        return React.createElement(
+          "button",
+          {
+            key: item.id || item.label || `item-${index}`,
+            type: "button",
+            disabled: item.disabled === true,
+            title: item.description || "",
+            onClick: () => {
+              if (item.disabled) return;
+              closeContextMenu();
+              if (typeof item.onSelect === "function") {
+                item.onSelect();
+              }
+            },
+            style: {
+              display: "block",
+              width: "100%",
+              textAlign: "left",
+              border: "0",
+              borderRadius: "8px",
+              background: "transparent",
+              color: "inherit",
+              padding: "0.55rem 0.75rem",
+              cursor: item.disabled ? "not-allowed" : "pointer",
+              opacity: item.disabled ? 0.45 : 1,
+              font: "inherit",
+            },
+          },
+          item.label || ""
+        );
+      })
+    );
+
+    return renderPortal(menu, state.portalNode);
+  }
+
+  function openContextMenuForGridEvent(gridEvent, preventDefault, overrides) {
+    if (typeof config.getContextMenuItems !== "function") return;
+
+    const request = buildContextMenuRequest(gridEvent, overrides);
+    if (!request) {
+      closeContextMenu();
+      return;
+    }
+
+    const items = (config.getContextMenuItems(request) || []).filter(Boolean);
+    if (!items.length) {
+      closeContextMenu();
+      return;
+    }
+
+    if (typeof preventDefault === "function") {
+      preventDefault();
+    }
+
+    state.contextMenu = {
+      x: request.point.x,
+      y: request.point.y,
+      items,
+    };
+    render();
   }
 
   function getRowObject(rowIndex) {
@@ -1316,7 +1542,7 @@ function createGrid(container, config) {
     const visible = visibleSchema();
     const columns = visible.map((meta) => ({
       id: meta.field,
-      title: meta.header,
+      title: meta.displayHeader || meta.header,
       width: meta.width,
     }));
     const rowHeights = computeRowHeights(state.rows, visible, theme, function (meta, row, rowIndex) {
@@ -1335,98 +1561,114 @@ function createGrid(container, config) {
     container.style.maxWidth = `${viewportWidth}px`;
 
     state.root.render(
-      React.createElement(DataEditor, {
-        columns,
-        rows: state.rows.length,
-        getCellContent: function getCellContent(item) {
-          return buildCell(item[0], item[1]);
-        },
-        getCellsForSelection: true,
-        gridSelection: state.selection,
-        onGridSelectionChange: function onGridSelectionChange(selection) {
-          state.selection = selection || createEmptySelection();
-          render();
-        },
-        rowMarkers: "number",
-        rowMarkerWidth: GRID_ROW_MARKER_WIDTH,
-        rowHeight: function rowHeight(rowIndex) {
-          return rowHeights[rowIndex] || GRID_ROW_HEIGHT;
-        },
-        headerHeight: GRID_HEADER_HEIGHT,
-        height: gridHeight,
-        width: gridWidth,
-        theme,
-        scaleToRem: false,
-        overscrollY: 0,
-        overscrollX: 0,
-        smoothScrollX: true,
-        smoothScrollY: true,
-        columnSelect: "multi",
-        rowSelect: "multi",
-        rangeSelect: "multi-rect",
-        fillHandle: true,
-        validateCell: function validateCell(item, newValue) {
-          const meta = visibleSchema()[item[0]];
-          if (!meta) return true;
-          const value = String(extractEditedValue(newValue) ?? "");
-
-          if (
-            meta.type === "dropdown" &&
-            meta.strict === true &&
-            Array.isArray(meta.source) &&
-            value &&
-            !meta.source.includes(value)
-          ) {
-            return false;
-          }
-
-          if (typeof config.validateCell === "function") {
-            return config.validateCell({
-              rowIndex: item[1],
-              colIndex: meta.index,
-              field: meta.field,
-              header: meta.header,
-              value,
-              rowObject: getRowObject(item[1]),
-              row: objectRowToArray(getRowObject(item[1]), state.schema),
-            });
-          }
-
-          return true;
-        },
-        provideEditor: function provideEditor(cell) {
-          return buildEditorDescriptor(cell);
-        },
-        onCellEdited: function onCellEdited(item, newValue) {
-          const meta = visibleSchema()[item[0]];
-          if (!meta) return;
-          const current = getRowObject(item[1])?.[meta.field] ?? "";
-          commitChanges(
-            [[item[1], meta.index, current, String(extractEditedValue(newValue) ?? "")]],
-            "edit"
-          );
-        },
-        onPaste: function onPaste(target, values) {
-          const anchor = target || getSelectionAnchor(state.selection);
-          if (!anchor) return false;
-          api.applyPastePatch({ col: anchor[0], row: anchor[1] }, normalizePasteMatrix(values));
-          return false;
-        },
-        onDelete: function onDelete() {
-          clearRange(getRangeForSelection(state.selection));
-          return false;
-        },
-        onColumnResize: function onColumnResize(column, newSize, visibleColIndex) {
-          const schemaIndex =
-            typeof visibleColIndex === "number"
-              ? getSchemaIndexForVisibleCol(visibleColIndex)
-              : state.schema.findIndex((meta) => meta.field === column.id);
-          if (schemaIndex >= 0) {
-            state.schema[schemaIndex].width = newSize;
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(DataEditor, {
+          columns,
+          rows: state.rows.length,
+          getCellContent: function getCellContent(item) {
+            return buildCell(item[0], item[1]);
+          },
+          getCellsForSelection: true,
+          gridSelection: state.selection,
+          onGridSelectionChange: function onGridSelectionChange(selection) {
+            state.selection = selection || createEmptySelection();
+            closeContextMenu();
             render();
-          }
-        },
-      })
+          },
+          rowMarkers: "number",
+          rowMarkerWidth: GRID_ROW_MARKER_WIDTH,
+          rowHeight: function rowHeight(rowIndex) {
+            return rowHeights[rowIndex] || GRID_ROW_HEIGHT;
+          },
+          headerHeight: GRID_HEADER_HEIGHT,
+          height: gridHeight,
+          width: gridWidth,
+          theme,
+          scaleToRem: false,
+          overscrollY: 0,
+          overscrollX: 0,
+          smoothScrollX: true,
+          smoothScrollY: true,
+          editOnType: config.editOnType !== false,
+          cellActivationBehavior: config.cellActivationBehavior || "second-click",
+          columnSelect: "multi",
+          rowSelect: "multi",
+          rangeSelect: "multi-rect",
+          fillHandle: true,
+          validateCell: function validateCell(item, newValue) {
+            const meta = visibleSchema()[item[0]];
+            if (!meta) return true;
+            const value = String(extractEditedValue(newValue) ?? "");
+
+            if (
+              meta.type === "dropdown" &&
+              meta.strict === true &&
+              Array.isArray(meta.source) &&
+              value &&
+              !meta.source.includes(value)
+            ) {
+              return false;
+            }
+
+            if (typeof config.validateCell === "function") {
+              return config.validateCell({
+                rowIndex: item[1],
+                colIndex: meta.index,
+                field: meta.field,
+                header: meta.header,
+                value,
+                rowObject: getRowObject(item[1]),
+                row: objectRowToArray(getRowObject(item[1]), state.schema),
+              });
+            }
+
+            return true;
+          },
+          provideEditor: function provideEditor(cell) {
+            return buildEditorDescriptor(cell);
+          },
+          onCellEdited: function onCellEdited(item, newValue) {
+            const meta = visibleSchema()[item[0]];
+            if (!meta) return;
+            const current = getRowObject(item[1])?.[meta.field] ?? "";
+            commitChanges(
+              [[item[1], meta.index, current, String(extractEditedValue(newValue) ?? "")]],
+              "edit"
+            );
+          },
+          onPaste: function onPaste(target, values) {
+            const anchor = target || getSelectionAnchor(state.selection);
+            if (!anchor) return false;
+            api.applyPastePatch({ col: anchor[0], row: anchor[1] }, normalizePasteMatrix(values));
+            return false;
+          },
+          onDelete: function onDelete() {
+            clearRange(getRangeForSelection(state.selection));
+            return false;
+          },
+          onCellContextMenu: function onCellContextMenu(_item, gridEvent) {
+            openContextMenuForGridEvent(gridEvent, gridEvent?.preventDefault);
+          },
+          onHeaderContextMenu: function onHeaderContextMenu(col, gridEvent) {
+            openContextMenuForGridEvent(gridEvent, gridEvent?.preventDefault, {
+              visibleColIndex: typeof col === "number" ? col : undefined,
+            });
+          },
+          onColumnResize: function onColumnResize(column, newSize, visibleColIndex) {
+            const schemaIndex =
+              typeof visibleColIndex === "number"
+                ? getSchemaIndexForVisibleCol(visibleColIndex)
+                : state.schema.findIndex((meta) => meta.field === column.id);
+            if (schemaIndex >= 0) {
+              state.schema[schemaIndex].width = newSize;
+              render();
+            }
+          },
+        }),
+        getContextMenuOverlay()
+      )
     );
   }
 
@@ -1565,6 +1807,11 @@ function createGrid(container, config) {
     destroy() {
       if (state.destroyed) return;
       state.destroyed = true;
+      container.removeEventListener("contextmenu", rememberContextMenuPoint);
+      document.removeEventListener("pointerdown", handleDocumentPointerDown, true);
+      document.removeEventListener("keydown", handleDocumentKeyDown, true);
+      window.removeEventListener("resize", handleWindowViewportChange);
+      window.removeEventListener("scroll", handleWindowViewportChange, true);
       if (state.themeObserver) {
         state.themeObserver.disconnect();
       }

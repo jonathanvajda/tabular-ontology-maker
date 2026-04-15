@@ -118,13 +118,14 @@
 
   <main style="margin: 1em;">
     <div id="toolbar">
-      <div id="view-switcher" style="display:inline-flex; gap:0.4rem; margin-right:0.5rem;">
-        <button id="viewOntologyBtn" data-view-switch="ontology" aria-pressed="true">Ontology</button>
-        <button id="viewRelataBtn" data-view-switch="relata" aria-pressed="false">Relata</button>
+      <div id="view-switcher" style="display:inline-flex; gap:0.4rem; margin-right:3rem;">
+        <button id="viewOntologyBtn" data-view-switch="ontology" aria-pressed="true">Ontology Mode</button>
+        <button id="viewRelataBtn" data-view-switch="relata" aria-pressed="false">Relata Mode</button>
       </div>
       <button id="ontologySettingsBtn">Ontology Settings</button>
-      <button id="managePrefixesBtn">Manage Prefixes</button>
+      
       <button id="ontologyImportsBtn">Ontology Imports</button>
+      <button id="managePrefixesBtn">Manage Prefixes</button>
       <button id="managePredicatesBtn">Manage Predicates</button>
       <button id="importBtn">Insert Data from File</button>
       <button id="reloadSavedSessionBtn" disabled>Reload Saved Session</button>
@@ -152,7 +153,7 @@
     </div>
 
 
-    <h3>Generated RDF</h3>
+    <h3>Code Preview</h3>
     <textarea id="rdfOutput" readonly></textarea>
   </main>
 
@@ -304,36 +305,64 @@
 
 
   <!-- Manage Predicate Modal -->
-  <div id="manage-predicates-modal" class="tom-modal" style="display:none; position:fixed; background: var(--ont-bg); border:1px solid gray; padding:20px; z-index:1000; top:25%; left:30%; width:40%;">
+  <div id="manage-predicates-modal" class="tom-modal" style="display:none; position:fixed; background: var(--ont-bg); border:1px solid gray; padding:20px; z-index:1000; top:5%; left:50%; width:80%;">
     <h2>Manage Predicates & Columns</h2>
-    <div class="tom-modal-scroll">
+    <div class="tom-modal-scroll predicate-modal-scroll">
+      <div class="predicate-modal-layout">
+        <div class="predicate-modal-panel predicate-modal-add-panel">
+          <h3>Add Predicate</h3>
+          <label for="predicate-select">Select a common predicate:</label><br>
+          <select id="predicate-select" style="width:100%">
+            <option value="skos:altLabel">alternative label (skos:altLabel)</option>
+            <option value="skos:prefLabel">preferred label (skos:prefLabel)</option>
+            <option value="skos:example">example (skos:example)</option>
+            <option value="skos:scopeNote">scope note (skos:scopeNote)</option>
+            <option value="skos:editorialNote">editorial note (skos:editorialNote)</option>
+            <option value="cco2:ont00001753">acronym (cco2:ont00001753)</option>
+            <option value="obo:IAO_0000114"> has curation status (OBO:IAO_0000114)</option>
+            <option value="rdfs:comment">comment (rdfs:comment)</option>
+            <option value="rdfs:seeAlso">see also (rdfs:seeAlso)</option>
+            <option value="rdfs:isDefinedBy">is defined by (rdfs:isDefinedBy)</option>
+            <option value="dcterms:bibliographicCitation">citation (dcterms:bibliographicCitation)</option>
+            <option value="dcterms:source">source (dcterms:source)</option>
+            <option value="dcterms:creator">creator (dcterms:creator)</option>
+            <option value="dcterms:created">created (dcterms:created)</option>
+            <option value="dcterms:description">description (dcterms:description)</option>
+            <option value="oboInOwl:hasDbXref">has database cross reference (oboInOwl:hasDbXref)</option>
+          </select><br><br>
 
-    <label for="predicate-select">Select a common predicate:</label><br>
-    <select id="predicate-select" style="width:100%">
-      <option value="skos:altLabel">alternative label (skos:altLabel)</option>
-      <option value="skos:prefLabel">preferred label (skos:prefLabel)</option>
-      <option value="skos:example">example (skos:example)</option>
-      <option value="skos:scopeNote">scope note (skos:scopeNote)</option>
-      <option value="skos:editorialNote">editorial note (skos:editorialNote)</option>
-      <option value="cco2:ont00001753">acronym (cco2:ont00001753)</option>
-      <option value="obo:IAO_0000114"> has curation status (OBO:IAO_0000114)</option>
-      <option value="rdfs:comment">comment (rdfs:comment)</option>
-      <option value="rdfs:seeAlso">see also (rdfs:seeAlso)</option>
-      <option value="rdfs:isDefinedBy">is defined by (rdfs:isDefinedBy)</option>
-      <option value="dcterms:bibliographicCitation">citation (dcterms:bibliographicCitation)</option>
-      <option value="dcterms:source">source (dcterms:source)</option>
-      <option value="dcterms:creator">creator (dcterms:creator)</option>
-      <option value="dcterms:created">created (dcterms:created)</option>
-      <option value="dcterms:description">description (dcterms:description)</option>
-      <option value="oboInOwl:hasDbXref">has database cross reference (oboInOwl:hasDbXref)</option>
-    </select><br><br>
+          <label for="predicate-iri">Or enter a custom IRI:</label><br>
+          <input type="text" id="predicate-iri" list="predicate-iri-suggestions" style="width:100%" placeholder="Type a property label, CURIE, or IRI"><br>
+          <datalist id="predicate-iri-suggestions"></datalist>
+          <div id="predicate-iri-help" class="predicate-lookup-help">
+            Suggestions only include annotation, object, and datatype properties.
+          </div><br>
+          <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem;">
+            <label for="predicate-target-view" style="flex:1 1 220px;">
+              Add to views:<br>
+              <select id="predicate-target-view" style="width:100%">
+                <option value="both">Both `Ontology` and `Relata`</option>
+                <option value="ontology">`Ontology` only</option>
+                <option value="relata">`Relata` only</option>
+              </select>
+            </label>
+            <label for="predicate-object-mode" style="flex:1 1 220px;">
+              Object values:<br>
+              <select id="predicate-object-mode" style="width:100%">
+                <option value="auto">Auto-detect</option>
+                <option value="literal">Literal</option>
+                <option value="iri">IRI</option>
+              </select>
+            </label>
+          </div>
+          <button id="predicateSettingsModalAddPredicateBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Add</button>
+        </div>
 
-    <label for="predicate-iri">Or enter a custom IRI:</label><br>
-    <input type="text" id="predicate-iri" style="width:100%" placeholder="e.g. http://example.org/myPredicate"><br><br>
-    <button id="predicateSettingsModalAddPredicateBtn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Add</button>
-
-    <hr>
-    <div id="predicate-modes-list"></div>
+        <div class="predicate-modal-panel predicate-modal-manage-panel">
+          <h3>Manage Existing Columns</h3>
+          <div id="predicate-modes-list"></div>
+        </div>
+      </div>
     </div>
     <div class="tom-modal-footer" style="margin-top:12px; text-align:right;">
       <button id="manage-predicates-save-btn" style="height: 3.5em; padding: 4px 8px; font-size: 0.85rem; line-height: normal;">Save & Close</button>
@@ -403,6 +432,7 @@
   <script src="./app/n3.min.js"></script>
   <script src="./app/jsonld.min.js"></script>
   <script src="./app/tom-core-utils.js"></script>
+  <script src="./app/tom-feature-utils.js"></script>
   <script src="./app/build-info.js"></script>
 
   <script>
