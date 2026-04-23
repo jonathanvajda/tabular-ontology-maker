@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Jonathan Vajda
+
 import "./tom-grid-glide.js";
 import "./tom-core.js";
 import "./tom-ui.js";

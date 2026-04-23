@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Jonathan Vajda
+
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
     module.exports = factory();

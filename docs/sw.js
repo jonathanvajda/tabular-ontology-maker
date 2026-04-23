@@ -1,4 +1,7 @@
 /* sw.js */
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Jonathan Vajda
+
 // --- Tune these names when you deploy a new version ---
 const APP_VERSION = 'v0.2.0';                  // bump on each release
 const PRECACHE_NAME = `precache-${APP_VERSION}`;

@@ -1,6 +1,7 @@
 {
   "name": "tabular-ontology-maker",
   "private": true,
+  "license": "GPL-3.0-only",
   "scripts": {
     "test": "jest --runInBand",
     "test:coverage": "jest --runInBand --coverage"

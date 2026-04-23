@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Jonathan Vajda
+
 const { deriveOntologyImportTarget } = require("../docs/app/tom-core-utils.js");
 
 function quad(subject, predicate, object) {
