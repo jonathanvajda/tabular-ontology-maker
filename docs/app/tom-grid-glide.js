@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Jonathan Vajda
+
 const TOM = (window.TOM = window.TOM || {});
 const GDG = window.GlideDataGrid || {};
 const React = GDG.React || window.React;

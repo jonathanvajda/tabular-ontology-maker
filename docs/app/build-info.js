@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 Jonathan Vajda
+
 (function () {
   const target = document.getElementById("build-info");
   if (!target) return;

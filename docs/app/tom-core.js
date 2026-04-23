@@ -1,4 +1,5 @@
-// Copyright 2025 Jonathan Vajda
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2025-2026 Jonathan Vajda
 (function () {
 const TOM = (window.TOM = window.TOM || {});
 const CoreUtils = window.TOMCoreUtils || {};
