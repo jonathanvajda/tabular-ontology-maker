@@ -112,6 +112,7 @@
   </script>
   <!-- App Local CSS -->
   <link rel="stylesheet" href="./styles/ontology_spreadsheet_styles.css" />
+  <link rel="stylesheet" href="./styles/tom-axiom-builder.css" />
 </head>
 <body data-page-id="tom">
   <header id="siteHeader" class="sitehdr-root" role="banner" aria-label="Site header"></header>
@@ -156,6 +157,18 @@
     <h3>Code Preview</h3>
     <textarea id="rdfOutput" readonly></textarea>
   </main>
+
+  <aside id="axiom-builder-drawer" class="tom-axiom-drawer" aria-hidden="true">
+    <div class="tom-axiom-drawer-header">
+      <div>
+        <h2>OWL Axioms</h2>
+        <div id="axiom-builder-drawer-subtitle" class="tom-axiom-drawer-subtitle">No row selected</div>
+      </div>
+      <button id="axiomBuilderDrawerCloseBtn" type="button" aria-label="Close axiom builder">Close</button>
+    </div>
+    <div id="axiom-builder-root" class="tom-axiom-drawer-body"></div>
+  </aside>
+  <div id="axiom-builder-backdrop" class="tom-axiom-backdrop" hidden></div>
 
   <!-- Ontology Settings Modal -->
   <div id="ontology-settings-modal" class="tom-modal" style="display:none; position:fixed; background: var(--ont-bg); border:1px solid gray; padding:20px; z-index:1000; top:20%; left:30%; width:40%;">
@@ -433,6 +446,7 @@
   <script src="./app/jsonld.min.js"></script>
   <script src="./app/tom-core-utils.js"></script>
   <script src="./app/tom-feature-utils.js"></script>
+  <script src="./app/tom-axiom-builder.js"></script>
   <script src="./app/build-info.js"></script>
 
   <script>
