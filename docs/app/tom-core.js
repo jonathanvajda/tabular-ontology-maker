@@ -4,6 +4,7 @@
 const TOM = (window.TOM = window.TOM || {});
 const CoreUtils = window.TOMCoreUtils || {};
 const FeatureUtils = window.TOMFeatureUtils || {};
+const AxiomBuilder = TOM.AxiomBuilder || {};
 
 const VIEW_KEYS = {
   ONTOLOGY: 'ontology',
@@ -50,6 +51,8 @@ let hotInstance = null;
 let hotInitDone = false;
 let currentImportFile = null;
 let lastPreviewableRdfFormat = 'ttl';
+let axiomRecordsBySubject = new Map();
+let mountedAxiomBuilder = null;
 
 // Base spreadsheet columns (in order):
 // 0: iri, 1: label, 2: element type, 3: definition, 4: is a, 5: is curated in ontology
@@ -913,14 +916,79 @@ function getOntologyIRI() {
   return settings.iri || "http://example.org/ExampleOntology";
 }
 
+function quadSignature(quad) {
+  const s = `${quad.subject.termType}:${quad.subject.value}`;
+  const p = `${quad.predicate.termType}:${quad.predicate.value}`;
+  const o = `${quad.object.termType}:${quad.object.value}`;
+  return `${s}|${p}|${o}`;
+}
+
+function pushUniqueQuad(quads, seen, quad) {
+  const key = quadSignature(quad);
+  if (seen.has(key)) return;
+  seen.add(key);
+  quads.push(quad);
+}
+
+function parseRawAxiomRdf(rawRdf) {
+  const text = String(rawRdf || '').trim();
+  if (!text) return [];
+  const parser = new N3.Parser({ prefixes: iriPrefixes, format: 'Turtle' });
+  return parser.parse(text);
+}
+
+function appendAxiomRecordQuads(quads, seen, record) {
+  const normalized = normalizeAxiomRecord(record);
+  if (!normalized.subjectIri) return;
+  const factory = N3.DataFactory;
+
+  normalized.axioms.forEach((axiom) => {
+    try {
+      const parsedAxiom = {
+        ...axiom,
+        expressionAst:
+          axiom.expressionAst ||
+          AxiomBuilder.parseExpression?.(axiom.expressionText, (value) => resolveToIri(value)),
+      };
+      (AxiomBuilder.axiomToQuads?.(parsedAxiom, normalized.subjectIri, factory) || [])
+        .forEach((quad) => pushUniqueQuad(quads, seen, quad));
+    } catch (error) {
+      console.warn('[axioms] Could not export structured axiom', axiom, error);
+    }
+  });
+
+  normalized.preservedTriples.forEach((triple) => {
+    if (!triple.subject || !triple.predicate || !triple.object) return;
+    pushUniqueQuad(quads, seen, factory.quad(
+      termFromSnapshot(triple.subject),
+      termFromSnapshot(triple.predicate),
+      termFromSnapshot(triple.object)
+    ));
+  });
+
+  parseRawAxiomRdf(normalized.rawRdf).forEach((quad) => pushUniqueQuad(quads, seen, quad));
+}
+
+function termFromSnapshot(term) {
+  if (term.termType === 'NamedNode') return N3.DataFactory.namedNode(term.value);
+  if (term.termType === 'BlankNode') return N3.DataFactory.blankNode(term.value);
+  if (term.termType === 'Literal') {
+    if (term.language) return N3.DataFactory.literal(term.value, term.language);
+    if (term.datatype?.value) return N3.DataFactory.literal(term.value, N3.DataFactory.namedNode(term.datatype.value));
+    return N3.DataFactory.literal(term.value);
+  }
+  return N3.DataFactory.namedNode(String(term.value || ''));
+}
+
 function buildOntologyExportQuads(rows) {
   const quads = [];
+  const seen = new Set();
   const settings = getOntologySettings();
   const ontologyIRI = settings["iri"];
   const namedNode = N3.DataFactory.namedNode;
   const literal = N3.DataFactory.literal;
 
-  quads.push(
+  pushUniqueQuad(quads, seen,
     N3.DataFactory.quad(
       namedNode(ontologyIRI),
       namedNode(w3cIRI.RDF_TYPE),
@@ -936,7 +1004,7 @@ function buildOntologyExportQuads(rows) {
     if (key === 'iri' || key === 'owlImportsLocal') continue;
     if (key === w3cIRI.OWL_IMPORTS && Array.isArray(value)) {
       for (const importIRI of value) {
-        quads.push(N3.DataFactory.quad(
+        pushUniqueQuad(quads, seen, N3.DataFactory.quad(
           namedNode(ontologyIRI),
           namedNode(w3cIRI.OWL_IMPORTS),
           namedNode(importIRI)
@@ -948,7 +1016,7 @@ function buildOntologyExportQuads(rows) {
     const pred = resolvePredicate(key);
     const isScalar = ['string', 'number', 'boolean'].includes(typeof value);
     if (pred && isScalar) {
-      quads.push(N3.DataFactory.quad(
+      pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(ontologyIRI),
         namedNode(pred),
         literal(String(value))
@@ -969,7 +1037,7 @@ function buildOntologyExportQuads(rows) {
     };
     const structuralTypeIri = structuralTypeMap[type];
     if (structuralTypeIri) {
-      quads.push(N3.DataFactory.quad(
+      pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
         namedNode(w3cIRI.RDF_TYPE),
         namedNode(structuralTypeIri)
@@ -977,7 +1045,7 @@ function buildOntologyExportQuads(rows) {
     }
 
     if (label) {
-      quads.push(N3.DataFactory.quad(
+      pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
         namedNode(w3cIRI.RDFS_LABEL),
         literal(label)
@@ -985,7 +1053,7 @@ function buildOntologyExportQuads(rows) {
     }
 
     if (definition) {
-      quads.push(N3.DataFactory.quad(
+      pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
         namedNode(w3cIRI.SKOS_DEFINITION),
         literal(definition)
@@ -996,7 +1064,7 @@ function buildOntologyExportQuads(rows) {
     if (isAPredicate && isAObject) {
       const objIri = resolveToIri(isAObject);
       if (objIri) {
-        quads.push(N3.DataFactory.quad(
+        pushUniqueQuad(quads, seen, N3.DataFactory.quad(
           namedNode(subject),
           namedNode(isAPredicate),
           namedNode(objIri)
@@ -1007,7 +1075,7 @@ function buildOntologyExportQuads(rows) {
     }
 
     if (isCuratedInOntology) {
-      quads.push(N3.DataFactory.quad(
+      pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
         namedNode(w3cIRI.CCO_CURATEDIN),
         asObjectTerm(isCuratedInOntology)
@@ -1027,13 +1095,13 @@ function buildOntologyExportQuads(rows) {
         const namedNodeIri = resolveNamedNodeIri(valueText);
         const obj = namedNodeIri ? namedNode(namedNodeIri) : null;
 
-        quads.push(N3.DataFactory.quad(
+        pushUniqueQuad(quads, seen, N3.DataFactory.quad(
           namedNode(subject),
           namedNode(predicate),
           obj || literal(valueText)
         ));
       } else {
-        quads.push(N3.DataFactory.quad(
+        pushUniqueQuad(quads, seen, N3.DataFactory.quad(
           namedNode(subject),
           namedNode(predicate),
           literal(String(cellValue))
@@ -1041,6 +1109,8 @@ function buildOntologyExportQuads(rows) {
       }
     });
   });
+
+  getPersistableAxiomRecords().forEach((record) => appendAxiomRecordQuads(quads, seen, record));
 
   return quads;
 }
@@ -1206,6 +1276,41 @@ function getPersistablePredicateRegistry() {
   }));
 }
 
+function normalizeAxiomRecord(record) {
+  if (AxiomBuilder.normalizeAxiomRecord) return AxiomBuilder.normalizeAxiomRecord(record);
+  return {
+    subjectIri: String(record?.subjectIri || '').trim(),
+    axioms: Array.isArray(record?.axioms) ? record.axioms : [],
+    rawRdf: String(record?.rawRdf || ''),
+    preservedTriples: Array.isArray(record?.preservedTriples) ? record.preservedTriples : [],
+  };
+}
+
+function getAxiomRecord(subjectIri) {
+  const subject = String(subjectIri || '').trim();
+  return normalizeAxiomRecord(axiomRecordsBySubject.get(subject) || { subjectIri: subject });
+}
+
+function setAxiomRecord(record) {
+  const normalized = normalizeAxiomRecord(record);
+  if (!normalized.subjectIri) return;
+  const hasContent =
+    normalized.axioms.length ||
+    normalized.rawRdf.trim() ||
+    normalized.preservedTriples.length;
+  if (hasContent) axiomRecordsBySubject.set(normalized.subjectIri, normalized);
+  else axiomRecordsBySubject.delete(normalized.subjectIri);
+}
+
+function mergeAxiomRecords(records, { replace = false } = {}) {
+  if (replace) axiomRecordsBySubject = new Map();
+  (Array.isArray(records) ? records : []).forEach(setAxiomRecord);
+}
+
+function getPersistableAxiomRecords() {
+  return Array.from(axiomRecordsBySubject.values()).map(normalizeAxiomRecord);
+}
+
 function buildWorkspaceSnapshot(timestamp = new Date().toISOString()) {
   const predicates = getPersistablePredicateRegistry();
   return {
@@ -1213,19 +1318,25 @@ function buildWorkspaceSnapshot(timestamp = new Date().toISOString()) {
     timestamp,
     activeView: isValidViewKey(getActiveViewKey()) ? getActiveViewKey() : DEFAULT_VIEW,
     predicates,
+    axioms: getPersistableAxiomRecords(),
     rows: cloneRowsForWorkspace(hotInstance?.getData?.() || [], BASE_COLS + predicates.length),
   };
 }
 
 function normalizeWorkspaceSnapshot(snapshot) {
   if (FeatureUtils.normalizeWorkspaceSnapshot) {
-    return FeatureUtils.normalizeWorkspaceSnapshot(snapshot, {
+    const normalized = FeatureUtils.normalizeWorkspaceSnapshot(snapshot, {
       baseCols: BASE_COLS,
       defaultView: DEFAULT_VIEW,
       isValidViewKey,
       normalizePredicateMode,
       normalizePredicateRecord,
     });
+    if (!normalized) return null;
+    return {
+      ...normalized,
+      axioms: (Array.isArray(snapshot?.axioms) ? snapshot.axioms : []).map(normalizeAxiomRecord),
+    };
   }
   if (!snapshot || typeof snapshot !== 'object') return null;
 
@@ -1248,6 +1359,7 @@ function normalizeWorkspaceSnapshot(snapshot) {
     timestamp: snapshot.timestamp || new Date().toISOString(),
     activeView: isValidViewKey(snapshot.activeView) ? snapshot.activeView : DEFAULT_VIEW,
     predicates,
+    axioms: (Array.isArray(snapshot.axioms) ? snapshot.axioms : []).map(normalizeAxiomRecord),
     rows: cloneRowsForWorkspace(snapshot.rows, expectedColumnCount),
   };
 }
@@ -1281,6 +1393,7 @@ function applyWorkspaceSnapshot(snapshot) {
   if (!normalized || !hotInstance) return null;
 
   replacePredicateRegistry(normalized.predicates);
+  mergeAxiomRecords(normalized.axioms, { replace: true });
   applyViewSchema(normalized.activeView, { captureCurrent: false });
   hotInstance.replaceRows(normalized.rows, 'LoadData');
   harvestRowsIntoVocab?.(normalized.rows);
@@ -1598,6 +1711,7 @@ async function reloadSavedSession() {
     const ontologyIriFromSettings = getOntologyIRI();
 
     const rowsTmp = [];
+    const rdfFallbackAxiomRecords = [];
     for (const [s, pMap] of subjMap.entries()) {
 
       if (s === ontologyIriFromSettings) continue;
@@ -1649,6 +1763,17 @@ async function reloadSavedSession() {
       }
 
       rowsTmp.push({ row, pMap });
+
+      if (elementType === 'Class' && AxiomBuilder.extractClassAxioms) {
+        const record = AxiomBuilder.extractClassAxioms(quads, {
+          subjectIri: s,
+          primaryIsA: isA,
+          prefixes: iriPrefixes,
+        });
+        if (record.axioms?.length || record.rawRdf?.trim() || record.preservedTriples?.length) {
+          rdfFallbackAxiomRecords.push(record);
+        }
+      }
     }
 
     // adopt discovered extra predicates as your custom columns (sorted for stability)
@@ -1668,6 +1793,7 @@ async function reloadSavedSession() {
     const newColumns = getColumnDefinitions();
     hotInstance.setSchema(newHeaders, newColumns);
     hotInstance.replaceRows(finalRows, 'LoadData');
+    mergeAxiomRecords(rdfFallbackAxiomRecords, { replace: true });
     harvestRowsIntoVocab?.(finalRows);
 
     showToast(`Reloaded ${subjMap.size} subject${subjMap.size!==1?'s':''} from latest saved RDF`, 'success');
@@ -2306,6 +2432,81 @@ function openManagePredicatesModal() {
   document.getElementById('manage-predicates-modal').style.display = 'block';
 }
 
+function closeAxiomBuilderDrawer() {
+  const drawer = document.getElementById('axiom-builder-drawer');
+  const backdrop = document.getElementById('axiom-builder-backdrop');
+  if (mountedAxiomBuilder?.destroy) mountedAxiomBuilder.destroy();
+  mountedAxiomBuilder = null;
+  drawer?.classList.remove('is-open');
+  drawer?.setAttribute('aria-hidden', 'true');
+  if (backdrop) backdrop.hidden = true;
+}
+
+function openAxiomBuilderDrawer(rowIndex) {
+  if (!hotInstance || !AxiomBuilder.mount) {
+    showToast('Axiom builder is not available.', 'error');
+    return;
+  }
+
+  harvestRowsIntoVocab?.(hotInstance.getData?.() || []);
+  const row = hotInstance.getSourceDataAtRow(rowIndex);
+  if (!row) return;
+  const subjectIri = resolveToIri(row[0]) || String(row[0] || '').trim();
+  if (!subjectIri) {
+    showToast('Add an IRI for this row before editing axioms.', 'error');
+    return;
+  }
+
+  const subjectLabel = String(row[1] || '').trim() || subjectIri;
+  const subjectType = String(row[2] || '').trim();
+  const drawer = document.getElementById('axiom-builder-drawer');
+  const backdrop = document.getElementById('axiom-builder-backdrop');
+  const subtitle = document.getElementById('axiom-builder-drawer-subtitle');
+  const root = document.getElementById('axiom-builder-root');
+  if (!drawer || !root) return;
+
+  if (mountedAxiomBuilder?.destroy) mountedAxiomBuilder.destroy();
+  if (subtitle) subtitle.textContent = `${subjectType || 'Entity'}: ${subjectLabel}`;
+  mountedAxiomBuilder = AxiomBuilder.mount(root, {
+    subjectIri,
+    subjectLabel,
+    subjectType,
+    record: getAxiomRecord(subjectIri),
+    prefixes: iriPrefixes,
+    lookup(query, options) {
+      return searchVocab(query, { max: options?.max || 8 }).map((rec) => ({
+        iri: rec.iri,
+        curie: rec.curie || iriToCurie(rec.iri),
+        label: rec.label || rec.curie || rec.iri,
+        type: rec.type || '',
+        source: rec.source || '',
+      }));
+    },
+    resolveTerm(value) {
+      return resolveToIri(value);
+    },
+    validateRaw(value, subjectIriForRaw) {
+      try {
+        const quads = parseRawAxiomRdf(value);
+        const hasSelectedSubject = quads.some((quad) => quad.subject?.value === subjectIriForRaw);
+        if (quads.length && !hasSelectedSubject) {
+          return { valid: true, message: 'Valid Turtle. Warning: no triples use the selected row IRI as subject.' };
+        }
+        return { valid: true, message: quads.length ? 'Valid Turtle.' : 'Raw RDF is empty.' };
+      } catch (error) {
+        return { valid: false, message: error.message || 'Raw Turtle could not be parsed.' };
+      }
+    },
+    onChange(record) {
+      setAxiomRecord(record);
+    },
+  });
+
+  drawer.classList.add('is-open');
+  drawer.setAttribute('aria-hidden', 'false');
+  if (backdrop) backdrop.hidden = false;
+}
+
 function buildGridContextMenuItems(context) {
   if (!hotInstance || !context) return [];
 
@@ -2384,6 +2585,14 @@ function buildGridContextMenuItems(context) {
       },
     });
     items.push({ separator: true });
+    if (rowCount === 1) {
+      items.push({
+        id: 'edit-axioms',
+        label: 'Edit OWL Axioms',
+        onSelect: () => openAxiomBuilderDrawer(startRow),
+      });
+      items.push({ separator: true });
+    }
     items.push({
       id: 'remove-rows',
       label: rowCount === 1 ? 'Remove Row' : `Remove ${rowLabel}`,
@@ -3137,6 +3346,7 @@ async function handleInsertDataSave() {
       result.cleanedRows,
       insertMode
     );
+    mergeAxiomRecords(result.axiomRecords, { replace: insertMode === 'replace' });
 
     hotInstance.setSchema(allHeaders, allColumns);
     hotInstance.replaceRows(mergedRows, 'LoadData');
@@ -3284,6 +3494,7 @@ function deriveOntologyImportTarget(quads) {
 function validateAndPivotOntologyData(quads, knownPredicates) {
   const subjectData = new Map();
   const errors = [];
+  const axiomRecords = [];
   const customHeaders = (knownPredicates || []).slice(BASE_COLS);
   const customPredicatesByIndex = customHeaders.map((header) => curieToIri(header) || header);
 
@@ -3373,13 +3584,24 @@ function validateAndPivotOntologyData(quads, knownPredicates) {
     });
 
     cleanedRows.push(newRow);
+
+    if (elementType === 'Class' && AxiomBuilder.extractClassAxioms) {
+      const record = AxiomBuilder.extractClassAxioms(quads, {
+        subjectIri: subjectUri,
+        primaryIsA: isA,
+        prefixes: iriPrefixes,
+      });
+      if (record.axioms?.length || record.rawRdf?.trim() || record.preservedTriples?.length) {
+        axiomRecords.push(record);
+      }
+    }
   }
 
   if (cleanedRows.length === 0 && quads.length > 0) {
     errors.push("Data was parsed, but no named subjects matched the current table columns.");
   }
 
-  return { valid: errors.length === 0, cleanedRows, errors };
+  return { valid: errors.length === 0, cleanedRows, errors, axiomRecords };
 }
 
 /**
@@ -3443,6 +3665,7 @@ async function handleInsertOntologySave() {
       result.cleanedRows,
       insertMode
     );
+    mergeAxiomRecords(result.axiomRecords, { replace: insertMode === 'replace' });
 
     hotInstance.setSchema(allHeaders, allColumns);
     hotInstance.replaceRows(mergedRows, 'LoadData');
@@ -4121,7 +4344,13 @@ document.getElementById('manage-predicates-save-btn').addEventListener('click', 
 // Cancel button listener for Manage Predicates modal
 document.getElementById('manage-predicates-cancel-btn').addEventListener('click', () => {
     document.getElementById('manage-predicates-modal').style.display = 'none';
-  });
+});
+
+document.getElementById('axiomBuilderDrawerCloseBtn')?.addEventListener('click', closeAxiomBuilderDrawer);
+document.getElementById('axiom-builder-backdrop')?.addEventListener('click', closeAxiomBuilderDrawer);
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeAxiomBuilderDrawer();
+});
 
 /**
  * Registers all modal UI event listeners
@@ -4255,6 +4484,9 @@ TOM.Core = {
   openOntologySettingsModal,
   openImportsModal,
   openPrefixManagerModal,
+  openAxiomBuilderDrawer,
+  getAxiomRecord,
+  setAxiomRecord,
   confirmAddPredicate,
   saveOntologySettingsFromModal,
   saveRDFtoIndexedDB,
