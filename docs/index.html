@@ -264,7 +264,7 @@
     <div class="tom-modal-scroll">
     <div style="margin-bottom:1rem;">
       <label for="new-import-file">Add ontology file:</label><br>
-      <input type="file" id="new-import-file" accept=".ttl,.nt,.trig,.jsonld,.rdf" />
+      <input type="file" id="new-import-file" accept=".ttl,.turtle,.n3,.nt,.ntriples,.nq,.trig,.jsonld,.json-ld,.rdf,.owl,.xml" />
       <div style="color:#666; font-size:12px; margin-top:4px;">
         Uses owl:versionIRI when present; otherwise falls back to the ontology IRI.
       </div>
@@ -396,7 +396,7 @@
     <div id="drop-area" style="border:2px dashed #ccc; padding:20px; text-align:center; margin-bottom:1em;">
       <p>Drag & drop a file here</p>
       <p>- or -</p>
-      <input type="file" id="file-input" accept=".csv,.tsv,.xls,.xlsx,.ttl,.rdf,.jsonld,.nt" />
+      <input type="file" id="file-input" accept=".csv,.tsv,.xls,.xlsx,.ttl,.turtle,.n3,.nt,.ntriples,.nq,.trig,.jsonld,.json-ld,.rdf,.owl,.xml" />
     </div>
 
     <!-- Filename display -->
@@ -444,6 +444,7 @@
   <script src="./app/xlsx.full.min.js"></script>
   <script src="./app/n3.min.js"></script>
   <script src="./app/jsonld.min.js"></script>
+  <script src="./app/shared/format-registry/browser-global.js"></script>
   <script src="./app/tom-core-utils.js"></script>
   <script src="./app/tom-feature-utils.js"></script>
   <script src="./app/tom-axiom-builder.js"></script>

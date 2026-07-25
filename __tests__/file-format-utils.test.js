@@ -19,10 +19,14 @@ describe("file and media type helpers", () => {
 
   test("detectFormatByExtension classifies supported formats", () => {
     expect(detectFormatByExtension("csv")).toBe("spreadsheet");
+    expect(detectFormatByExtension("tsv")).toBe("spreadsheet");
     expect(detectFormatByExtension("xlsx")).toBe("spreadsheet");
     expect(detectFormatByExtension("ttl")).toBe("ontology");
+    expect(detectFormatByExtension("n3")).toBe("ontology");
     expect(detectFormatByExtension("jsonld")).toBe("ontology");
+    expect(detectFormatByExtension("nq")).toBe("ontology");
     expect(detectFormatByExtension("trig")).toBe("ontology");
+    expect(detectFormatByExtension("owl")).toBe("ontology");
     expect(detectFormatByExtension("exe")).toBe("unsupported");
   });
 

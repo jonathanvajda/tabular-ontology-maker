@@ -3,8 +3,26 @@
 (function () {
 const TOM = (window.TOM = window.TOM || {});
 const CoreUtils = window.TOMCoreUtils || {};
+const FormatRegistry = window.FormatRegistry || {};
 const FeatureUtils = window.TOMFeatureUtils || {};
 const AxiomBuilder = TOM.AxiomBuilder || {};
+
+const fallbackN3ParserFormats = {
+  ttl: 'Turtle',
+  turtle: 'Turtle',
+  n3: 'Turtle',
+  nt: 'N-Triples',
+  ntriples: 'N-Triples',
+  'n-triples': 'N-Triples',
+  trig: 'TriG',
+  nq: 'N-Quads',
+  nquads: 'N-Quads',
+  'n-quads': 'N-Quads',
+  'application/n-triples': 'N-Triples',
+  'application/trig': 'TriG',
+  'application/n-quads': 'N-Quads',
+  'text/turtle': 'Turtle'
+};
 
 const VIEW_KEYS = {
   ONTOLOGY: 'ontology',
@@ -1116,13 +1134,17 @@ function buildOntologyExportQuads(rows) {
 }
 
 function serializeQuads(quads, format = 'ttl') {
-  const formatMap = {
-    ttl: 'Turtle',
-    nt: 'N-Triples',
-    trig: 'TriG',
-    nquads: 'N-Quads'
-  };
-  const writer = new N3.Writer({ prefixes: iriPrefixes, format: formatMap[format] || 'Turtle' });
+  const mimeType = mimeTypes[format] || format;
+  const n3Format = FormatRegistry.getN3ParserFormatForMimeType
+    ? FormatRegistry.getN3ParserFormatForMimeType(mimeType)
+    : null;
+  const fallbackFormat = fallbackN3ParserFormats[String(format || '').toLowerCase()]
+    || fallbackN3ParserFormats[String(mimeType || '').toLowerCase()]
+    || 'Turtle';
+  const writer = new N3.Writer({
+    prefixes: iriPrefixes,
+    format: n3Format && n3Format.ok ? n3Format.value : fallbackFormat
+  });
   quads.forEach((quad) => writer.addQuad(quad));
 
   return new Promise((resolve, reject) => {
@@ -1217,24 +1239,30 @@ function getSaveableRdfFormat(selectedFormat) {
   return selectedFormat === 'csv' ? (lastPreviewableRdfFormat || 'ttl') : selectedFormat;
 }
 
-const mimeTypes = {
-  ttl: 'text/turtle',
-  rdf: 'application/rdf+xml',
-  jsonld: 'application/ld+json',
-  nt: 'application/n-triples',
-  trig: 'application/trig',
-  csv: 'text/csv',
-  nquads: 'application/n-quads'
-};
+const exportFormatKeys = ['ttl', 'rdf', 'jsonld', 'nt', 'trig', 'csv', 'nquads'];
+const mimeTypes = FormatRegistry.createFormatMimeTypeMap
+  ? FormatRegistry.createFormatMimeTypeMap(exportFormatKeys)
+  : {
+      ttl: 'text/turtle',
+      rdf: 'application/rdf+xml',
+      jsonld: 'application/ld+json',
+      nt: 'application/n-triples',
+      trig: 'application/trig',
+      csv: 'text/csv',
+      nquads: 'application/n-quads'
+    };
 
-const extensions = {
-  ttl: 'ttl',
-  rdf: 'rdf',
-  jsonld: 'jsonld',
-  nt: 'nt',
-  trig: 'trig',
-  csv: 'csv'
-};
+const extensions = FormatRegistry.createFormatExtensionMap
+  ? FormatRegistry.createFormatExtensionMap(exportFormatKeys)
+  : {
+      ttl: 'ttl',
+      rdf: 'rdf',
+      jsonld: 'jsonld',
+      nt: 'nt',
+      trig: 'trig',
+      csv: 'csv',
+      nquads: 'nquads'
+    };
 
 function idbRequest(req) {
   return new Promise((resolve, reject) => {
@@ -1427,15 +1455,20 @@ const handleExport = async (shouldDownload = false) => {
     output.value = exportString;
 
     if (shouldDownload) {
-      const blob = new Blob([exportString], { type: mimeTypes[format] || 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `ontology.${extensions[format]}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      const fileName = `ontology.${extensions[format] || 'txt'}`;
+      if (FormatRegistry.downloadTextFile) {
+        FormatRegistry.downloadTextFile(fileName, exportString, { mimeType: mimeTypes[format] || 'text/plain' });
+      } else {
+        const blob = new Blob([exportString], { type: mimeTypes[format] || 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
     }
   } catch (e) {
     console.error('handleExport failed:', e);
@@ -1543,14 +1576,13 @@ async function updateReloadSessionButton() {
  * @returns 
  */
 function n3FormatForSaved(format) {
-  // Map your saved "format" (ttl|rdf|jsonld|nt|trig) to N3.Parser formats
   const f = String(format || '').toLowerCase();
-  if (f === 'ttl' || f.includes('turtle')) return 'Turtle';
-  if (f === 'nt'  || f.includes('n-triple')) return 'N-Triples';
-  if (f === 'trig') return 'TriG';
-  // N3.Parser does not parse RDF/XML or JSON-LD. If you need those, convert before parse.
-  // For now, treat others as Turtle; you can extend later with rdfxml/jsonld conversions.
-  return 'Turtle';
+  const mimeType = mimeTypes[f] || f;
+  const detected = FormatRegistry.getN3ParserFormatForMimeType
+    ? FormatRegistry.getN3ParserFormatForMimeType(mimeType)
+    : null;
+  if (detected && detected.ok) return detected.value;
+  return fallbackN3ParserFormats[f] || fallbackN3ParserFormats[String(mimeType || '').toLowerCase()] || 'Turtle';
 }
 
 function firstLiteral(objs) {
@@ -3409,8 +3441,12 @@ async function parseQuadsFromJsonLdText(text) {
 }
 
 async function parseOntologyText(fileContent, fileName = '') {
-  const extension = parseFileExtension(fileName);
-  const mimeType = mimeTypes[extension] || guessMediaType(fileContent);
+  const detected = FormatRegistry.getSupportedMimeTypeForFilename
+    ? FormatRegistry.getSupportedMimeTypeForFilename(fileName)
+    : null;
+  const mimeType = detected && detected.ok && detected.value.category === 'rdf'
+    ? detected.value.mimeType
+    : guessMediaType(fileContent);
 
   if (mimeType === 'application/rdf+xml') {
     throw new Error('RDF/XML import is not supported yet. Please convert the file to Turtle, N-Triples, TriG, or JSON-LD first.');
@@ -4114,15 +4150,11 @@ async function setLocalImport(iri, { content, mediaType }) {
 }
 
 function fileNameForMediaType(mediaType) {
-  switch (mediaType) {
-    case 'application/ld+json': return 'import.jsonld';
-    case 'application/n-triples': return 'import.nt';
-    case 'application/trig': return 'import.trig';
-    case 'application/rdf+xml': return 'import.rdf';
-    case 'text/turtle':
-    default:
-      return 'import.ttl';
-  }
+  const preferredExtension = FormatRegistry.getPreferredExtensionForMimeType
+    ? FormatRegistry.getPreferredExtensionForMimeType(mediaType)
+    : null;
+  if (preferredExtension && preferredExtension.ok) return `import.${preferredExtension.value}`;
+  return 'import.ttl';
 }
 
 async function cacheImportedOntology({ iri, ontologyIri, content, mediaType, quads }) {
@@ -4146,7 +4178,12 @@ async function cacheImportedOntology({ iri, ontologyIri, content, mediaType, qua
 
 async function processOntologyImportFile(file, fallbackIri = null) {
   const content = await file.text();
-  const mediaType = mimeTypes[parseFileExtension(file.name)] || guessMediaType(content);
+  const detected = FormatRegistry.getSupportedMimeTypeForFilename
+    ? FormatRegistry.getSupportedMimeTypeForFilename(file.name)
+    : null;
+  const mediaType = detected && detected.ok && detected.value.category === 'rdf'
+    ? detected.value.mimeType
+    : guessMediaType(content);
   const quads = await parseOntologyText(content, file.name);
   const derived = deriveOntologyImportTarget(quads);
   const targetIri = derived.importIri || fallbackIri;
