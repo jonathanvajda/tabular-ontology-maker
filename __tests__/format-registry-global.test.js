@@ -1,71 +1,37 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
 
-const FormatRegistry = require("../docs/app/shared/format-registry/browser-global.js");
+const {
+  parseFileExtension,
+  detectFormatByExtension,
+  guessMediaType,
+} = require("../docs/app/tom-core-utils.js");
 
-describe("browser-ready format registry", () => {
-  test("detects supported MIME descriptors from filename extensions", () => {
-    expect(FormatRegistry.getSupportedMimeTypeForFilename("ontology.TTL")).toMatchObject({
-      ok: true,
-      value: { mimeType: "text/turtle", category: "rdf" },
-    });
-    expect(FormatRegistry.getSupportedMimeTypeForFilename("table.xlsx")).toMatchObject({
-      ok: true,
-      value: {
-        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        category: "tabular",
-      },
-    });
+describe("runtime format registry integration", () => {
+  afterEach(() => {
+    delete globalThis.FormatRegistry;
   });
 
-  test("returns the agreed unknown-filetype error object for unsupported extensions", () => {
-    expect(FormatRegistry.getSupportedMimeTypeForFilename("archive.zip")).toEqual({
-      ok: false,
-      error: "unknown filetype",
-      input: "zip",
-      extension: "zip",
-    });
+  test("TOM utility helpers consume the promoted browser registry at call time", () => {
+    globalThis.FormatRegistry = {
+      getFilenameExtension: jest.fn(() => "d3.json"),
+      getInputKindForExtension: jest.fn(() => "data"),
+      guessRdfMimeTypeFromText: jest.fn(() => "application/ld+json"),
+    };
+
+    expect(parseFileExtension("graph.d3.json")).toBe("d3.json");
+    expect(detectFormatByExtension("json")).toBe("data");
+    expect(guessMediaType('{ "@context": {} }')).toBe("application/ld+json");
+
+    expect(globalThis.FormatRegistry.getFilenameExtension).toHaveBeenCalledWith("graph.d3.json");
+    expect(globalThis.FormatRegistry.getInputKindForExtension).toHaveBeenCalledWith("json");
+    expect(globalThis.FormatRegistry.guessRdfMimeTypeFromText).toHaveBeenCalledWith('{ "@context": {} }');
   });
 
-  test("maps intended output extensions to MIME types and preferred extensions", () => {
-    expect(FormatRegistry.getOutputMimeTypeForExtension("jsonld")).toMatchObject({
-      ok: true,
-      value: { mimeType: "application/ld+json", preferredExtension: "jsonld" },
-    });
-    expect(FormatRegistry.getPreferredExtensionForMimeType("application/n-quads")).toEqual({
-      ok: true,
-      value: "nquads",
-    });
-  });
-
-  test("keeps N3 parser format names separate from MIME values", () => {
-    expect(FormatRegistry.getN3ParserFormatForMimeType("text/turtle")).toEqual({
-      ok: true,
-      value: "Turtle",
-    });
-    expect(FormatRegistry.getN3ParserFormatForMimeType("application/n-quads")).toEqual({
-      ok: true,
-      value: "N-Quads",
-    });
-    expect(FormatRegistry.getN3ParserFormatForMimeType("application/ld+json")).toMatchObject({
-      ok: false,
-      error: "unsupported parser format",
-      mimeType: "application/ld+json",
-    });
-  });
-
-  test("builds TOM compatibility maps from the same registry", () => {
-    expect(FormatRegistry.createFormatMimeTypeMap(["ttl", "jsonld", "csv", "nquads"])).toEqual({
-      ttl: "text/turtle",
-      jsonld: "application/ld+json",
-      csv: "text/csv",
-      nquads: "application/n-quads",
-    });
-    expect(FormatRegistry.createFormatExtensionMap(["ttl", "jsonld", "csv", "nquads"])).toEqual({
-      ttl: "ttl",
-      jsonld: "jsonld",
-      csv: "csv",
-      nquads: "nquads",
-    });
+  test("TOM utility helpers retain local fallbacks without a registry global", () => {
+    expect(parseFileExtension("ontology.TTL")).toBe("ttl");
+    expect(detectFormatByExtension("xlsx")).toBe("spreadsheet");
+    expect(detectFormatByExtension("ttl")).toBe("ontology");
+    expect(guessMediaType("@prefix ex: <http://example.org/> .")).toBe("text/turtle");
   });
 });

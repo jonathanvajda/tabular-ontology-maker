@@ -11,132 +11,69 @@
   root.FormatRegistry = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   const SUPPORTED_MIME_DESCRIPTORS = Object.freeze([
-    {
-      id: "text-turtle",
-      category: "rdf",
-      mimeType: "text/turtle",
-      extensions: Object.freeze(["ttl", "turtle", "n3"]),
-      aliases: Object.freeze(["ttl", "turtle", "text/turtle"]),
-      n3ParserFormat: "Turtle",
-      preferredExtension: "ttl",
-    },
-    {
-      id: "application-n-triples",
-      category: "rdf",
-      mimeType: "application/n-triples",
-      extensions: Object.freeze(["nt", "ntriples"]),
-      aliases: Object.freeze(["nt", "n-triples", "ntriples", "application/n-triples"]),
-      n3ParserFormat: "N-Triples",
-      preferredExtension: "nt",
-    },
-    {
-      id: "application-n-quads",
-      category: "rdf",
-      mimeType: "application/n-quads",
-      extensions: Object.freeze(["nq", "nquads"]),
-      aliases: Object.freeze(["nq", "n-quads", "nquads", "application/n-quads"]),
-      n3ParserFormat: "N-Quads",
-      preferredExtension: "nquads",
-    },
-    {
-      id: "application-trig",
-      category: "rdf",
-      mimeType: "application/trig",
-      extensions: Object.freeze(["trig"]),
-      aliases: Object.freeze(["trig", "application/trig"]),
-      n3ParserFormat: "TriG",
-      preferredExtension: "trig",
-    },
-    {
-      id: "application-ld-json",
-      category: "rdf",
-      mimeType: "application/ld+json",
-      extensions: Object.freeze(["jsonld", "json-ld"]),
-      aliases: Object.freeze(["jsonld", "json-ld", "json-ld+json", "application/ld+json"]),
-      n3ParserFormat: null,
-      preferredExtension: "jsonld",
-    },
-    {
-      id: "application-rdf-xml",
-      category: "rdf",
-      mimeType: "application/rdf+xml",
-      extensions: Object.freeze(["rdf", "owl", "xml"]),
-      aliases: Object.freeze(["rdf", "rdfxml", "rdf+xml", "application/rdf+xml"]),
-      n3ParserFormat: null,
-      preferredExtension: "rdf",
-    },
-    {
-      id: "text-csv",
-      category: "tabular",
-      mimeType: "text/csv",
-      extensions: Object.freeze(["csv"]),
-      aliases: Object.freeze(["csv", "text/csv"]),
-      preferredExtension: "csv",
-    },
-    {
-      id: "text-tsv",
-      category: "tabular",
-      mimeType: "text/tab-separated-values",
-      extensions: Object.freeze(["tsv", "tab"]),
-      aliases: Object.freeze(["tsv", "tab", "text/tab-separated-values"]),
-      preferredExtension: "tsv",
-    },
-    {
-      id: "application-vnd-ms-excel",
-      category: "tabular",
-      mimeType: "application/vnd.ms-excel",
-      extensions: Object.freeze(["xls"]),
-      aliases: Object.freeze(["xls", "application/vnd.ms-excel"]),
-      preferredExtension: "xls",
-    },
-    {
-      id: "application-vnd-openxmlformats-officedocument-spreadsheetml-sheet",
-      category: "tabular",
-      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      extensions: Object.freeze(["xlsx"]),
-      aliases: Object.freeze(["xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]),
-      preferredExtension: "xlsx",
-    },
+    descriptor("text-turtle", "rdf", "text/turtle", ["ttl", "turtle", "n3"], ["ttl", "turtle", "text/turtle"], "Turtle", "ttl"),
+    descriptor("application-n-triples", "rdf", "application/n-triples", ["nt", "ntriples"], ["nt", "n-triples", "ntriples", "application/n-triples"], "N-Triples", "nt"),
+    descriptor("application-n-quads", "rdf", "application/n-quads", ["nq", "nquads"], ["nq", "n-quads", "nquads", "application/n-quads"], "N-Quads", "nquads"),
+    descriptor("application-trig", "rdf", "application/trig", ["trig"], ["trig", "application/trig"], "TriG", "trig"),
+    descriptor("application-ld-json", "rdf", "application/ld+json", ["jsonld", "json-ld"], ["jsonld", "json-ld", "json-ld+json", "application/ld+json"], null, "jsonld"),
+    descriptor("application-rdf-xml", "rdf", "application/rdf+xml", ["rdf", "owl", "xml"], ["rdf", "rdfxml", "rdf+xml", "application/rdf+xml"], null, "rdf"),
+    descriptor("application-sparql-query", "sparql", "application/sparql-query", ["rq", "sparql"], ["rq", "sparql", "application/sparql-query"], null, "rq"),
+    descriptor("text-csv", "tabular", "text/csv", ["csv"], ["csv", "text/csv"], null, "csv"),
+    descriptor("text-tsv", "tabular", "text/tab-separated-values", ["tsv", "tab"], ["tsv", "tab", "text/tab-separated-values"], null, "tsv"),
+    descriptor("application-vnd-ms-excel", "tabular", "application/vnd.ms-excel", ["xls"], ["xls", "application/vnd.ms-excel"], null, "xls"),
+    descriptor("application-vnd-openxmlformats-officedocument-spreadsheetml-sheet", "tabular", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ["xlsx"], ["xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"], null, "xlsx"),
+    descriptor("application-json", "data", "application/json", ["json"], ["json", "application/json"], null, "json"),
+    descriptor("application-d3-json", "visualization", "application/d3+json", ["d3.json", "d3json"], ["d3", "d3json", "application/d3+json"], null, "json"),
+    descriptor("text-mermaid", "visualization", "text/mermaid", ["mmd", "mermaid"], ["mmd", "mermaid", "text/mermaid"], null, "mmd"),
+    descriptor("application-docx", "document", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ["docx"], ["docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"], null, "docx"),
+    descriptor("text-plain", "text", "text/plain", ["txt", "text"], ["txt", "text", "text/plain"], null, "txt"),
+    descriptor("text-html", "text", "text/html", ["html", "htm"], ["html", "htm", "text/html"], null, "html"),
+    descriptor("text-yaml", "text", "text/yaml", ["yaml", "yml"], ["yaml", "yml", "text/yaml", "application/yaml"], null, "yaml"),
   ]);
 
   const descriptorsByExtension = new Map();
   const descriptorsByMimeOrAlias = new Map();
 
-  SUPPORTED_MIME_DESCRIPTORS.forEach(function (descriptor) {
-    descriptor.extensions.forEach(function (extension) {
-      descriptorsByExtension.set(extension, descriptor);
+  SUPPORTED_MIME_DESCRIPTORS.forEach(function (item) {
+    item.extensions.forEach(function (extension) {
+      descriptorsByExtension.set(extension, item);
     });
-    descriptorsByMimeOrAlias.set(descriptor.mimeType.toLowerCase(), descriptor);
-    descriptor.aliases.forEach(function (alias) {
-      descriptorsByMimeOrAlias.set(alias.toLowerCase(), descriptor);
+    descriptorsByMimeOrAlias.set(item.mimeType.toLowerCase(), item);
+    item.aliases.forEach(function (alias) {
+      descriptorsByMimeOrAlias.set(alias.toLowerCase(), item);
     });
   });
+
+  function descriptor(id, category, mimeType, extensions, aliases, n3ParserFormat, preferredExtension) {
+    return Object.freeze({
+      id,
+      category,
+      mimeType,
+      extensions: Object.freeze(extensions),
+      aliases: Object.freeze(aliases),
+      n3ParserFormat,
+      preferredExtension,
+    });
+  }
 
   function ok(value) {
     return { ok: true, value };
   }
 
   function err(input, extension) {
-    return {
-      ok: false,
-      error: "unknown filetype",
-      input,
-      extension: extension || "",
-    };
+    return { ok: false, error: "unknown filetype", input, extension: extension || "" };
   }
 
   function normalizeExtension(extension) {
-    return String(extension || "")
-      .trim()
-      .replace(/^\.+/, "")
-      .toLowerCase();
+    return String(extension || "").trim().replace(/^\.+/, "").toLowerCase();
   }
 
   function getFilenameExtension(fileName) {
     if (typeof fileName !== "string") return "";
-    const cleanName = fileName.split(/[?#]/)[0];
+    const cleanName = fileName.split(/[?#]/)[0].replace(/\.(gz|zip)$/i, "");
     const slashIndex = Math.max(cleanName.lastIndexOf("/"), cleanName.lastIndexOf("\\"));
     const baseName = slashIndex >= 0 ? cleanName.slice(slashIndex + 1) : cleanName;
+    if (/\.d3\.json$/i.test(baseName)) return "d3.json";
     const dotIndex = baseName.lastIndexOf(".");
     if (dotIndex === -1 || dotIndex === baseName.length - 1) return "";
     return baseName.slice(dotIndex + 1).toLowerCase();
@@ -144,8 +81,8 @@
 
   function getDescriptorForExtension(extension) {
     const normalized = normalizeExtension(extension);
-    const descriptor = descriptorsByExtension.get(normalized);
-    return descriptor ? ok(descriptor) : err(extension, normalized);
+    const item = descriptorsByExtension.get(normalized);
+    return item ? ok(item) : err(extension, normalized);
   }
 
   function getSupportedMimeTypeForFilename(fileName) {
@@ -153,9 +90,9 @@
   }
 
   function normalizeSupportedMimeType(input) {
-    const normalized = String(input || "").trim().toLowerCase();
-    const descriptor = descriptorsByMimeOrAlias.get(normalized);
-    return descriptor ? ok(descriptor) : err(input, "");
+    const normalized = String(input || "").trim().toLowerCase().replace(/;.*$/, "");
+    const item = descriptorsByMimeOrAlias.get(normalized);
+    return item ? ok(item) : err(input, "");
   }
 
   function getOutputMimeTypeForExtension(extension) {
@@ -164,8 +101,7 @@
 
   function getPreferredExtensionForMimeType(mimeType) {
     const normalized = normalizeSupportedMimeType(mimeType);
-    if (!normalized.ok) return normalized;
-    return ok(normalized.value.preferredExtension);
+    return normalized.ok ? ok(normalized.value.preferredExtension) : normalized;
   }
 
   function getN3ParserFormatForMimeType(mimeType) {
@@ -173,12 +109,7 @@
     if (!normalized.ok) return normalized;
     return normalized.value.n3ParserFormat
       ? ok(normalized.value.n3ParserFormat)
-      : {
-          ok: false,
-          error: "unsupported parser format",
-          input: mimeType,
-          mimeType: normalized.value.mimeType,
-        };
+      : { ok: false, error: "unsupported parser format", input: mimeType, mimeType: normalized.value.mimeType };
   }
 
   function getInputKindForExtension(extension) {
@@ -186,7 +117,7 @@
     if (!result.ok) return "unsupported";
     if (result.value.category === "tabular") return "spreadsheet";
     if (result.value.category === "rdf") return "ontology";
-    return "unsupported";
+    return result.value.category;
   }
 
   function getMimeTypeForFormatKey(formatKey) {
@@ -211,9 +142,7 @@
 
   function guessRdfMimeTypeFromText(text) {
     const content = String(text || "");
-    if (/^\s*\{[\s\S]*"@context"\s*:/.test(content) || /^\s*\[[\s\S]*"@context"\s*:/.test(content)) {
-      return "application/ld+json";
-    }
+    if (/^\s*\{[\s\S]*"@context"\s*:/.test(content) || /^\s*\[[\s\S]*"@context"\s*:/.test(content)) return "application/ld+json";
     if (/<rdf:RDF\b/.test(content)) return "application/rdf+xml";
     if (/^\s*@prefix\b|@base\b|:\s/.test(content)) return "text/turtle";
     if (/^\s*<[^>]+>\s+<[^>]+>\s+/.test(content)) return "application/n-triples";
@@ -224,7 +153,7 @@
     const opts = options || {};
     const detected = getSupportedMimeTypeForFilename(fileName);
     const mimeType = opts.mimeType || (detected.ok ? detected.value.mimeType : "text/plain");
-    const charset = opts.charset === false ? "" : ";charset=utf-8";
+    const charset = opts.charset === false || /;\s*charset=/i.test(mimeType) ? "" : ";charset=utf-8";
     const blob = new Blob([text], { type: `${mimeType}${charset}` });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -238,11 +167,11 @@
 
   function getAcceptExtensions(category) {
     return SUPPORTED_MIME_DESCRIPTORS
-      .filter(function (descriptor) {
-        return !category || descriptor.category === category;
+      .filter(function (item) {
+        return !category || item.category === category;
       })
-      .flatMap(function (descriptor) {
-        return descriptor.extensions.map(function (extension) {
+      .flatMap(function (item) {
+        return item.extensions.map(function (extension) {
           return `.${extension}`;
         });
       })
