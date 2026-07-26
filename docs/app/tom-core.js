@@ -1,5 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2025-2026 Jonathan Vajda
+import {
+  iriForNamespaceId,
+  namespacePrefixMapFromRegistry
+} from './shared/namespace-registry/namespace-registry.js';
+import {
+  mergeProjectPrefixes,
+  normalizePrefixMap
+} from './shared/namespace-registry/prefix-map.js';
+import {
+  compactIriToCurie,
+  expandCurieToIri,
+  findLongestPrefixMatch
+} from './shared/namespace-registry/curie.js';
+import {
+  createN3WriterOptionsWithPrefixes
+} from './shared/namespace-registry/rdf-serialization-prefixes.js';
+
 (function () {
 const TOM = (window.TOM = window.TOM || {});
 const CoreUtils = window.TOMCoreUtils || {};
@@ -87,19 +104,12 @@ const WORKSPACE_STORE = 'workspaceStore';
 let SETTINGS_CACHE = null;
 const SETTINGS_STORE = 'ontologySettingsStore';
 
-// Global prefix store (prepopulated)
+// Project/user prefixes extend the canonical shared registry.
 const iriPrefixes = {
-  owl: 'http://www.w3.org/2002/07/owl#',
-  rdf: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
-  rdfs: 'http://www.w3.org/2000/01/rdf-schema#',
-  skos: 'http://www.w3.org/2004/02/skos/core#',
-  dc: 'http://purl.org/dc/elements/1.1/',
-  dcterms: 'http://purl.org/dc/terms/',
-  obo: 'http://purl.obolibrary.org/obo/',
-  oboInOwl: 'http://www.geneontology.org/formats/oboInOwl#',
-  cco2: 'https://www.commoncoreontologies.org/',
-  cceo: 'http://www.ontologyrepository.com/CommonCoreOntologies/',
-  ex: 'http://example.org/'
+  ...mergeProjectPrefixes(
+    namespacePrefixMapFromRegistry(),
+    { ex: 'http://example.org/' }
+  ).prefixes
 };
 
 const getElementTypes = () => {
@@ -114,24 +124,26 @@ const getElementTypes = () => {
 };
 
 const w3cIRI = {
-  RDF_TYPE: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
-  RDFS_LABEL: 'http://www.w3.org/2000/01/rdf-schema#label',
-  RDFS_SUBCLASS: 'http://www.w3.org/2000/01/rdf-schema#subClassOf',
-  RDFS_SUBPROP: 'http://www.w3.org/2000/01/rdf-schema#subPropertyOf',
-  OWL_ONTOLOGY: 'http://www.w3.org/2002/07/owl#Ontology',
-  OWL_CLASS: 'http://www.w3.org/2002/07/owl#Class',
-  OWL_NAMEDIND: 'http://www.w3.org/2002/07/owl#NamedIndividual',
-  OWL_OBJPROP: 'http://www.w3.org/2002/07/owl#ObjectProperty',
+  RDF_TYPE: iriForNamespaceId('rdf', 'type').value,
+  RDFS_LABEL: iriForNamespaceId('rdfs', 'label').value,
+  RDFS_SUBCLASS: iriForNamespaceId('rdfs', 'subClassOf').value,
+  RDFS_SUBPROP: iriForNamespaceId('rdfs', 'subPropertyOf').value,
+  OWL_ONTOLOGY: iriForNamespaceId('owl', 'Ontology').value,
+  OWL_CLASS: iriForNamespaceId('owl', 'Class').value,
+  OWL_NAMEDIND: iriForNamespaceId('owl', 'NamedIndividual').value,
+  OWL_OBJPROP: iriForNamespaceId('owl', 'ObjectProperty').value,
   OWL_DATAPROP: 'http://www.w3.org/2002/07/owl#DataProperty',
-  OWL_ANNOPROP: 'http://www.w3.org/2002/07/owl#AnnotationProperty',
-  OWL_DATATYPE: 'http://www.w3.org/2002/07/owl#DatatypeProperty',
-  OWL_IMPORTS: 'http://www.w3.org/2002/07/owl#imports',
-  SKOS_DEFINITION: 'http://www.w3.org/2004/02/skos/core#definition',
+  OWL_ANNOPROP: iriForNamespaceId('owl', 'AnnotationProperty').value,
+  OWL_DATATYPE: iriForNamespaceId('owl', 'DatatypeProperty').value,
+  OWL_IMPORTS: iriForNamespaceId('owl', 'imports').value,
+  OWL_VERSION_IRI: iriForNamespaceId('owl', 'versionIRI').value,
+  OWL_VERSION_INFO: iriForNamespaceId('owl', 'versionInfo').value,
+  SKOS_DEFINITION: iriForNamespaceId('skos', 'definition').value,
   CCO_CURATEDIN: 'https://www.commoncoreontologies.org/ont00001760',
-  DCTERMS_CREATOR: 'http://purl.org/dc/terms/creator',
-  DCTERMS_CREATED: 'http://purl.org/dc/terms/created',
-  DCTERMS_DESCRIPTION: 'http://purl.org/dc/terms/description',
-  DCTERMS_CITATION: 'http://purl.org/dc/terms/bibliographicCitation',
+  DCTERMS_CREATOR: iriForNamespaceId('dcterms', 'creator').value,
+  DCTERMS_CREATED: iriForNamespaceId('dcterms', 'created').value,
+  DCTERMS_DESCRIPTION: iriForNamespaceId('dcterms', 'description').value,
+  DCTERMS_CITATION: iriForNamespaceId('dcterms', 'bibliographicCitation').value,
   OBO_CURATION_STATUS: 'http://purl.obolibrary.org/obo/IAO_0000114',
 };
 
@@ -445,11 +457,11 @@ function generateOntologySettings(
 
   return {
     iri: `${base}${delimiter}${normalizedLabel}`,
-    "http://www.w3.org/2002/07/owl#versionIRI": `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`,
-    "http://www.w3.org/2002/07/owl#versionInfo": `${year}-${month}-${day}`,
-    "http://www.w3.org/2000/01/rdf-schema#label": label,
-    "http://purl.org/dc/terms/creator": creator,
-    "http://purl.org/dc/terms/description": description,
+    [w3cIRI.OWL_VERSION_IRI]: `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`,
+    [w3cIRI.OWL_VERSION_INFO]: `${year}-${month}-${day}`,
+    [w3cIRI.RDFS_LABEL]: label,
+    [w3cIRI.DCTERMS_CREATOR]: creator,
+    [w3cIRI.DCTERMS_DESCRIPTION]: description,
     iriMode,
     opaqueLeading,
     opaqueDigits,
@@ -1185,7 +1197,11 @@ function serializeQuads(quads, format = 'ttl') {
     format: writerFormat
   };
   if (shouldSerializeWithPrefixes(writerFormat)) {
-    writerOptions.prefixes = iriPrefixes;
+    const prefixOptions = createN3WriterOptionsWithPrefixes({ prefixes: iriPrefixes });
+    writerOptions.prefixes = prefixOptions.value.prefixes;
+    if (prefixOptions.warnings?.length) {
+      console.warn('[export] Ignored invalid prefixes:', prefixOptions.warnings);
+    }
   }
   const writer = new N3.Writer({
     ...writerOptions
@@ -2028,11 +2044,13 @@ function isPredicateVocabRecord(rec) {
   return PREDICATE_LOOKUP_TYPES.includes(type) || /Property$/i.test(type);
 }
 
-// quick CURIE builder using your existing prefixes
 function iriToCurie(iri) {
-  for (const [pfx, base] of Object.entries(iriPrefixes)) {
-    if (iri.startsWith(base)) return `${pfx}:${iri.slice(base.length)}`;
-  }
+  const result = compactIriToCurie(iri, iriPrefixes);
+  if (result.ok) return result.value;
+
+  const match = findLongestPrefixMatch(iri, iriPrefixes);
+  if (match.ok) return `${match.prefix}:${String(iri || '').slice(match.namespaceIri.length)}`;
+
   return null;
 }
 
@@ -2123,9 +2141,8 @@ function resolvePredicateInputToIri(value) {
   }
 
   if (token.includes(':')) {
-    const [pfx, local] = token.split(':');
-    const base = iriPrefixes[pfx];
-    if (base) return base + local;
+    const expanded = expandCurieToIri(token, iriPrefixes);
+    if (expanded.ok) return expanded.value;
 
     const rec = vocabByCurie.get(token);
     if (rec && isPredicateVocabRecord(rec)) return rec.iri;
@@ -2197,9 +2214,8 @@ function resolveToIri(value) {
   }
 
   if (maybeCode.includes(':')) {
-    const [pfx, local] = maybeCode.split(':');
-    const base = iriPrefixes[pfx];
-    if (base) return base + local;
+    const expanded = expandCurieToIri(maybeCode, iriPrefixes);
+    if (expanded.ok) return expanded.value;
 
     const rec = vocabByCurie.get(maybeCode);
     if (rec) return rec.iri;
@@ -3035,11 +3051,8 @@ function curieToIri(maybe) {
   if (!maybe) return null;
   const v = String(maybe).trim();
   if (/^https?:\/\//i.test(v)) return v;
-  if (v.includes(':')) {
-    const [pfx, local] = v.split(':');
-    const base = iriPrefixes?.[pfx];
-    if (base) return base + local;
-  }
+  const expanded = expandCurieToIri(v, iriPrefixes);
+  if (expanded.ok) return expanded.value;
   return null;
 }
 
@@ -3547,7 +3560,7 @@ function deriveOntologyImportTarget(quads) {
     return CoreUtils.deriveOntologyImportTarget(quads, {
       rdfTypeIri: w3cIRI.RDF_TYPE,
       owlOntologyIri: w3cIRI.OWL_ONTOLOGY,
-      owlVersionIri: 'http://www.w3.org/2002/07/owl#versionIRI'
+      owlVersionIri: w3cIRI.OWL_VERSION_IRI
     });
   }
 
@@ -3563,7 +3576,7 @@ function deriveOntologyImportTarget(quads) {
     if (predicate === w3cIRI.RDF_TYPE && object === w3cIRI.OWL_ONTOLOGY) {
       ontologySubjects.add(subject);
     }
-    if (predicate === 'http://www.w3.org/2002/07/owl#versionIRI') {
+    if (predicate === w3cIRI.OWL_VERSION_IRI) {
       versionIris.set(subject, object);
     }
   }
@@ -4143,10 +4156,17 @@ function handlePrefixInputChange() {
 
 // Add new prefix
 function handleAddPrefix() {
-  const prefix = document.getElementById('new-prefix').value.trim();
-  const iri = document.getElementById('new-prefix-iri').value.trim();
+  const rawPrefix = document.getElementById('new-prefix').value.trim();
+  const rawIri = document.getElementById('new-prefix-iri').value.trim();
 
-  if (!prefix || !iri) return;
+  if (!rawPrefix || !rawIri) return;
+
+  const normalized = normalizePrefixMap({ [rawPrefix]: rawIri });
+  const [[prefix, iri] = []] = Object.entries(normalized.prefixes);
+  if (!prefix || !iri) {
+    alert(normalized.warnings[0] || 'Prefix must be a valid Turtle prefix and IRI must be absolute.');
+    return;
+  }
   if (iriPrefixes[prefix]) {
     alert('Prefix already exists!');
     return;
