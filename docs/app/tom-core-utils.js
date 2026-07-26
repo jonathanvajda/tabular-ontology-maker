@@ -9,16 +9,9 @@
 
   root.TOMCoreUtils = factory();
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-  const FormatRegistry =
-    (typeof globalThis !== "undefined" && globalThis.FormatRegistry) ||
-    (function () {
-      if (typeof require !== "function") return null;
-      try {
-        return require("./shared/format-registry/browser-global.js");
-      } catch (_) {
-        return null;
-      }
-    })();
+  function getFormatRegistry() {
+    return (typeof globalThis !== "undefined" && globalThis.FormatRegistry) || null;
+  }
 
   function getCurrentDateParts(date) {
     const now = date instanceof Date ? date : new Date();
@@ -58,6 +51,7 @@
   }
 
   function parseFileExtension(filename) {
+    const FormatRegistry = getFormatRegistry();
     if (FormatRegistry && FormatRegistry.getFilenameExtension) {
       return FormatRegistry.getFilenameExtension(filename);
     }
@@ -68,13 +62,14 @@
   }
 
   function detectFormatByExtension(extension) {
+    const FormatRegistry = getFormatRegistry();
     if (FormatRegistry && FormatRegistry.getInputKindForExtension) {
       return FormatRegistry.getInputKindForExtension(extension);
     }
     if (typeof extension !== "string") return "unsupported";
     const normalized = extension.toLowerCase();
     const spreadsheetExts = ["csv", "tsv", "xls", "xlsx"];
-    const ontologyExts = ["ttl", "nt", "rdf", "jsonld", "trig"];
+    const ontologyExts = ["ttl", "turtle", "n3", "nt", "ntriples", "nq", "nquads", "rdf", "owl", "xml", "jsonld", "json-ld", "trig"];
 
     if (spreadsheetExts.includes(normalized)) return "spreadsheet";
     if (ontologyExts.includes(normalized)) return "ontology";
@@ -82,6 +77,7 @@
   }
 
   function guessMediaType(text) {
+    const FormatRegistry = getFormatRegistry();
     if (FormatRegistry && FormatRegistry.guessRdfMimeTypeFromText) {
       return FormatRegistry.guessRdfMimeTypeFromText(text);
     }
