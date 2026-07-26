@@ -1133,6 +1133,45 @@ function buildOntologyExportQuads(rows) {
   return quads;
 }
 
+function shouldSerializeWithPrefixes(writerFormat) {
+  return !['N-Triples', 'N-Quads'].includes(writerFormat);
+}
+
+function getNQuadsLineContext(nquads, lineNumber) {
+  const lines = String(nquads || '').split(/\r?\n/);
+  const index = Number(lineNumber) - 1;
+  if (!Number.isFinite(index) || index < 0 || index >= lines.length) return '';
+  const start = Math.max(0, index - 2);
+  const end = Math.min(lines.length, index + 3);
+  return lines
+    .slice(start, end)
+    .map((line, offset) => {
+      const currentLine = start + offset + 1;
+      const marker = currentLine === lineNumber ? '>' : ' ';
+      return `${marker} ${currentLine}: ${line}`;
+    })
+    .join('\n');
+}
+
+function getLineNumberFromError(error) {
+  const match = /line\s+(\d+)/i.exec(String(error?.message || ''));
+  return match ? Number(match[1]) : null;
+}
+
+function validateNQuadsForJsonLd(nquads) {
+  try {
+    const parser = new N3.Parser({ format: 'N-Quads' });
+    parser.parse(nquads);
+  } catch (error) {
+    const lineNumber = getLineNumberFromError(error);
+    const context = lineNumber ? getNQuadsLineContext(nquads, lineNumber) : '';
+    const message = context
+      ? `Invalid N-Quads generated for JSON-LD export on line ${lineNumber}:\n${context}`
+      : `Invalid N-Quads generated for JSON-LD export: ${error.message}`;
+    throw new Error(message);
+  }
+}
+
 function serializeQuads(quads, format = 'ttl') {
   const mimeType = mimeTypes[format] || format;
   const n3Format = FormatRegistry.getN3ParserFormatForMimeType
@@ -1141,9 +1180,15 @@ function serializeQuads(quads, format = 'ttl') {
   const fallbackFormat = fallbackN3ParserFormats[String(format || '').toLowerCase()]
     || fallbackN3ParserFormats[String(mimeType || '').toLowerCase()]
     || 'Turtle';
+  const writerFormat = n3Format && n3Format.ok ? n3Format.value : fallbackFormat;
+  const writerOptions = {
+    format: writerFormat
+  };
+  if (shouldSerializeWithPrefixes(writerFormat)) {
+    writerOptions.prefixes = iriPrefixes;
+  }
   const writer = new N3.Writer({
-    prefixes: iriPrefixes,
-    format: n3Format && n3Format.ok ? n3Format.value : fallbackFormat
+    ...writerOptions
   });
   quads.forEach((quad) => writer.addQuad(quad));
 
@@ -1172,7 +1217,19 @@ async function convertNQuadsToJsonLd(nquads) {
     throw new Error('jsonld.min.js is not loaded. Add it to docs/app/jsonld.min.js to enable JSON-LD support.');
   }
 
-  const expanded = await window.jsonld.fromRDF(nquads, { format: 'application/n-quads' });
+  validateNQuadsForJsonLd(nquads);
+
+  let expanded;
+  try {
+    expanded = await window.jsonld.fromRDF(nquads, { format: 'application/n-quads' });
+  } catch (error) {
+    const lineNumber = getLineNumberFromError(error);
+    const context = lineNumber ? getNQuadsLineContext(nquads, lineNumber) : '';
+    const message = context
+      ? `JSON-LD export could not parse generated N-Quads on line ${lineNumber}:\n${context}`
+      : `JSON-LD export could not parse generated N-Quads: ${error.message}`;
+    throw new Error(message);
+  }
   const compacted = await window.jsonld.compact(expanded, buildJsonLdContext());
   return JSON.stringify(compacted, null, 2);
 }
