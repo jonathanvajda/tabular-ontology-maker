@@ -9,10 +9,6 @@
 
   root.TOMCoreUtils = factory();
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-  function getFormatRegistry() {
-    return (typeof globalThis !== "undefined" && globalThis.FormatRegistry) || null;
-  }
-
   function getCurrentDateParts(date) {
     const now = date instanceof Date ? date : new Date();
     return {
@@ -51,10 +47,6 @@
   }
 
   function parseFileExtension(filename) {
-    const FormatRegistry = getFormatRegistry();
-    if (FormatRegistry && FormatRegistry.getFilenameExtension) {
-      return FormatRegistry.getFilenameExtension(filename);
-    }
     if (typeof filename !== "string") return "";
     const lastDot = filename.lastIndexOf(".");
     if (lastDot === -1 || lastDot === filename.length - 1) return "";
@@ -62,10 +54,6 @@
   }
 
   function detectFormatByExtension(extension) {
-    const FormatRegistry = getFormatRegistry();
-    if (FormatRegistry && FormatRegistry.getInputKindForExtension) {
-      return FormatRegistry.getInputKindForExtension(extension);
-    }
     if (typeof extension !== "string") return "unsupported";
     const normalized = extension.toLowerCase();
     const spreadsheetExts = ["csv", "tsv", "xls", "xlsx"];
@@ -77,10 +65,6 @@
   }
 
   function guessMediaType(text) {
-    const FormatRegistry = getFormatRegistry();
-    if (FormatRegistry && FormatRegistry.guessRdfMimeTypeFromText) {
-      return FormatRegistry.guessRdfMimeTypeFromText(text);
-    }
     const content = String(text || "");
     if (/^\s*\{[\s\S]*"@context"\s*:/.test(content) || /^\s*\[[\s\S]*"@context"\s*:/.test(content)) {
       return "application/ld+json";
