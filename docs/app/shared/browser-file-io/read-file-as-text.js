@@ -9,7 +9,7 @@
  * @typedef {Object} ReadFileAsTextOptions
  * @property {string} [encoding] - Optional text encoding passed to FileReader.
  * @property {AbortSignal} [signal] - Optional signal used to abort a FileReader read.
- * @property {typeof FileReader} [FileReaderCtor] - Test seam or browser FileReader constructor.
+ * @property {typeof FileReader} [FileReaderConstructor] - Test seam or browser FileReader constructor.
  * @property {boolean} [preferNativeText=true] - Use `file.text()` when available and no encoding/signal is needed.
  */
 
@@ -50,8 +50,8 @@ function shouldUseNativeText(file, options) {
  * @returns {Promise<string>}
  */
 function readWithFileReader(file, mode, options) {
-  const FileReaderCtor = options.FileReaderCtor || globalThis.FileReader;
-  if (typeof FileReaderCtor !== 'function') {
+  const FileReaderConstructor = options.FileReaderConstructor || globalThis.FileReader;
+  if (typeof FileReaderConstructor !== 'function') {
     return Promise.reject(new Error('FileReader is not available in this environment.'));
   }
 
@@ -82,7 +82,7 @@ function readWithFileReader(file, mode, options) {
     };
 
     try {
-      reader = new FileReaderCtor();
+      reader = new FileReaderConstructor();
       reader.onerror = () => {
         finish(reject, reader.error || new Error('Failed to read file as text.'));
       };

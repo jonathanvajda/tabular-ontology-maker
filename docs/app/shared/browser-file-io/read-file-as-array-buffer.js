@@ -5,7 +5,7 @@
 /**
  * @typedef {Object} ReadFileAsArrayBufferOptions
  * @property {AbortSignal} [signal] - Optional signal used to abort a FileReader read.
- * @property {typeof FileReader} [FileReaderCtor] - Test seam or browser FileReader constructor.
+ * @property {typeof FileReader} [FileReaderConstructor] - Test seam or browser FileReader constructor.
  * @property {boolean} [preferNativeArrayBuffer=true] - Use `file.arrayBuffer()` when available and no signal is needed.
  */
 
@@ -40,8 +40,8 @@ function shouldUseNativeArrayBuffer(file, options) {
  * @returns {Promise<ArrayBuffer>}
  */
 function readWithFileReader(file, options) {
-  const FileReaderCtor = options.FileReaderCtor || globalThis.FileReader;
-  if (typeof FileReaderCtor !== 'function') {
+  const FileReaderConstructor = options.FileReaderConstructor || globalThis.FileReader;
+  if (typeof FileReaderConstructor !== 'function') {
     return Promise.reject(new Error('FileReader is not available in this environment.'));
   }
 
@@ -72,7 +72,7 @@ function readWithFileReader(file, options) {
     };
 
     try {
-      reader = new FileReaderCtor();
+      reader = new FileReaderConstructor();
       reader.onerror = () => {
         finish(reject, reader.error || new Error('Failed to read file as ArrayBuffer.'));
       };
