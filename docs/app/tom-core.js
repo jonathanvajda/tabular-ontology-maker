@@ -23,7 +23,11 @@ import {
   getSupportedMimeTypeForFilename
 } from './shared/format-registry/mime-registry.js';
 import { getN3ParserFormatForMimeType } from './shared/format-registry/rdf-parser-formats.js';
-import { downloadTextFile } from './shared/format-registry/browser-file-actions.js';
+import {
+  downloadTextFile,
+  readFileAsArrayBuffer,
+  readFileAsText
+} from './shared/browser-file-io/index.js';
 
 (function () {
 const TOM = (window.TOM = window.TOM || {});
@@ -3322,55 +3326,41 @@ function detectFormatByExtension(extension) {
  * @param {boolean} hasHeaderRow - Whether the first row is a header
  * @returns {Promise<{rows: string[][], header: string[] | null}>}
  */
-function parseSpreadsheetData(file, extension, hasHeaderRow) {
-  return new Promise((resolve, reject) => {
-    console.info(`[parseSpreadsheetData] Reading ${file.name}, header=${hasHeaderRow}`);
+async function parseSpreadsheetData(file, extension, hasHeaderRow) {
+  console.info(`[parseSpreadsheetData] Reading ${file.name}, header=${hasHeaderRow}`);
 
-    var reader = new FileReader();
+  try {
+    const isWorkbook = extension === "xls" || extension === "xlsx";
+    // Browser file I/O stops here; SheetJS parsing/normalization belongs to the tabular parsing cycle.
+    const data = isWorkbook
+      ? await readFileAsArrayBuffer(file)
+      : await readFileAsText(file);
 
-    reader.onload = function (event) {
-      try {
-        var data = event.target.result;
+    // Read workbook
+    var workbook = XLSX.read(data, {
+      type: isWorkbook ? 'array' : 'string',
+      raw: false
+    });
 
-        // Read workbook
-        var workbook = XLSX.read(data, {
-          type: extension === "xls" || extension === "xlsx" ? 'binary' : 'string',
-          raw: false
-        });
+    // Use first sheet
+    var sheetName = workbook.SheetNames[0];
+    var sheet = workbook.Sheets[sheetName];
 
-        // Use first sheet
-        var sheetName = workbook.SheetNames[0];
-        var sheet = workbook.Sheets[sheetName];
-
-        // Convert to 2D array
-        var options = {
-          header: 1, // raw rows
-          blankrows: false
-        };
-        var allRows = XLSX.utils.sheet_to_json(sheet, options);
-
-        var header = hasHeaderRow ? allRows[0] : null;
-        var rows = hasHeaderRow ? allRows.slice(1) : allRows;
-
-        resolve({ rows: rows, header: header });
-      } catch (error) {
-        console.error("[parseSpreadsheetData] Error parsing:", error);
-        reject(error);
-      }
+    // Convert to 2D array
+    var options = {
+      header: 1, // raw rows
+      blankrows: false
     };
+    var allRows = XLSX.utils.sheet_to_json(sheet, options);
 
-    reader.onerror = function (e) {
-      console.error("[parseSpreadsheetData] File read error:", e);
-      reject(e);
-    };
+    var header = hasHeaderRow ? allRows[0] : null;
+    var rows = hasHeaderRow ? allRows.slice(1) : allRows;
 
-    // Trigger appropriate read type
-    if (extension === "xls" || extension === "xlsx") {
-      reader.readAsBinaryString(file);
-    } else {
-      reader.readAsText(file);
-    }
-  });
+    return { rows: rows, header: header };
+  } catch (error) {
+    console.error("[parseSpreadsheetData] Error parsing:", error);
+    throw error;
+  }
 }
 
 /**
@@ -3501,26 +3491,10 @@ async function parseOntologyText(fileContent, fileName = '') {
   return parseQuadsFromN3Text(fileContent, mimeType);
 }
 
-function parseOntologyData(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = async (event) => {
-      try {
-        const fileContent = event.target.result;
-        const quads = await parseOntologyText(fileContent, file.name);
-        resolve(quads);
-      } catch (error) {
-        reject(error instanceof Error ? error : new Error(String(error)));
-      }
-    };
-
-    reader.onerror = () => {
-      reject(new Error('Failed to read the file.'));
-    };
-
-    reader.readAsText(file);
-  });
+async function parseOntologyData(file) {
+  // Browser file I/O stops here; RDF parser selection belongs to the RDF parsing cycle.
+  const fileContent = await readFileAsText(file);
+  return parseOntologyText(fileContent, file.name);
 }
 
 function deriveOntologyImportTarget(quads) {
