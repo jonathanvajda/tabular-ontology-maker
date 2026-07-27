@@ -27,7 +27,6 @@ const PRECACHE_MANIFEST = [
   { url: './app/shared/format-registry/mime-registry.js', revision: 'v0.2.0' },
   { url: './app/shared/format-registry/rdf-parser-formats.js', revision: 'v0.2.0' },
   { url: './app/shared/format-registry/browser-file-actions.js', revision: 'v0.2.0' },
-  { url: './app/shared/format-registry/format-registry-compat.js', revision: 'v0.2.0' },
   { url: './app/tom-ui.js',                   revision: 'v0.2.0' },
   { url: './app/tom-app.js',                  revision: 'v0.2.0' },
   { url: './index.html',                      revision: 'v0.2.0' },
