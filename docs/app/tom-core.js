@@ -28,6 +28,7 @@ import {
   readFileAsArrayBuffer,
   readFileAsText
 } from './shared/browser-file-io/index.js';
+import { serializeDelimitedRows } from './shared/tabular-io/index.js';
 
 (function () {
 const TOM = (window.TOM = window.TOM || {});
@@ -1306,9 +1307,11 @@ function buildCsvExportRows(rows) {
 }
 
 function generateCsvString(rows) {
-  return buildCsvExportRows(rows)
-    .map((row) => row.map(escapeCsvField).join(','))
-    .join('\r\n');
+  return serializeDelimitedRows(buildCsvExportRows(rows), {
+    delimiter: ',',
+    newline: '\r\n',
+    trailingNewline: false
+  });
 }
 
 function getPreviewFormat(selectedFormat) {
