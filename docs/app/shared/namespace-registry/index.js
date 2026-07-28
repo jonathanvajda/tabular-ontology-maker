@@ -7,7 +7,9 @@ export {
 } from './prefix-map.js';
 
 export {
+  COMMON_NAMESPACE_IRIS,
   COMMON_NAMESPACE_REGISTRY,
+  namespaceIriMapFromRegistry,
   namespacePrefixMapFromRegistry,
   namespaceToPrefixMap,
   iriForNamespaceId

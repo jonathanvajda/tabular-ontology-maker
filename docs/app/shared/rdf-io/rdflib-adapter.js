@@ -71,10 +71,11 @@ export async function serializeRdfDatasetWithRdflib(dataset, options = {}) {
   }
   return new Promise((resolve, reject) => {
     try {
-      $rdf.serialize(null, graph, options.baseIri || 'urn:rdf-io:base', RDF_XML_MIME, (error, result) => {
+      const result = $rdf.serialize(null, graph, options.baseIri || 'urn:rdf-io:base', RDF_XML_MIME, (error, value) => {
         if (error) reject(error);
-        else resolve(result || '');
+        else resolve(value || '');
       });
+      if (typeof result === 'string') resolve(result);
     } catch (error) {
       reject(error);
     }

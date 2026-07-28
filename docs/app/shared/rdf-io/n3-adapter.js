@@ -12,7 +12,7 @@ import { n3FormatForRdfFormat } from './runtime.js';
  * @returns {{dataset: object, quads: object[], prefixes: object, warnings: object[]}} Parsed result.
  */
 export function parseRdfTextWithN3(text, options = {}) {
-  const N3 = requireN3(options.runtime);
+  const N3 = requireN3Parser(options.runtime);
   const n3Format = n3FormatForRdfFormat(options.format);
   if (!n3Format) throw new TypeError(`N3 adapter does not support RDF format: ${options.format}`);
 
@@ -42,7 +42,7 @@ export function parseRdfTextWithN3(text, options = {}) {
  * @returns {Promise<string>} Serialized RDF text.
  */
 export function serializeRdfDatasetWithN3(dataset, options = {}) {
-  const N3 = requireN3(options.runtime);
+  const N3 = requireN3Writer(options.runtime);
   const n3Format = n3FormatForRdfFormat(options.format);
   if (!n3Format) throw new TypeError(`N3 adapter does not support RDF format: ${options.format}`);
   const writer = new N3.Writer({
@@ -72,9 +72,14 @@ function shouldUsePrefixes(format) {
   return ['turtle', 'trig', 'n3', 'text/turtle', 'application/trig', 'text/n3'].includes(String(format || '').toLowerCase());
 }
 
-function requireN3(runtime = {}) {
+function requireN3Parser(runtime = {}) {
   const N3 = runtime.N3;
-  if (!N3?.Parser || !N3?.Writer) throw new Error('N3 runtime library is not available.');
+  if (!N3?.Parser) throw new Error('N3 Parser runtime is not available.');
   return N3;
 }
 
+function requireN3Writer(runtime = {}) {
+  const N3 = runtime.N3;
+  if (!N3?.Writer) throw new Error('N3 Writer runtime is not available.');
+  return N3;
+}
