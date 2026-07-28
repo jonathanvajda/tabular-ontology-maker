@@ -29,6 +29,10 @@ import {
   readFileAsText
 } from './shared/browser-file-io/index.js';
 import { serializeDelimitedRows } from './shared/tabular-io/index.js';
+import {
+  parseRdfTextWithAdapters,
+  serializeRdfDatasetWithAdapters
+} from './shared/rdf-io/index.js';
 
 (function () {
 const TOM = (window.TOM = window.TOM || {});
@@ -1196,38 +1200,18 @@ function validateNQuadsForJsonLd(nquads) {
   }
 }
 
-function serializeQuads(quads, format = 'ttl') {
+async function serializeQuads(quads, format = 'ttl') {
   const mimeType = mimeTypes[format] || format;
-  const n3Format = getN3ParserFormatForMimeType(mimeType);
-  const fallbackFormat = fallbackN3ParserFormats[String(format || '').toLowerCase()]
-    || fallbackN3ParserFormats[String(mimeType || '').toLowerCase()]
-    || 'Turtle';
-  const writerFormat = n3Format && n3Format.ok ? n3Format.value : fallbackFormat;
-  const writerOptions = {
-    format: writerFormat
-  };
-  if (shouldSerializeWithPrefixes(writerFormat)) {
-    const prefixOptions = createN3WriterOptionsWithPrefixes({ prefixes: iriPrefixes });
-    writerOptions.prefixes = prefixOptions.value.prefixes;
-    if (prefixOptions.warnings?.length) {
-      console.warn('[export] Ignored invalid prefixes:', prefixOptions.warnings);
-    }
+  const prefixOptions = createN3WriterOptionsWithPrefixes({ prefixes: iriPrefixes });
+  if (prefixOptions.warnings?.length) {
+    console.warn('[export] Ignored invalid prefixes:', prefixOptions.warnings);
   }
-  const writer = new N3.Writer({
-    ...writerOptions
+  const serialized = await serializeRdfDatasetWithAdapters(quads, {
+    format: mimeType,
+    prefixes: prefixOptions.value.prefixes,
+    runtime: { N3, jsonld: window.jsonld, $rdf: window.$rdf }
   });
-  quads.forEach((quad) => writer.addQuad(quad));
-
-  return new Promise((resolve, reject) => {
-    writer.end((error, result) => {
-      if (error) {
-        console.error('serializeQuads failed:', error);
-        reject(error);
-      } else {
-        resolve(result);
-      }
-    });
-  });
+  return serialized.text;
 }
 
 function buildJsonLdContext() {
@@ -1243,11 +1227,18 @@ async function convertNQuadsToJsonLd(nquads) {
     throw new Error('jsonld.min.js is not loaded. Add it to docs/app/jsonld.min.js to enable JSON-LD support.');
   }
 
-  validateNQuadsForJsonLd(nquads);
-
-  let expanded;
   try {
-    expanded = await window.jsonld.fromRDF(nquads, { format: 'application/n-quads' });
+    validateNQuadsForJsonLd(nquads);
+    const parsed = await parseRdfTextWithAdapters(nquads, {
+      format: mimeTypes.nquads,
+      runtime: { N3, jsonld: window.jsonld, $rdf: window.$rdf }
+    });
+    const serialized = await serializeRdfDatasetWithAdapters(parsed.dataset, {
+      format: mimeTypes.jsonld,
+      context: buildJsonLdContext(),
+      runtime: { N3, jsonld: window.jsonld, $rdf: window.$rdf }
+    });
+    return serialized.text;
   } catch (error) {
     const lineNumber = getLineNumberFromError(error);
     const context = lineNumber ? getNQuadsLineContext(nquads, lineNumber) : '';
@@ -1256,8 +1247,6 @@ async function convertNQuadsToJsonLd(nquads) {
       : `JSON-LD export could not parse generated N-Quads: ${error.message}`;
     throw new Error(message);
   }
-  const compacted = await window.jsonld.compact(expanded, buildJsonLdContext());
-  return JSON.stringify(compacted, null, 2);
 }
 
 async function generateRdfString(rows, format = 'ttl') {
@@ -3479,19 +3468,15 @@ async function parseOntologyText(fileContent, fileName = '') {
     ? detected.value.mimeType
     : guessMediaType(fileContent);
 
-  if (mimeType === 'application/rdf+xml') {
-    throw new Error('RDF/XML import is not supported yet. Please convert the file to Turtle, N-Triples, TriG, or JSON-LD first.');
-  }
-
-  if (mimeType === 'application/ld+json') {
-    return parseQuadsFromJsonLdText(fileContent);
-  }
-
   if (mimeType === 'text/plain') {
     throw new Error('Unsupported ontology file format.');
   }
 
-  return parseQuadsFromN3Text(fileContent, mimeType);
+  const parsed = await parseRdfTextWithAdapters(fileContent, {
+    format: mimeType,
+    runtime: { N3, jsonld: window.jsonld, $rdf: window.$rdf }
+  });
+  return parsed.quads;
 }
 
 async function parseOntologyData(file) {
