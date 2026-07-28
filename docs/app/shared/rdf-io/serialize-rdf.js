@@ -208,7 +208,9 @@ export async function parseRdfTextWithAdapters(text, options = {}) {
 
   let parsed;
   if (adapter === 'n3') {
-    if (runtime.N3) parsed = parseRdfTextWithN3(text, { ...options, format, runtime });
+    if (runtime.N3?.Parser) parsed = parseRdfTextWithN3(text, { ...options, format, runtime });
+    else if (format === 'ntriples' || format === 'nquads') parsed = parseRdfText(text, { ...options, format });
+    else if (runtime.N3) parsed = parseRdfTextWithN3(text, { ...options, format, runtime });
     else parsed = parseRdfText(text, { ...options, format });
   } else if (adapter === 'jsonld') {
     parsed = await parseJsonLdTextToRdfDataset(text, { ...options, format, runtime });

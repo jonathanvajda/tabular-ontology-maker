@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2025-2026 Jonathan Vajda
 import {
-  iriForNamespaceId,
+  COMMON_NAMESPACE_IRIS,
   namespacePrefixMapFromRegistry
 } from './shared/namespace-registry/namespace-registry.js';
 import {
@@ -39,6 +39,7 @@ const TOM = (window.TOM = window.TOM || {});
 const CoreUtils = window.TOMCoreUtils || {};
 const FeatureUtils = window.TOMFeatureUtils || {};
 const AxiomBuilder = TOM.AxiomBuilder || {};
+const NS = COMMON_NAMESPACE_IRIS;
 
 const fallbackN3ParserFormats = {
   ttl: 'Turtle',
@@ -140,27 +141,27 @@ const getElementTypes = () => {
 };
 
 const w3cIRI = {
-  RDF_TYPE: iriForNamespaceId('rdf', 'type').value,
-  RDFS_LABEL: iriForNamespaceId('rdfs', 'label').value,
-  RDFS_SUBCLASS: iriForNamespaceId('rdfs', 'subClassOf').value,
-  RDFS_SUBPROP: iriForNamespaceId('rdfs', 'subPropertyOf').value,
-  OWL_ONTOLOGY: iriForNamespaceId('owl', 'Ontology').value,
-  OWL_CLASS: iriForNamespaceId('owl', 'Class').value,
-  OWL_NAMEDIND: iriForNamespaceId('owl', 'NamedIndividual').value,
-  OWL_OBJPROP: iriForNamespaceId('owl', 'ObjectProperty').value,
-  OWL_DATAPROP: 'http://www.w3.org/2002/07/owl#DataProperty',
-  OWL_ANNOPROP: iriForNamespaceId('owl', 'AnnotationProperty').value,
-  OWL_DATATYPE: iriForNamespaceId('owl', 'DatatypeProperty').value,
-  OWL_IMPORTS: iriForNamespaceId('owl', 'imports').value,
-  OWL_VERSION_IRI: iriForNamespaceId('owl', 'versionIRI').value,
-  OWL_VERSION_INFO: iriForNamespaceId('owl', 'versionInfo').value,
-  SKOS_DEFINITION: iriForNamespaceId('skos', 'definition').value,
-  CCO_CURATEDIN: 'https://www.commoncoreontologies.org/ont00001760',
-  DCTERMS_CREATOR: iriForNamespaceId('dcterms', 'creator').value,
-  DCTERMS_CREATED: iriForNamespaceId('dcterms', 'created').value,
-  DCTERMS_DESCRIPTION: iriForNamespaceId('dcterms', 'description').value,
-  DCTERMS_CITATION: iriForNamespaceId('dcterms', 'bibliographicCitation').value,
-  OBO_CURATION_STATUS: 'http://purl.obolibrary.org/obo/IAO_0000114',
+  RDF_TYPE: NS.rdf.type,
+  RDFS_LABEL: NS.rdfs.label,
+  RDFS_SUBCLASS: NS.rdfs.subClassOf,
+  RDFS_SUBPROP: NS.rdfs.subPropertyOf,
+  OWL_ONTOLOGY: NS.owl.Ontology,
+  OWL_CLASS: NS.owl.Class,
+  OWL_NAMEDIND: NS.owl.NamedIndividual,
+  OWL_OBJPROP: NS.owl.ObjectProperty,
+  OWL_DATAPROP: NS.owl.DatatypeProperty,
+  OWL_ANNOPROP: NS.owl.AnnotationProperty,
+  OWL_DATATYPE: NS.owl.DatatypeProperty,
+  OWL_IMPORTS: NS.owl.imports,
+  OWL_VERSION_IRI: NS.owl.versionIRI,
+  OWL_VERSION_INFO: NS.owl.versionInfo,
+  SKOS_DEFINITION: NS.skos.definition,
+  CCO_CURATEDIN: NS.cco.curatedIn,
+  DCTERMS_CREATOR: NS.dcterms.creator,
+  DCTERMS_CREATED: NS.dcterms.created,
+  DCTERMS_DESCRIPTION: NS.dcterms.description,
+  DCTERMS_CITATION: NS.dcterms.bibliographicCitation,
+  OBO_CURATION_STATUS: NS.iao.curationStatus,
 };
 
 const getIsAPredicate = (elementType) => {
@@ -1161,45 +1162,6 @@ function buildOntologyExportQuads(rows) {
   return quads;
 }
 
-function shouldSerializeWithPrefixes(writerFormat) {
-  return !['N-Triples', 'N-Quads'].includes(writerFormat);
-}
-
-function getNQuadsLineContext(nquads, lineNumber) {
-  const lines = String(nquads || '').split(/\r?\n/);
-  const index = Number(lineNumber) - 1;
-  if (!Number.isFinite(index) || index < 0 || index >= lines.length) return '';
-  const start = Math.max(0, index - 2);
-  const end = Math.min(lines.length, index + 3);
-  return lines
-    .slice(start, end)
-    .map((line, offset) => {
-      const currentLine = start + offset + 1;
-      const marker = currentLine === lineNumber ? '>' : ' ';
-      return `${marker} ${currentLine}: ${line}`;
-    })
-    .join('\n');
-}
-
-function getLineNumberFromError(error) {
-  const match = /line\s+(\d+)/i.exec(String(error?.message || ''));
-  return match ? Number(match[1]) : null;
-}
-
-function validateNQuadsForJsonLd(nquads) {
-  try {
-    const parser = new N3.Parser({ format: 'N-Quads' });
-    parser.parse(nquads);
-  } catch (error) {
-    const lineNumber = getLineNumberFromError(error);
-    const context = lineNumber ? getNQuadsLineContext(nquads, lineNumber) : '';
-    const message = context
-      ? `Invalid N-Quads generated for JSON-LD export on line ${lineNumber}:\n${context}`
-      : `Invalid N-Quads generated for JSON-LD export: ${error.message}`;
-    throw new Error(message);
-  }
-}
-
 async function serializeQuads(quads, format = 'ttl') {
   const mimeType = mimeTypes[format] || format;
   const prefixOptions = createN3WriterOptionsWithPrefixes({ prefixes: iriPrefixes });
@@ -1222,39 +1184,16 @@ function buildJsonLdContext() {
   return context;
 }
 
-async function convertNQuadsToJsonLd(nquads) {
-  if (!window.jsonld) {
-    throw new Error('jsonld.min.js is not loaded. Add it to docs/app/jsonld.min.js to enable JSON-LD support.');
-  }
-
-  try {
-    validateNQuadsForJsonLd(nquads);
-    const parsed = await parseRdfTextWithAdapters(nquads, {
-      format: mimeTypes.nquads,
-      runtime: { N3, jsonld: window.jsonld, $rdf: window.$rdf }
-    });
-    const serialized = await serializeRdfDatasetWithAdapters(parsed.dataset, {
+async function generateRdfString(rows, format = 'ttl') {
+  console.info('generateRdfString happened');
+  const quads = buildOntologyExportQuads(rows);
+  if (format === 'jsonld') {
+    const serialized = await serializeRdfDatasetWithAdapters(quads, {
       format: mimeTypes.jsonld,
       context: buildJsonLdContext(),
       runtime: { N3, jsonld: window.jsonld, $rdf: window.$rdf }
     });
     return serialized.text;
-  } catch (error) {
-    const lineNumber = getLineNumberFromError(error);
-    const context = lineNumber ? getNQuadsLineContext(nquads, lineNumber) : '';
-    const message = context
-      ? `JSON-LD export could not parse generated N-Quads on line ${lineNumber}:\n${context}`
-      : `JSON-LD export could not parse generated N-Quads: ${error.message}`;
-    throw new Error(message);
-  }
-}
-
-async function generateRdfString(rows, format = 'ttl') {
-  console.info('generateRdfString happened');
-  const quads = buildOntologyExportQuads(rows);
-  if (format === 'jsonld') {
-    const nquads = await serializeQuads(quads, 'nquads');
-    return convertNQuadsToJsonLd(nquads);
   }
   return serializeQuads(quads, format);
 }
@@ -1753,7 +1692,7 @@ async function reloadSavedSession() {
       let o;
       if (q.object.termType === 'Literal') {
         const lang = q.object.language ? `@${q.object.language}` : '';
-        const dt = q.object.datatype && q.object.datatype.value !== 'http://www.w3.org/2001/XMLSchema#string'
+        const dt = q.object.datatype && q.object.datatype.value !== NS.xsd.string
           ? `^^<${q.object.datatype.value}>` : '';
         o = `"${q.object.value}"${lang}${dt}`;
       } else if (q.object.termType === 'BlankNode') {
@@ -1963,7 +1902,7 @@ function extractOntologyVocabEntries(quads, source = "Imported Ontology") {
     const entry = subjectData.get(subject);
 
     if (predicate === w3cIRI.RDFS_LABEL && !entry.label) entry.label = object;
-    if (predicate === 'http://www.w3.org/2004/02/skos/core#altLabel') entry.altLabels.push(object);
+    if (predicate === NS.skos.altLabel) entry.altLabels.push(object);
     if (predicate === w3cIRI.RDF_TYPE) {
       if (object === w3cIRI.OWL_CLASS) entry.type = 'Class';
       else if (object === w3cIRI.OWL_OBJPROP) entry.type = 'ObjectProperty';
@@ -3424,44 +3363,6 @@ async function handleInsertDataSave() {
   }
 }
 
-function parseQuadsFromN3Text(text, mimeType) {
-  return new Promise((resolve, reject) => {
-    try {
-      const parser = new N3.Parser({ format: mimeType });
-      const quads = [];
-      parser.parse(text, (error, quad) => {
-        if (error) {
-          reject(new Error(`N3.js parsing error: ${error.message}`));
-          return;
-        }
-        if (quad) {
-          quads.push(quad);
-          return;
-        }
-        resolve(quads);
-      });
-    } catch (error) {
-      reject(new Error(`Parser initialization error: ${error.message}`));
-    }
-  });
-}
-
-async function parseQuadsFromJsonLdText(text) {
-  if (!window.jsonld) {
-    throw new Error('jsonld.min.js is not loaded. Add it to docs/app/jsonld.min.js to import JSON-LD.');
-  }
-
-  let doc;
-  try {
-    doc = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`Invalid JSON-LD: ${error.message}`);
-  }
-
-  const nquads = await window.jsonld.toRDF(doc, { format: 'application/n-quads' });
-  return parseQuadsFromN3Text(nquads, mimeTypes.nquads);
-}
-
 async function parseOntologyText(fileContent, fileName = '') {
   const detected = getSupportedMimeTypeForFilename(fileName);
   const mimeType = detected && detected.ok && detected.value.category === 'rdf'
@@ -3543,7 +3444,7 @@ function validateAndPivotOntologyData(quads, knownPredicates) {
 
     if (q.object.termType === 'Literal') {
       const lang = q.object.language ? `@${q.object.language}` : '';
-      const dt = q.object.datatype && q.object.datatype.value !== 'http://www.w3.org/2001/XMLSchema#string'
+      const dt = q.object.datatype && q.object.datatype.value !== NS.xsd.string
         ? `^^<${q.object.datatype.value}>` : '';
       o = `"${q.object.value}"${lang}${dt}`;
     } else if (q.object.termType === 'BlankNode') {
@@ -3806,21 +3707,21 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
     "subject": activeSubjectHeader,
     "label": "label",
     "rdfs:label": "label",
-    "http://www.w3.org/2000/01/rdf-schema#label": "label",
+    [NS.rdfs.label]: "label",
     "element type": "element type",
     "type": "element type",
     "rdf:type": "element type",
-    "http://www.w3.org/1999/02/22-rdf-syntax-ns#type": "element type",
+    [NS.rdf.type]: "element type",
     "definition": "definition",
     "skos:definition": "definition",
-    "http://www.w3.org/2004/02/skos/core#definition": "definition",
+    [NS.skos.definition]: "definition",
     "is a": "is a",
     "subclass of": "is a",
     "rdfs:subClassOf": "is a",
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": "is a",
+    [NS.rdfs.subClassOf]: "is a",
     "subproperty of": "is a",
     "rdfs:subPropertyOf": "is a",
-    "http://www.w3.org/2000/01/rdf-schema#subPropertyOf": "is a",
+    [NS.rdfs.subPropertyOf]: "is a",
     "is curated in": "is curated in",
     "is defined by": "is curated in",
     "is curated in ontology": "is curated in",
