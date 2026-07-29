@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
 
-const {
+import {
   applyPredicateViewPlacement,
   cloneRowsForWorkspace,
   defaultPredicateObjectMode,
@@ -11,7 +11,7 @@ const {
   normalizePredicateRecord,
   normalizeWorkspaceSnapshot,
   selectLatestRecord,
-} = require("../docs/app/tom-feature-utils.js");
+} from "../docs/app/tom-feature-utils.js";
 
 describe("feature regression helpers", () => {
   test("defaultPredicateObjectMode respects known predicate types", () => {

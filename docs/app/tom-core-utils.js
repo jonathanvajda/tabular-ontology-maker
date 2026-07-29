@@ -1,14 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
+import { COMMON_NAMESPACE_IRIS } from './shared/namespace-registry/namespace-registry.js';
 
-(function (root, factory) {
-  if (typeof module === "object" && module.exports) {
-    module.exports = factory();
-    return;
-  }
+const NS = COMMON_NAMESPACE_IRIS;
 
-  root.TOMCoreUtils = factory();
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
   function getCurrentDateParts(date) {
     const now = date instanceof Date ? date : new Date();
     return {
@@ -100,11 +95,11 @@
 
     return {
       iri: `${base}${delimiter}${normalizedLabel}`,
-      "http://www.w3.org/2002/07/owl#versionIRI": `${base}/${dateParts.year}-${dateParts.month}-${dateParts.day}${delimiter}${normalizedLabel}`,
-      "http://www.w3.org/2002/07/owl#versionInfo": `${dateParts.year}-${dateParts.month}-${dateParts.day}`,
-      "http://www.w3.org/2000/01/rdf-schema#label": label,
-      "http://purl.org/dc/terms/creator": creator,
-      "http://purl.org/dc/terms/description": description,
+      [NS.owl.versionIRI]: `${base}/${dateParts.year}-${dateParts.month}-${dateParts.day}${delimiter}${normalizedLabel}`,
+      [NS.owl.versionInfo]: `${dateParts.year}-${dateParts.month}-${dateParts.day}`,
+      [NS.rdfs.label]: label,
+      [NS.dcterms.creator]: creator,
+      [NS.dcterms.description]: description,
       iriMode,
       opaqueLeading,
       opaqueDigits,
@@ -155,9 +150,9 @@
 
   function deriveOntologyImportTarget(quads, iris) {
     const cfg = iris || {};
-    const rdfTypeIri = cfg.rdfTypeIri || "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
-    const owlOntologyIri = cfg.owlOntologyIri || "http://www.w3.org/2002/07/owl#Ontology";
-    const owlVersionIri = cfg.owlVersionIri || "http://www.w3.org/2002/07/owl#versionIRI";
+    const rdfTypeIri = cfg.rdfTypeIri || NS.rdf.type;
+    const owlOntologyIri = cfg.owlOntologyIri || NS.owl.Ontology;
+    const owlVersionIri = cfg.owlVersionIri || NS.owl.versionIRI;
     const ontologySubjects = new Set();
     const versionIris = new Map();
 
@@ -182,19 +177,36 @@
     };
   }
 
-  return {
-    getCurrentDateParts,
-    toCamelCase,
-    toPascalCase,
-    toSnakeCase,
-    parseFileExtension,
-    detectFormatByExtension,
-    guessMediaType,
-    isValidOntology,
-    generateOntologySettings,
-    escapeCsvField,
-    buildCsvExportRows,
-    generateCsvString,
-    deriveOntologyImportTarget,
-  };
-});
+const api = {
+  getCurrentDateParts,
+  toCamelCase,
+  toPascalCase,
+  toSnakeCase,
+  parseFileExtension,
+  detectFormatByExtension,
+  guessMediaType,
+  isValidOntology,
+  generateOntologySettings,
+  escapeCsvField,
+  buildCsvExportRows,
+  generateCsvString,
+  deriveOntologyImportTarget,
+};
+
+export {
+  getCurrentDateParts,
+  toCamelCase,
+  toPascalCase,
+  toSnakeCase,
+  parseFileExtension,
+  detectFormatByExtension,
+  guessMediaType,
+  isValidOntology,
+  generateOntologySettings,
+  escapeCsvField,
+  buildCsvExportRows,
+  generateCsvString,
+  deriveOntologyImportTarget,
+};
+
+export default api;

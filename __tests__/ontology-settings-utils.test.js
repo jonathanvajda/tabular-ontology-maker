@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
 
-const {
+import {
   getCurrentDateParts,
   toCamelCase,
   toPascalCase,
   toSnakeCase,
   generateOntologySettings,
-} = require("../docs/app/tom-core-utils.js");
+} from "../docs/app/tom-core-utils.js";
+import { COMMON_NAMESPACE_IRIS as NS } from "../docs/app/shared/namespace-registry/namespace-registry.js";
 
 describe("ontology settings utilities", () => {
   test("getCurrentDateParts formats a provided date predictably", () => {
@@ -40,8 +41,8 @@ describe("ontology settings utilities", () => {
     });
 
     expect(settings.iri).toBe("http://example.org#TestOntology");
-    expect(settings["http://www.w3.org/2002/07/owl#versionIRI"]).toBe("http://example.org/2026-04-13#TestOntology");
-    expect(settings["http://www.w3.org/2002/07/owl#versionInfo"]).toBe("2026-04-13");
+    expect(settings[NS.owl.versionIRI]).toBe("http://example.org/2026-04-13#TestOntology");
+    expect(settings[NS.owl.versionInfo]).toBe("2026-04-13");
     expect(settings.opaqueLeading).toBe("ONT_");
     expect(settings.opaqueDigits).toBe(5);
     expect(settings.opaqueStart).toBe(42);

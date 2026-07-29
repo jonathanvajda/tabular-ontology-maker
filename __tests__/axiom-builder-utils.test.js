@@ -1,4 +1,5 @@
-const AxiomBuilder = require("../docs/app/tom-axiom-builder.js");
+import AxiomBuilder from "../docs/app/tom-axiom-builder.js";
+import { COMMON_NAMESPACE_IRIS as NS } from "../docs/app/shared/namespace-registry/namespace-registry.js";
 
 const nn = (value) => ({ termType: "NamedNode", value });
 const bn = (value) => ({ termType: "BlankNode", value });
@@ -6,15 +7,15 @@ const lit = (value) => ({
   termType: "Literal",
   value: String(value),
   language: "",
-  datatype: nn("http://www.w3.org/2001/XMLSchema#string"),
+    datatype: nn(NS.xsd.string),
 });
 const quad = (subject, predicate, object) => ({ subject, predicate: nn(predicate), object });
 
-const RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
-const RDFS_SUBCLASS = "http://www.w3.org/2000/01/rdf-schema#subClassOf";
-const OWL_RESTRICTION = "http://www.w3.org/2002/07/owl#Restriction";
-const OWL_ON_PROPERTY = "http://www.w3.org/2002/07/owl#onProperty";
-const OWL_SOME_VALUES_FROM = "http://www.w3.org/2002/07/owl#someValuesFrom";
+const RDF_TYPE = NS.rdf.type;
+const RDFS_SUBCLASS = NS.rdfs.subClassOf;
+const OWL_RESTRICTION = NS.owl.Restriction;
+const OWL_ON_PROPERTY = NS.owl.onProperty;
+const OWL_SOME_VALUES_FROM = NS.owl.someValuesFrom;
 
 const prefixes = {
   ex: "http://example.org/",
@@ -85,8 +86,8 @@ describe("TOM axiom builder utilities", () => {
     const unsupported = bn("u1");
     const quads = [
       quad(nn("http://example.org/Car"), RDFS_SUBCLASS, unsupported),
-      quad(unsupported, RDF_TYPE, nn("http://www.w3.org/2002/07/owl#Class")),
-      quad(unsupported, "http://www.w3.org/2002/07/owl#intersectionOf", lit("not-a-list")),
+      quad(unsupported, RDF_TYPE, nn(NS.owl.Class)),
+      quad(unsupported, NS.owl.intersectionOf, lit("not-a-list")),
     ];
 
     const record = AxiomBuilder.extractClassAxioms(quads, {

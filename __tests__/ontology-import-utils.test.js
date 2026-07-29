@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
 
-const { deriveOntologyImportTarget } = require("../docs/app/tom-core-utils.js");
+import { deriveOntologyImportTarget } from "../docs/app/tom-core-utils.js";
+import { COMMON_NAMESPACE_IRIS as NS } from "../docs/app/shared/namespace-registry/namespace-registry.js";
 
 function quad(subject, predicate, object) {
   return {
@@ -16,12 +17,12 @@ describe("ontology import target derivation", () => {
     const quads = [
       quad(
         "http://example.org/ontology",
-        "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
-        "http://www.w3.org/2002/07/owl#Ontology"
+        NS.rdf.type,
+        NS.owl.Ontology
       ),
       quad(
         "http://example.org/ontology",
-        "http://www.w3.org/2002/07/owl#versionIRI",
+        NS.owl.versionIRI,
         "http://example.org/ontology/2026-04-13"
       ),
     ];
@@ -36,8 +37,8 @@ describe("ontology import target derivation", () => {
     const quads = [
       quad(
         "http://example.org/ontology",
-        "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
-        "http://www.w3.org/2002/07/owl#Ontology"
+        NS.rdf.type,
+        NS.owl.Ontology
       ),
     ];
 
@@ -51,8 +52,8 @@ describe("ontology import target derivation", () => {
     const quads = [
       quad(
         "http://example.org/class1",
-        "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
-        "http://www.w3.org/2002/07/owl#Class"
+        NS.rdf.type,
+        NS.owl.Class
       ),
     ];
 
