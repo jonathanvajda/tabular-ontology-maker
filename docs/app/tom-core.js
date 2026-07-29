@@ -3726,12 +3726,12 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
     "is defined by": "is curated in",
     "is curated in ontology": "is curated in",
     "cco2:ont00001760": "is curated in",
-    "https://www.commoncoreontologies.org/ont00001760": "is curated in",
+    [NS.cco2.curatedIn]: "is curated in",
     "has curation status": "has curation status",
     "obo:IAO_0000114": "has curation status",
-    "http://purl.obolibrarry.org/obo/IAO_0000114": "has curation status",
+    [NS.iao.curationStatus]: "has curation status",
     "cco2:ont00001753": "acronym",
-    "https://www.commoncoreontologies.org/ont00001753": "acronym",
+    [NS.cco2.acronym]: "acronym",
     "cceo:acronym": "acronym"
     // Add more aliases as needed
   };

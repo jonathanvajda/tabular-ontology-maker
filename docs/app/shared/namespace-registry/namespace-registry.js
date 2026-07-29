@@ -365,7 +365,13 @@ export const COMMON_NAMESPACE_REGISTRY = Object.freeze({
   bfo: defineEntry({
     prefix: 'bfo',
     namespaceIri: 'http://purl.obolibrary.org/obo/BFO_',
-    ids: {}
+    ids: {
+      genericallyDependentContinuant: '0000031',
+      role: '0000023',
+      continuantPartOf: '0000176',
+      hasContinuantPart: '0000178',
+      bearerOf: '0000196'
+    }
   }),
   iao: defineEntry({
     prefix: 'iao',
@@ -415,7 +421,18 @@ export const COMMON_NAMESPACE_REGISTRY = Object.freeze({
     namespaceIri: 'http://www.ontologyrepository.com/CommonCoreOntologies/',
     ids: {
       acronym: 'ont00001753',
-      curatedIn: 'ont00001760'
+      curatedIn: 'ont00001760',
+      definition: 'definition',
+      definitionSource: 'definition_source',
+      exampleOfUsage: 'example_of_usage',
+      elucidation: 'elucidation',
+      hasTextValue: 'has_text_value',
+      hasIntegerValue: 'has_integer_value',
+      hasDecimalValue: 'has_decimal_value',
+      hasDateValue: 'has_date_value',
+      hasDatetimeValue: 'has_datetime_value',
+      hasBooleanValue: 'has_boolean_value',
+      legacyCuratedIn: 'is_curated_in_ontology'
     }
   }),
   cceo: defineEntry({
@@ -423,14 +440,31 @@ export const COMMON_NAMESPACE_REGISTRY = Object.freeze({
     namespaceIri: 'http://www.ontologyrepository.com/CommonCoreOntologies/',
     ids: {
       acronym: 'ont00001753',
-      curatedIn: 'ont00001760'
+      definition: 'definition',
+      definitionSource: 'definition_source',
+      exampleOfUsage: 'example_of_usage',
+      elucidation: 'elucidation',
+      hasTextValue: 'has_text_value',
+      hasIntegerValue: 'has_integer_value',
+      hasDecimalValue: 'has_decimal_value',
+      hasDateValue: 'has_date_value',
+      hasDatetimeValue: 'has_datetime_value',
+      hasBooleanValue: 'has_boolean_value',
+      curatedIn: 'is_curated_in_ontology'
     }
   }),
   cco2: defineEntry({
     prefix: 'cco2',
     namespaceIri: 'https://www.commoncoreontologies.org/',
     ids: {
-      curatedIn: 'ont00001760'
+      database: 'ont00000756',
+      person: 'ont00001262',
+      acronym: 'ont00001753',
+      definitionSource: 'ont00001754',
+      curatedIn: 'ont00001760',
+      textValue: 'ont00001761',
+      emailAddressRelation: 'ont00001801',
+      EmailAddress: 'CommonCoreOntologies/EmailAddress'
     }
   }),
   foaf: defineEntry({
