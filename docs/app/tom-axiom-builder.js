@@ -1,38 +1,31 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
+import { COMMON_NAMESPACE_IRIS } from './shared/namespace-registry/namespace-registry.js';
 
-(function (root, factory) {
-  if (typeof module === "object" && module.exports) {
-    module.exports = factory();
-    return;
-  }
-
-  const TOM = (root.TOM = root.TOM || {});
-  TOM.AxiomBuilder = factory();
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
-  const RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
-  const RDF_FIRST = "http://www.w3.org/1999/02/22-rdf-syntax-ns#first";
-  const RDF_REST = "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest";
-  const RDF_NIL = "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil";
-  const RDFS_SUBCLASS = "http://www.w3.org/2000/01/rdf-schema#subClassOf";
-  const OWL_RESTRICTION = "http://www.w3.org/2002/07/owl#Restriction";
-  const OWL_ON_PROPERTY = "http://www.w3.org/2002/07/owl#onProperty";
-  const OWL_SOME_VALUES_FROM = "http://www.w3.org/2002/07/owl#someValuesFrom";
-  const OWL_ALL_VALUES_FROM = "http://www.w3.org/2002/07/owl#allValuesFrom";
-  const OWL_HAS_VALUE = "http://www.w3.org/2002/07/owl#hasValue";
-  const OWL_MIN_CARDINALITY = "http://www.w3.org/2002/07/owl#minCardinality";
-  const OWL_MAX_CARDINALITY = "http://www.w3.org/2002/07/owl#maxCardinality";
-  const OWL_CARDINALITY = "http://www.w3.org/2002/07/owl#cardinality";
-  const OWL_MIN_QUALIFIED_CARDINALITY = "http://www.w3.org/2002/07/owl#minQualifiedCardinality";
-  const OWL_MAX_QUALIFIED_CARDINALITY = "http://www.w3.org/2002/07/owl#maxQualifiedCardinality";
-  const OWL_QUALIFIED_CARDINALITY = "http://www.w3.org/2002/07/owl#qualifiedCardinality";
-  const OWL_ON_CLASS = "http://www.w3.org/2002/07/owl#onClass";
-  const OWL_EQUIVALENT_CLASS = "http://www.w3.org/2002/07/owl#equivalentClass";
-  const OWL_DISJOINT_WITH = "http://www.w3.org/2002/07/owl#disjointWith";
-  const OWL_INTERSECTION_OF = "http://www.w3.org/2002/07/owl#intersectionOf";
-  const OWL_UNION_OF = "http://www.w3.org/2002/07/owl#unionOf";
-  const OWL_COMPLEMENT_OF = "http://www.w3.org/2002/07/owl#complementOf";
-  const XSD_NON_NEGATIVE_INTEGER = "http://www.w3.org/2001/XMLSchema#nonNegativeInteger";
+const NS = COMMON_NAMESPACE_IRIS;
+const RDF_TYPE = NS.rdf.type;
+const RDF_FIRST = NS.rdf.first;
+const RDF_REST = NS.rdf.rest;
+const RDF_NIL = NS.rdf.nil;
+const RDFS_SUBCLASS = NS.rdfs.subClassOf;
+const OWL_RESTRICTION = NS.owl.Restriction;
+const OWL_ON_PROPERTY = NS.owl.onProperty;
+const OWL_SOME_VALUES_FROM = NS.owl.someValuesFrom;
+const OWL_ALL_VALUES_FROM = NS.owl.allValuesFrom;
+const OWL_HAS_VALUE = NS.owl.hasValue;
+const OWL_MIN_CARDINALITY = NS.owl.minCardinality;
+const OWL_MAX_CARDINALITY = NS.owl.maxCardinality;
+const OWL_CARDINALITY = NS.owl.cardinality;
+const OWL_MIN_QUALIFIED_CARDINALITY = NS.owl.minQualifiedCardinality;
+const OWL_MAX_QUALIFIED_CARDINALITY = NS.owl.maxQualifiedCardinality;
+const OWL_QUALIFIED_CARDINALITY = NS.owl.qualifiedCardinality;
+const OWL_ON_CLASS = NS.owl.onClass;
+const OWL_EQUIVALENT_CLASS = NS.owl.equivalentClass;
+const OWL_DISJOINT_WITH = NS.owl.disjointWith;
+const OWL_INTERSECTION_OF = NS.owl.intersectionOf;
+const OWL_UNION_OF = NS.owl.unionOf;
+const OWL_COMPLEMENT_OF = NS.owl.complementOf;
+const XSD_NON_NEGATIVE_INTEGER = NS.xsd.nonNegativeInteger;
 
   const AXIOM_PREDICATES = {
     SubClassOf: RDFS_SUBCLASS,
@@ -75,7 +68,7 @@
       const escaped = String(term.value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
       if (term.language) return `"${escaped}"@${term.language}`;
       const dt = term.datatype?.value;
-      if (dt && dt !== "http://www.w3.org/2001/XMLSchema#string") {
+      if (dt && dt !== NS.xsd.string) {
         return `"${escaped}"^^${iriToDisplay(dt, prefixes)}`;
       }
       return `"${escaped}"`;
@@ -352,7 +345,7 @@
       termType: "Literal",
       value: String(value),
       language: "",
-      datatype: datatypeIri ? makeNamedNode(factory, datatypeIri) : makeNamedNode(factory, "http://www.w3.org/2001/XMLSchema#string"),
+      datatype: datatypeIri ? makeNamedNode(factory, datatypeIri) : makeNamedNode(factory, NS.xsd.string),
     };
   }
 
@@ -838,7 +831,32 @@
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
-  return {
+export const constants = Object.freeze({
+  RDF_TYPE,
+  RDF_FIRST,
+  RDF_REST,
+  RDF_NIL,
+  RDFS_SUBCLASS,
+  OWL_RESTRICTION,
+  OWL_ON_PROPERTY,
+  OWL_SOME_VALUES_FROM,
+  OWL_ALL_VALUES_FROM,
+  OWL_HAS_VALUE,
+  OWL_EQUIVALENT_CLASS,
+  OWL_DISJOINT_WITH,
+  OWL_MIN_CARDINALITY,
+  OWL_MAX_CARDINALITY,
+  OWL_CARDINALITY,
+  OWL_MIN_QUALIFIED_CARDINALITY,
+  OWL_MAX_QUALIFIED_CARDINALITY,
+  OWL_QUALIFIED_CARDINALITY,
+  OWL_ON_CLASS,
+  OWL_INTERSECTION_OF,
+  OWL_UNION_OF,
+  OWL_COMPLEMENT_OF,
+});
+
+const api = {
     constants: {
       RDF_TYPE,
       RDF_FIRST,
@@ -872,4 +890,16 @@
     serializeTripleTerms,
     mount,
   };
-});
+
+export {
+  AXIOM_PREDICATES,
+  normalizeAxiomRecord,
+  parseExpression,
+  astToExpression,
+  axiomToQuads,
+  extractClassAxioms,
+  serializeTripleTerms,
+  mount,
+};
+
+export default api;

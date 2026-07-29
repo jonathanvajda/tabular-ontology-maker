@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
 
-const {
+import {
   parseFileExtension,
   detectFormatByExtension,
   guessMediaType,
   isValidOntology,
-} = require("../docs/app/tom-core-utils.js");
+} from "../docs/app/tom-core-utils.js";
 
 describe("file and media type helpers", () => {
   test("parseFileExtension handles common and edge-case filenames", () => {

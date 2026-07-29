@@ -33,12 +33,12 @@ import {
   parseRdfTextWithAdapters,
   serializeRdfDatasetWithAdapters
 } from './shared/rdf-io/index.js';
+import * as CoreUtils from './tom-core-utils.js';
+import AxiomBuilder from './tom-axiom-builder.js';
+import * as FeatureUtils from './tom-feature-utils.js';
 
 (function () {
 const TOM = (window.TOM = window.TOM || {});
-const CoreUtils = window.TOMCoreUtils || {};
-const FeatureUtils = window.TOMFeatureUtils || {};
-const AxiomBuilder = TOM.AxiomBuilder || {};
 const NS = COMMON_NAMESPACE_IRIS;
 
 const fallbackN3ParserFormats = {
@@ -140,41 +140,17 @@ const getElementTypes = () => {
   ];
 };
 
-const w3cIRI = {
-  RDF_TYPE: NS.rdf.type,
-  RDFS_LABEL: NS.rdfs.label,
-  RDFS_SUBCLASS: NS.rdfs.subClassOf,
-  RDFS_SUBPROP: NS.rdfs.subPropertyOf,
-  OWL_ONTOLOGY: NS.owl.Ontology,
-  OWL_CLASS: NS.owl.Class,
-  OWL_NAMEDIND: NS.owl.NamedIndividual,
-  OWL_OBJPROP: NS.owl.ObjectProperty,
-  OWL_DATAPROP: NS.owl.DatatypeProperty,
-  OWL_ANNOPROP: NS.owl.AnnotationProperty,
-  OWL_DATATYPE: NS.owl.DatatypeProperty,
-  OWL_IMPORTS: NS.owl.imports,
-  OWL_VERSION_IRI: NS.owl.versionIRI,
-  OWL_VERSION_INFO: NS.owl.versionInfo,
-  SKOS_DEFINITION: NS.skos.definition,
-  CCO_CURATEDIN: NS.cco.curatedIn,
-  DCTERMS_CREATOR: NS.dcterms.creator,
-  DCTERMS_CREATED: NS.dcterms.created,
-  DCTERMS_DESCRIPTION: NS.dcterms.description,
-  DCTERMS_CITATION: NS.dcterms.bibliographicCitation,
-  OBO_CURATION_STATUS: NS.iao.curationStatus,
-};
-
 const getIsAPredicate = (elementType) => {
   console.info('getIsAPredicate happened');
   switch (elementType) {
     case 'Class':
-      return w3cIRI.RDFS_SUBCLASS ;
+      return NS.rdfs.subClassOf ;
     case 'ObjectProperty':
     case 'DatatypeProperty':
     case 'AnnotationProperty':
-      return w3cIRI.RDFS_SUBPROP;
+      return NS.rdfs.subPropertyOf;
     case 'NamedIndividual':
-      return w3cIRI.RDF_TYPE;
+      return NS.rdf.type;
     default:
       return null;
   }
@@ -474,11 +450,11 @@ function generateOntologySettings(
 
   return {
     iri: `${base}${delimiter}${normalizedLabel}`,
-    [w3cIRI.OWL_VERSION_IRI]: `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`,
-    [w3cIRI.OWL_VERSION_INFO]: `${year}-${month}-${day}`,
-    [w3cIRI.RDFS_LABEL]: label,
-    [w3cIRI.DCTERMS_CREATOR]: creator,
-    [w3cIRI.DCTERMS_DESCRIPTION]: description,
+    [NS.owl.versionIRI]: `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`,
+    [NS.owl.versionInfo]: `${year}-${month}-${day}`,
+    [NS.rdfs.label]: label,
+    [NS.dcterms.creator]: creator,
+    [NS.dcterms.description]: description,
     iriMode,
     opaqueLeading,
     opaqueDigits,
@@ -547,9 +523,9 @@ function openOntologySettingsModal() {
 
   // existing fields
   document.getElementById("ontology-base-iri-input").value = (s.base || s.iri.split("/").slice(0, -1).join("/"));
-  document.getElementById("ontology-label-input").value = s[w3cIRI.RDFS_LABEL] || "";
-  document.getElementById("ontology-creator-input").value = s[w3cIRI.DCTERMS_CREATOR] || "";
-  document.getElementById("ontology-description-input").value = s[w3cIRI.DCTERMS_DESCRIPTION] || "";
+  document.getElementById("ontology-label-input").value = s[NS.rdfs.label] || "";
+  document.getElementById("ontology-creator-input").value = s[NS.dcterms.creator] || "";
+  document.getElementById("ontology-description-input").value = s[NS.dcterms.description] || "";
 
   // delimiter
   const delim = s.delimiter || getSelectedDelimiter();
@@ -1038,8 +1014,8 @@ function buildOntologyExportQuads(rows) {
   pushUniqueQuad(quads, seen,
     N3.DataFactory.quad(
       namedNode(ontologyIRI),
-      namedNode(w3cIRI.RDF_TYPE),
-      namedNode(w3cIRI.OWL_ONTOLOGY)
+      namedNode(NS.rdf.type),
+      namedNode(NS.owl.Ontology)
     )
   );
 
@@ -1049,11 +1025,11 @@ function buildOntologyExportQuads(rows) {
 
   for (const [key, value] of Object.entries(settings)) {
     if (key === 'iri' || key === 'owlImportsLocal') continue;
-    if (key === w3cIRI.OWL_IMPORTS && Array.isArray(value)) {
+    if (key === NS.owl.imports && Array.isArray(value)) {
       for (const importIRI of value) {
         pushUniqueQuad(quads, seen, N3.DataFactory.quad(
           namedNode(ontologyIRI),
-          namedNode(w3cIRI.OWL_IMPORTS),
+          namedNode(NS.owl.imports),
           namedNode(importIRI)
         ));
       }
@@ -1076,17 +1052,17 @@ function buildOntologyExportQuads(rows) {
     if (!subject) return;
 
     const structuralTypeMap = {
-      Class: w3cIRI.OWL_CLASS,
-      NamedIndividual: w3cIRI.OWL_NAMEDIND,
-      ObjectProperty: w3cIRI.OWL_OBJPROP,
-      DatatypeProperty: w3cIRI.OWL_DATATYPE,
-      AnnotationProperty: w3cIRI.OWL_ANNOPROP,
+      Class: NS.owl.Class,
+      NamedIndividual: NS.owl.NamedIndividual,
+      ObjectProperty: NS.owl.ObjectProperty,
+      DatatypeProperty: NS.owl.DatatypeProperty,
+      AnnotationProperty: NS.owl.AnnotationProperty,
     };
     const structuralTypeIri = structuralTypeMap[type];
     if (structuralTypeIri) {
       pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
-        namedNode(w3cIRI.RDF_TYPE),
+        namedNode(NS.rdf.type),
         namedNode(structuralTypeIri)
       ));
     }
@@ -1094,7 +1070,7 @@ function buildOntologyExportQuads(rows) {
     if (label) {
       pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
-        namedNode(w3cIRI.RDFS_LABEL),
+        namedNode(NS.rdfs.label),
         literal(label)
       ));
     }
@@ -1102,7 +1078,7 @@ function buildOntologyExportQuads(rows) {
     if (definition) {
       pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
-        namedNode(w3cIRI.SKOS_DEFINITION),
+        namedNode(NS.skos.definition),
         literal(definition)
       ));
     }
@@ -1124,7 +1100,7 @@ function buildOntologyExportQuads(rows) {
     if (isCuratedInOntology) {
       pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
-        namedNode(w3cIRI.CCO_CURATEDIN),
+        namedNode(NS.cco.curatedIn),
         asObjectTerm(isCuratedInOntology)
       ));
     }
@@ -1586,12 +1562,12 @@ function iriFromObjects(objs) {
 
 function getSemanticRdfTypes(rdfTypes) {
   const structuralTypes = new Set([
-    w3cIRI.OWL_CLASS,
-    w3cIRI.OWL_OBJPROP,
-    w3cIRI.OWL_DATAPROP,
-    w3cIRI.OWL_ANNOPROP,
-    w3cIRI.OWL_NAMEDIND,
-    w3cIRI.OWL_ONTOLOGY,
+    NS.owl.Class,
+    NS.owl.ObjectProperty,
+    NS.owl.DatatypeProperty,
+    NS.owl.AnnotationProperty,
+    NS.owl.NamedIndividual,
+    NS.owl.Ontology,
   ]);
 
   return (rdfTypes || [])
@@ -1725,33 +1701,33 @@ async function reloadSavedSession() {
     for (const [s, pMap] of subjMap.entries()) {
 
       if (s === ontologyIriFromSettings) continue;
-      const rdfTypes = Array.from(pMap.get(w3cIRI.RDF_TYPE)?.values() || []);
+      const rdfTypes = Array.from(pMap.get(NS.rdf.type)?.values() || []);
       const hasType = iri => rdfTypes.includes(`<${iri}>`);
-      if (hasType(w3cIRI.OWL_ONTOLOGY)) continue;
+      if (hasType(NS.owl.Ontology)) continue;
 
       let elementType = '';
-      if (hasType(w3cIRI.OWL_CLASS))           elementType = 'Class';
-      else if (hasType(w3cIRI.OWL_OBJPROP))    elementType = 'ObjectProperty';
-      else if (hasType(w3cIRI.OWL_DATATYPE))   elementType = 'DatatypeProperty';
-      else if (hasType(w3cIRI.OWL_ANNOPROP))   elementType = 'AnnotationProperty';
-      else if (hasType(w3cIRI.OWL_NAMEDIND))   elementType = 'NamedIndividual';
-      else if (hasType(w3cIRI.OWL_ONTOLOGY))   elementType = 'Ontology'; // This is an outlier case, mostly for error handling
+      if (hasType(NS.owl.Class))           elementType = 'Class';
+      else if (hasType(NS.owl.ObjectProperty))    elementType = 'ObjectProperty';
+      else if (hasType(NS.owl.DatatypeProperty))   elementType = 'DatatypeProperty';
+      else if (hasType(NS.owl.AnnotationProperty))   elementType = 'AnnotationProperty';
+      else if (hasType(NS.owl.NamedIndividual))   elementType = 'NamedIndividual';
+      else if (hasType(NS.owl.Ontology))   elementType = 'Ontology'; // This is an outlier case, mostly for error handling
       else if (rdfTypes.length)                elementType = 'NamedIndividual';
 
-      const label = firstLiteral(Array.from(pMap.get(w3cIRI.RDFS_LABEL)?.values() || []));
-      const definition = firstLiteral(Array.from(pMap.get(w3cIRI.SKOS_DEFINITION)?.values() || []));
+      const label = firstLiteral(Array.from(pMap.get(NS.rdfs.label)?.values() || []));
+      const definition = firstLiteral(Array.from(pMap.get(NS.skos.definition)?.values() || []));
 
       let isA = '';
       if (elementType === 'Class') {
-        isA = iriFromObjects(Array.from(pMap.get(w3cIRI.RDFS_SUBCLASS)?.values() || []));
+        isA = iriFromObjects(Array.from(pMap.get(NS.rdfs.subClassOf)?.values() || []));
       } else if (elementType === 'ObjectProperty' || elementType === 'DatatypeProperty' || elementType === 'AnnotationProperty') {
-        isA = iriFromObjects(Array.from(pMap.get(w3cIRI.RDFS_SUBPROP)?.values() || []));
+        isA = iriFromObjects(Array.from(pMap.get(NS.rdfs.subPropertyOf)?.values() || []));
       } else if (elementType === 'NamedIndividual') {
         const classish = getSemanticRdfTypes(rdfTypes);
         if (classish.length) isA = classish[0];
       }
 
-      const curatedVals = Array.from(pMap.get(w3cIRI.CCO_CURATEDIN)?.values() || []);
+      const curatedVals = Array.from(pMap.get(NS.cco.curatedIn)?.values() || []);
       const curatedIn = iriFromObjects(curatedVals) || firstLiteral(curatedVals);
 
       // base row
@@ -1766,8 +1742,8 @@ async function reloadSavedSession() {
       // gather extra predicates (not mapped to base columns)
       for (const p of pMap.keys()) {
         if (
-          p === w3cIRI.RDFS_LABEL || p === w3cIRI.SKOS_DEFINITION || p === w3cIRI.RDF_TYPE ||
-          p === w3cIRI.RDFS_SUBCLASS || p === w3cIRI.RDFS_SUBPROP || p === w3cIRI.CCO_CURATEDIN
+          p === NS.rdfs.label || p === NS.skos.definition || p === NS.rdf.type ||
+          p === NS.rdfs.subClassOf || p === NS.rdfs.subPropertyOf || p === NS.cco.curatedIn
         ) continue;
         extraPreds.add(p);
       }
@@ -1901,14 +1877,14 @@ function extractOntologyVocabEntries(quads, source = "Imported Ontology") {
     }
     const entry = subjectData.get(subject);
 
-    if (predicate === w3cIRI.RDFS_LABEL && !entry.label) entry.label = object;
+    if (predicate === NS.rdfs.label && !entry.label) entry.label = object;
     if (predicate === NS.skos.altLabel) entry.altLabels.push(object);
-    if (predicate === w3cIRI.RDF_TYPE) {
-      if (object === w3cIRI.OWL_CLASS) entry.type = 'Class';
-      else if (object === w3cIRI.OWL_OBJPROP) entry.type = 'ObjectProperty';
-      else if (object === w3cIRI.OWL_DATATYPE || object === w3cIRI.OWL_DATAPROP) entry.type = 'DatatypeProperty';
-      else if (object === w3cIRI.OWL_ANNOPROP) entry.type = 'AnnotationProperty';
-      else if (object === w3cIRI.OWL_NAMEDIND) entry.type = 'NamedIndividual';
+    if (predicate === NS.rdf.type) {
+      if (object === NS.owl.Class) entry.type = 'Class';
+      else if (object === NS.owl.ObjectProperty) entry.type = 'ObjectProperty';
+      else if (object === NS.owl.DatatypeProperty) entry.type = 'DatatypeProperty';
+      else if (object === NS.owl.AnnotationProperty) entry.type = 'AnnotationProperty';
+      else if (object === NS.owl.NamedIndividual) entry.type = 'NamedIndividual';
     }
   }
 
@@ -2968,10 +2944,10 @@ function iriToNiceLabel(iri) {
 
 // base header map
 const BASE_HEADER_TO_PRED = new Map([
-  ['label',        w3cIRI.RDFS_LABEL],
-  ['definition',   w3cIRI.SKOS_DEFINITION],
-  ['element type', w3cIRI.RDF_TYPE],
-  ['is curated in ontology', w3cIRI.CCO_CURATEDIN],
+  ['label',        NS.rdfs.label],
+  ['definition',   NS.skos.definition],
+  ['element type', NS.rdf.type],
+  ['is curated in ontology', NS.cco.curatedIn],
 ]);
 
 // Expand a single header to one or more concrete predicate IRIs for curation rules
@@ -2984,9 +2960,9 @@ function headerToPredicateIrisForRules(header) {
   // Special: "is a" expands
   if (h === 'is a') {
     return [
-      w3cIRI.RDF_TYPE,
-      w3cIRI.RDFS_SUBCLASS,
-      w3cIRI.RDFS_SUBPROP,
+      NS.rdf.type,
+      NS.rdfs.subClassOf,
+      NS.rdfs.subPropertyOf,
     ].filter(Boolean);
   }
 
@@ -3389,9 +3365,9 @@ async function parseOntologyData(file) {
 function deriveOntologyImportTarget(quads) {
   if (CoreUtils.deriveOntologyImportTarget) {
     return CoreUtils.deriveOntologyImportTarget(quads, {
-      rdfTypeIri: w3cIRI.RDF_TYPE,
-      owlOntologyIri: w3cIRI.OWL_ONTOLOGY,
-      owlVersionIri: w3cIRI.OWL_VERSION_IRI
+      rdfTypeIri: NS.rdf.type,
+      owlOntologyIri: NS.owl.Ontology,
+      owlVersionIri: NS.owl.versionIRI
     });
   }
 
@@ -3404,10 +3380,10 @@ function deriveOntologyImportTarget(quads) {
     const object = quad.object?.value;
     if (!subject || !predicate || !object) continue;
 
-    if (predicate === w3cIRI.RDF_TYPE && object === w3cIRI.OWL_ONTOLOGY) {
+    if (predicate === NS.rdf.type && object === NS.owl.Ontology) {
       ontologySubjects.add(subject);
     }
-    if (predicate === w3cIRI.OWL_VERSION_IRI) {
+    if (predicate === NS.owl.versionIRI) {
       versionIris.set(subject, object);
     }
   }
@@ -3476,35 +3452,35 @@ function validateAndPivotOntologyData(quads, knownPredicates) {
   for (const [subjectUri, pMap] of subjectData.entries()) {
     if (!subjectUri || subjectUri.startsWith('_:')) continue;
 
-    const rdfTypes = Array.from(pMap.get(w3cIRI.RDF_TYPE)?.values() || []);
+    const rdfTypes = Array.from(pMap.get(NS.rdf.type)?.values() || []);
     const hasType = iri => rdfTypes.includes(`<${iri}>`);
-    if (hasType(w3cIRI.OWL_ONTOLOGY)) continue;
+    if (hasType(NS.owl.Ontology)) continue;
 
     let elementType = '';
-    if (hasType(w3cIRI.OWL_CLASS)) elementType = 'Class';
-    else if (hasType(w3cIRI.OWL_OBJPROP)) elementType = 'ObjectProperty';
-    else if (hasType(w3cIRI.OWL_DATATYPE)) elementType = 'DatatypeProperty';
-    else if (hasType(w3cIRI.OWL_ANNOPROP)) elementType = 'AnnotationProperty';
-    else if (hasType(w3cIRI.OWL_NAMEDIND)) elementType = 'NamedIndividual';
+    if (hasType(NS.owl.Class)) elementType = 'Class';
+    else if (hasType(NS.owl.ObjectProperty)) elementType = 'ObjectProperty';
+    else if (hasType(NS.owl.DatatypeProperty)) elementType = 'DatatypeProperty';
+    else if (hasType(NS.owl.AnnotationProperty)) elementType = 'AnnotationProperty';
+    else if (hasType(NS.owl.NamedIndividual)) elementType = 'NamedIndividual';
     else {
       const classish = getSemanticRdfTypes(rdfTypes);
       if (classish.length) elementType = 'NamedIndividual';
     }
 
-    const label = firstLiteral(Array.from(pMap.get(w3cIRI.RDFS_LABEL)?.values() || []));
-    const definition = firstLiteral(Array.from(pMap.get(w3cIRI.SKOS_DEFINITION)?.values() || []));
+    const label = firstLiteral(Array.from(pMap.get(NS.rdfs.label)?.values() || []));
+    const definition = firstLiteral(Array.from(pMap.get(NS.skos.definition)?.values() || []));
 
     let isA = '';
     if (elementType === 'Class') {
-      isA = iriFromObjects(Array.from(pMap.get(w3cIRI.RDFS_SUBCLASS)?.values() || []));
+      isA = iriFromObjects(Array.from(pMap.get(NS.rdfs.subClassOf)?.values() || []));
     } else if (elementType === 'ObjectProperty' || elementType === 'DatatypeProperty' || elementType === 'AnnotationProperty') {
-      isA = iriFromObjects(Array.from(pMap.get(w3cIRI.RDFS_SUBPROP)?.values() || []));
+      isA = iriFromObjects(Array.from(pMap.get(NS.rdfs.subPropertyOf)?.values() || []));
     } else if (elementType === 'NamedIndividual') {
       const classish = getSemanticRdfTypes(rdfTypes);
       if (classish.length) isA = classish[0];
     }
 
-    const curatedVals = Array.from(pMap.get(w3cIRI.CCO_CURATEDIN)?.values() || []);
+    const curatedVals = Array.from(pMap.get(NS.cco.curatedIn)?.values() || []);
     const curatedIn = iriFromObjects(curatedVals) || firstLiteral(curatedVals);
 
     const newRow = new Array(knownPredicates.length).fill('');
@@ -4041,9 +4017,9 @@ async function setLocalImport(iri, { content, mediaType }) {
   const settings = getOntologySettings();
 
   // Ensure owl:imports list exists and includes the IRI
-  settings[w3cIRI.OWL_IMPORTS] = settings[w3cIRI.OWL_IMPORTS] || [];
-  if (!settings[w3cIRI.OWL_IMPORTS].includes(iri)) {
-    settings[w3cIRI.OWL_IMPORTS].push(iri);
+  settings[NS.owl.imports] = settings[NS.owl.imports] || [];
+  if (!settings[NS.owl.imports].includes(iri)) {
+    settings[NS.owl.imports].push(iri);
   }
 
   // Store local cache under a separate key
@@ -4065,9 +4041,9 @@ function fileNameForMediaType(mediaType) {
 
 async function cacheImportedOntology({ iri, ontologyIri, content, mediaType, quads }) {
   const settings = getOntologySettings();
-  settings[w3cIRI.OWL_IMPORTS] = settings[w3cIRI.OWL_IMPORTS] || [];
-  if (!settings[w3cIRI.OWL_IMPORTS].includes(iri)) {
-    settings[w3cIRI.OWL_IMPORTS].push(iri);
+  settings[NS.owl.imports] = settings[NS.owl.imports] || [];
+  if (!settings[NS.owl.imports].includes(iri)) {
+    settings[NS.owl.imports].push(iri);
   }
 
   settings.owlImportsLocal = settings.owlImportsLocal || {};
@@ -4130,7 +4106,7 @@ async function openImportsModal() {
 
   // ensure cache is loaded
   const settings = getOntologySettings();
-  const imports = settings[w3cIRI.OWL_IMPORTS] || [];
+  const imports = settings[NS.owl.imports] || [];
   const importsMap = getImportsMap();
 
   imports.forEach((iri) => {
@@ -4196,9 +4172,9 @@ async function addImportIRI() {
   if (!iri) return;
 
   const settings = getOntologySettings();
-  settings[w3cIRI.OWL_IMPORTS] = settings[w3cIRI.OWL_IMPORTS] || [];
-  if (!settings[w3cIRI.OWL_IMPORTS].includes(iri)) {
-    settings[w3cIRI.OWL_IMPORTS].push(iri);
+  settings[NS.owl.imports] = settings[NS.owl.imports] || [];
+  if (!settings[NS.owl.imports].includes(iri)) {
+    settings[NS.owl.imports].push(iri);
     await saveOntologySettings(settings);
   }
 
@@ -4382,9 +4358,9 @@ setupInsertDataModalListeners();
 
 function populateSettingsUi() {
   const s = getOntologySettings();
-  document.getElementById('ontology-label-input').value = s[w3cIRI.RDFS_LABEL] || '';
-  document.getElementById('ontology-creator-input').value = s[w3cIRI.DCTERMS_CREATOR] || '';
-  document.getElementById('ontology-description-input').value = s[w3cIRI.DCTERMS_DESCRIPTION] || '';
+  document.getElementById('ontology-label-input').value = s[NS.rdfs.label] || '';
+  document.getElementById('ontology-creator-input').value = s[NS.dcterms.creator] || '';
+  document.getElementById('ontology-description-input').value = s[NS.dcterms.description] || '';
   document.getElementById('ontology-base-iri-input').value = s.base || '';
 
   const delimiterRadio = document.querySelector(`input[name="base-iri-delimiter"][value="${s.delimiter || '/'}"]`);

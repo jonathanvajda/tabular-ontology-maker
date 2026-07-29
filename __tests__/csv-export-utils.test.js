@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
 
-const {
+import {
   escapeCsvField,
   buildCsvExportRows,
   generateCsvString,
-} = require("../docs/app/tom-core-utils.js");
+} from "../docs/app/tom-core-utils.js";
 
 describe("CSV export utilities", () => {
   test("escapeCsvField quotes commas, quotes, and newlines", () => {

@@ -2,9 +2,10 @@
   "name": "tabular-ontology-maker",
   "private": true,
   "license": "GPL-3.0-only",
+  "type": "module",
   "scripts": {
-    "test": "jest --runInBand",
-    "test:coverage": "jest --runInBand --coverage"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
+    "test:coverage": "npm test -- --coverage"
   },
   "devDependencies": {
     "jest": "^29.7.0"
