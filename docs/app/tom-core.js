@@ -19,10 +19,12 @@ import {
 import {
   createFormatExtensionMap,
   createFormatMimeTypeMap,
+  getFilenameExtension,
+  getInputKindForExtension,
   getPreferredExtensionForMimeType,
   getSupportedMimeTypeForFilename
 } from './shared/format-registry/mime-registry.js';
-import { getN3ParserFormatForMimeType } from './shared/format-registry/rdf-parser-formats.js';
+import { guessRdfMimeTypeFromText } from './shared/format-registry/browser-file-actions.js';
 import {
   downloadTextFile,
   readFileAsArrayBuffer,
@@ -30,6 +32,7 @@ import {
 } from './shared/browser-file-io/index.js';
 import { serializeDelimitedRows } from './shared/tabular-io/index.js';
 import {
+  parseRdfTextWithN3,
   parseRdfTextWithAdapters,
   serializeRdfDatasetWithAdapters
 } from './shared/rdf-io/index.js';
@@ -40,23 +43,6 @@ import * as FeatureUtils from './tom-feature-utils.js';
 (function () {
 const TOM = (window.TOM = window.TOM || {});
 const NS = COMMON_NAMESPACE_IRIS;
-
-const fallbackN3ParserFormats = {
-  ttl: 'Turtle',
-  turtle: 'Turtle',
-  n3: 'Turtle',
-  nt: 'N-Triples',
-  ntriples: 'N-Triples',
-  'n-triples': 'N-Triples',
-  trig: 'TriG',
-  nq: 'N-Quads',
-  nquads: 'N-Quads',
-  'n-quads': 'N-Quads',
-  'application/n-triples': 'N-Triples',
-  'application/trig': 'TriG',
-  'application/n-quads': 'N-Quads',
-  'text/turtle': 'Turtle'
-};
 
 const VIEW_KEYS = {
   ONTOLOGY: 'ontology',
@@ -956,8 +942,10 @@ function pushUniqueQuad(quads, seen, quad) {
 function parseRawAxiomRdf(rawRdf) {
   const text = String(rawRdf || '').trim();
   if (!text) return [];
-  const parser = new N3.Parser({ prefixes: iriPrefixes, format: 'Turtle' });
-  return parser.parse(text);
+  return parseRdfTextWithN3(text, {
+    format: 'text/turtle',
+    runtime: { N3 }
+  }).quads;
 }
 
 function appendAxiomRecordQuads(quads, seen, record) {
@@ -1172,15 +1160,6 @@ async function generateRdfString(rows, format = 'ttl') {
     return serialized.text;
   }
   return serializeQuads(quads, format);
-}
-
-function escapeCsvField(value) {
-  if (CoreUtils.escapeCsvField) return CoreUtils.escapeCsvField(value);
-  const text = String(value ?? '');
-  if (/[",\r\n]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-  return text;
 }
 
 function buildCsvExportRows(rows) {
@@ -1526,19 +1505,6 @@ async function updateReloadSessionButton() {
     console.warn('updateReloadSessionButton failed', e);}
 }
 
-/**
- * Maps saved format strings to N3.Parser formats.
- * @param {string} format
- * @returns 
- */
-function n3FormatForSaved(format) {
-  const f = String(format || '').toLowerCase();
-  const mimeType = mimeTypes[f] || f;
-  const detected = getN3ParserFormatForMimeType(mimeType);
-  if (detected && detected.ok) return detected.value;
-  return fallbackN3ParserFormats[f] || fallbackN3ParserFormats[String(mimeType || '').toLowerCase()] || 'Turtle';
-}
-
 function firstLiteral(objs) {
   // pick the first literal lexical form from an array of objects (already stringified below)
   for (const o of objs) {
@@ -1653,9 +1619,12 @@ async function reloadSavedSession() {
 
     const { rdfData, format } = latestRdfRecord;
 
-    // Parse RDF -> quads
-    const parser = new N3.Parser({ format: n3FormatForSaved(format) });
-    const quads = parser.parse(rdfData);
+    // Parse RDF -> quads through the shared RDF IO adapter layer.
+    const parsed = await parseRdfTextWithAdapters(rdfData, {
+      format: mimeTypes[String(format || '').toLowerCase()] || format || 'text/turtle',
+      runtime: { N3, jsonld: window.jsonld, $rdf: window.$rdf }
+    });
+    const quads = parsed.quads;
 
     // Build subject -> predicate->values map + set of all predicates
     const subjMap = new Map();
@@ -3170,62 +3139,6 @@ function handleFileTypeChange() {
 
 
 /**
- * Extracts and returns the lowercase file extension from a filename.
- * Logs the result and errors for debugging.
- *
- * @param {string} filename - The name of the file (e.g. "data.csv")
- * @returns {string} - The file extension in lowercase (e.g. "csv")
- */
-function parseFileExtension(filename) {
-  try {
-    console.info(`[parseFileExtension] Received filename: ${filename}`);
-    const ext = CoreUtils.parseFileExtension ? CoreUtils.parseFileExtension(filename) : '';
-    if (!ext) {
-      if (typeof filename !== 'string') {
-        console.error("[parseFileExtension] Invalid input: expected string");
-      } else {
-        console.warn("[parseFileExtension] No extension found or empty extension");
-      }
-      return '';
-    }
-    console.info(`[parseFileExtension] Parsed extension: ${ext}`);
-    return ext;
-  } catch (error) {
-    console.error("[parseFileExtension] Unexpected error:", error);
-    return '';
-  }
-}
-
-
-/**
- * Detects the file format type based on the file extension.
- * Supports spreadsheets, ontologies (coming soon), or returns 'unsupported'.
- *
- * @param {string} extension - File extension (lowercase, no dot)
- * @returns {string} - 'spreadsheet', 'ontology', or 'unsupported'
- */
-function detectFormatByExtension(extension) {
-  console.info(`[detectFormatByExtension] Checking extension: ${extension}`);
-
-  try {
-    const detected = CoreUtils.detectFormatByExtension
-      ? CoreUtils.detectFormatByExtension(extension)
-      : 'unsupported';
-    if (detected === 'spreadsheet') {
-      console.info("[detectFormatByExtension] Detected spreadsheet format");
-    } else if (detected === 'ontology') {
-      console.info("[detectFormatByExtension] Detected ontology format");
-    } else {
-      console.warn("[detectFormatByExtension] Unsupported extension");
-    }
-    return detected;
-  } catch (error) {
-    console.error("[detectFormatByExtension] Unexpected error:", error);
-    return 'unsupported';
-  }
-}
-
-/**
  * Parses CSV, TSV, XLS, or XLSX into a 2D row array using SheetJS.
  *
  * @param {File} file - The file object (from drag/drop or input)
@@ -3294,7 +3207,7 @@ async function handleInsertDataSave() {
     const hasHeader = document.getElementById("first-row-header").checked;
 
     // Get file extension and parse
-    const extension = parseFileExtension(currentImportFile.name);
+    const extension = getFilenameExtension(currentImportFile.name);
     const parsed = await parseSpreadsheetData(currentImportFile, extension, hasHeader);
     const allHeaders = getColumnHeaders(); // already includes customs
     const allColumns = getColumnDefinitions();
@@ -3343,7 +3256,7 @@ async function parseOntologyText(fileContent, fileName = '') {
   const detected = getSupportedMimeTypeForFilename(fileName);
   const mimeType = detected && detected.ok && detected.value.category === 'rdf'
     ? detected.value.mimeType
-    : guessMediaType(fileContent);
+    : guessRdfMimeTypeFromText(fileContent);
 
   if (mimeType === 'text/plain') {
     throw new Error('Unsupported ontology file format.');
@@ -3640,8 +3553,8 @@ async function handlePrimarySave() {
 function autoSelectFileType(file) {
   if (!file) return;
 
-  const extension = parseFileExtension(file.name);
-  const detectedType = detectFormatByExtension(extension);
+  const extension = getFilenameExtension(file.name);
+  const detectedType = getInputKindForExtension(extension);
   const nextType = detectedType === 'ontology' ? 'ontology' : 'spreadsheet';
   document.querySelector(`input[name="file-type"][value="${nextType}"]`).checked = true;
   handleFileTypeChange();
@@ -4026,7 +3939,7 @@ async function setLocalImport(iri, { content, mediaType }) {
   settings.owlImportsLocal = settings.owlImportsLocal || {};
   settings.owlImportsLocal[iri] = {
     content,
-    mediaType: mediaType || guessMediaType(content),
+    mediaType: mediaType || guessRdfMimeTypeFromText(content),
     updatedAt: new Date().toISOString(),
   };
 
@@ -4063,7 +3976,7 @@ async function processOntologyImportFile(file, fallbackIri = null) {
   const detected = getSupportedMimeTypeForFilename(file.name);
   const mediaType = detected && detected.ok && detected.value.category === 'rdf'
     ? detected.value.mimeType
-    : guessMediaType(content);
+    : guessRdfMimeTypeFromText(content);
   const quads = await parseOntologyText(content, file.name);
   const derived = deriveOntologyImportTarget(quads);
   const targetIri = derived.importIri || fallbackIri;
@@ -4085,16 +3998,6 @@ async function processOntologyImportFile(file, fallbackIri = null) {
     ontologyIri: derived.ontologyIri,
     mediaType
   };
-}
-
-// Simple media type guessing based on content
-function guessMediaType(text) {
-  if (CoreUtils.guessMediaType) return CoreUtils.guessMediaType(text);
-  if (/^\s*\{[\s\S]*"@context"\s*:/.test(text) || /^\s*\[[\s\S]*"@context"\s*:/.test(text)) return "application/ld+json";
-  if (/<rdf:RDF\b/.test(text)) return "application/rdf+xml";
-  if (/^\s*@prefix\b|@base\b|:\s/.test(text)) return "text/turtle";
-  if (/^\s*<[^>]+>\s+<[^>]+>\s+/.test(text)) return "application/n-triples";
-  return "text/plain";
 }
 
 // This function opens the ontology imports modal and populates it with current imports.
