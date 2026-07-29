@@ -6,13 +6,16 @@
  * but promoted package functions should exchange this simpler model at their
  * boundaries.
  */
+import { COMMON_NAMESPACE_IRIS, namespacePrefixMapFromRegistry } from '../namespace-registry/index.js';
 
-export const RDF_NS = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
-export const RDFS_NS = 'http://www.w3.org/2000/01/rdf-schema#';
-export const XSD_NS = 'http://www.w3.org/2001/XMLSchema#';
+const COMMON_PREFIXES = namespacePrefixMapFromRegistry();
 
-export const RDF_TYPE = `${RDF_NS}type`;
-export const XSD_STRING = `${XSD_NS}string`;
+export const RDF_NS = COMMON_PREFIXES.rdf;
+export const RDFS_NS = COMMON_PREFIXES.rdfs;
+export const XSD_NS = COMMON_PREFIXES.xsd;
+
+export const RDF_TYPE = COMMON_NAMESPACE_IRIS.rdf.type;
+export const XSD_STRING = COMMON_NAMESPACE_IRIS.xsd.string;
 
 /**
  * Creates an RDF/JS named node.
