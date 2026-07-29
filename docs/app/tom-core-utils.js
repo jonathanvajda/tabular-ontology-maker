@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
 import { COMMON_NAMESPACE_IRIS } from './shared/namespace-registry/namespace-registry.js';
+import { serializeDelimitedRows } from './shared/tabular-io/index.js';
 
 const NS = COMMON_NAMESPACE_IRIS;
 
@@ -39,35 +40,6 @@ const NS = COMMON_NAMESPACE_IRIS;
       .replace(/[^a-zA-Z0-9]+/g, "_")
       .replace(/^_+|_+$/g, "")
       .toLowerCase();
-  }
-
-  function parseFileExtension(filename) {
-    if (typeof filename !== "string") return "";
-    const lastDot = filename.lastIndexOf(".");
-    if (lastDot === -1 || lastDot === filename.length - 1) return "";
-    return filename.slice(lastDot + 1).toLowerCase();
-  }
-
-  function detectFormatByExtension(extension) {
-    if (typeof extension !== "string") return "unsupported";
-    const normalized = extension.toLowerCase();
-    const spreadsheetExts = ["csv", "tsv", "xls", "xlsx"];
-    const ontologyExts = ["ttl", "turtle", "n3", "nt", "ntriples", "nq", "nquads", "rdf", "owl", "xml", "jsonld", "json-ld", "trig"];
-
-    if (spreadsheetExts.includes(normalized)) return "spreadsheet";
-    if (ontologyExts.includes(normalized)) return "ontology";
-    return "unsupported";
-  }
-
-  function guessMediaType(text) {
-    const content = String(text || "");
-    if (/^\s*\{[\s\S]*"@context"\s*:/.test(content) || /^\s*\[[\s\S]*"@context"\s*:/.test(content)) {
-      return "application/ld+json";
-    }
-    if (/<rdf:RDF\b/.test(content)) return "application/rdf+xml";
-    if (/^\s*@prefix\b|@base\b|:\s/.test(content)) return "text/turtle";
-    if (/^\s*<[^>]+>\s+<[^>]+>\s+/.test(content)) return "application/n-triples";
-    return "text/plain";
   }
 
   function isValidOntology(content) {
@@ -110,14 +82,6 @@ const NS = COMMON_NAMESPACE_IRIS;
     };
   }
 
-  function escapeCsvField(value) {
-    const text = String(value == null ? "" : value);
-    if (/[",\r\n]/.test(text)) {
-      return `"${text.replace(/"/g, '""')}"`;
-    }
-    return text;
-  }
-
   function buildCsvExportRows(options) {
     const headers = Array.isArray(options && options.headers) ? options.headers : [];
     const rows = Array.isArray(options && options.rows) ? options.rows : [];
@@ -141,11 +105,11 @@ const NS = COMMON_NAMESPACE_IRIS;
   }
 
   function generateCsvString(options) {
-    return buildCsvExportRows(options)
-      .map(function (row) {
-        return row.map(escapeCsvField).join(",");
-      })
-      .join("\r\n");
+    return serializeDelimitedRows(buildCsvExportRows(options), {
+      delimiter: ",",
+      newline: "\r\n",
+      trailingNewline: false,
+    });
   }
 
   function deriveOntologyImportTarget(quads, iris) {
@@ -182,12 +146,8 @@ const api = {
   toCamelCase,
   toPascalCase,
   toSnakeCase,
-  parseFileExtension,
-  detectFormatByExtension,
-  guessMediaType,
   isValidOntology,
   generateOntologySettings,
-  escapeCsvField,
   buildCsvExportRows,
   generateCsvString,
   deriveOntologyImportTarget,
@@ -198,12 +158,8 @@ export {
   toCamelCase,
   toPascalCase,
   toSnakeCase,
-  parseFileExtension,
-  detectFormatByExtension,
-  guessMediaType,
   isValidOntology,
   generateOntologySettings,
-  escapeCsvField,
   buildCsvExportRows,
   generateCsvString,
   deriveOntologyImportTarget,
