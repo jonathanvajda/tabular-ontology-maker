@@ -4,10 +4,14 @@
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
+    "check": "npm run lint && npm test",
+    "lint": "eslint . --quiet",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
     "test:coverage": "npm test -- --coverage"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.0",
     "jest": "^29.7.0"
   }
 }
