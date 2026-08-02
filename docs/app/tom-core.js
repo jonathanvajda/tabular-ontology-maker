@@ -36,6 +36,14 @@ import {
   parseRdfTextWithAdapters,
   serializeRdfDatasetWithAdapters
 } from './shared/rdf-io/index.js';
+import {
+  deleteTomOntologySettings,
+  hasTomSavedSession,
+  readLatestTomSavedSession,
+  readTomOntologySettings,
+  storeTomAuthoringSession,
+  writeTomOntologySettings
+} from './tom-project-storage.js';
 import * as CoreUtils from './tom-core-utils.js';
 import AxiomBuilder from './tom-axiom-builder.js';
 import * as FeatureUtils from './tom-feature-utils.js';
@@ -99,13 +107,7 @@ const BASE_COLS = 6;
 const container = document.getElementById('ontology-grid');
 const output = document.getElementById('rdfOutput');
 
-// --- Constants so you can rename easily ---
-const DB_NAME = 'TabularOntologyDB';
-const DB_VERSION = 2;
-const STORE_NAME = 'rdfStore';
-const WORKSPACE_STORE = 'workspaceStore';
 let SETTINGS_CACHE = null;
-const SETTINGS_STORE = 'ontologySettingsStore';
 
 // Project/user prefixes extend the canonical shared registry.
 const iriPrefixes = {
@@ -161,33 +163,20 @@ let vocabByLabelLC = new Map();
     
 */
 
-// Read from IDB (or create defaults) and cache
+// Read from shared project storage (or create defaults) and cache.
 async function settingsLoad() {
-  const db = await ensureDb();
-  const tx = db.transaction(SETTINGS_STORE, 'readonly');
-  const rec = await idbRequest(tx.objectStore(SETTINGS_STORE).get('ontologySettings'));
-
-  if (rec && rec.value) {
-    SETTINGS_CACHE = rec.value;
-    return SETTINGS_CACHE;
-  }
-
-  // No record: create defaults and persist once
+  SETTINGS_CACHE = await readTomOntologySettings();
+  if (SETTINGS_CACHE) return SETTINGS_CACHE;
   SETTINGS_CACHE = generateOntologySettings();
-  const wtx = db.transaction(SETTINGS_STORE, 'readwrite');
-  wtx.objectStore(SETTINGS_STORE).put({ key: 'ontologySettings', value: SETTINGS_CACHE, updatedAt: new Date().toISOString() });
-  await idbTransactionDone(wtx);
+  await writeTomOntologySettings(SETTINGS_CACHE);
   return SETTINGS_CACHE;
 }
 
-// Save to IDB and cache
+// Save to shared project storage and cache.
 async function saveOntologySettings(next) {
   SETTINGS_CACHE = next;
-  const db = await ensureDb();
-  const tx = db.transaction(SETTINGS_STORE, 'readwrite');
-  tx.objectStore(SETTINGS_STORE).put({ key: 'ontologySettings', value: SETTINGS_CACHE, updatedAt: new Date().toISOString() });
-  await idbTransactionDone(tx);
-  showToast('Ontology settings saved to database.', 'success');
+  await writeTomOntologySettings(SETTINGS_CACHE);
+  showToast('Ontology settings saved to project storage.', 'success');
 }
 
 // Synchronous accessor *after* settingsLoad() has run
@@ -1211,21 +1200,6 @@ const exportFormatKeys = ['ttl', 'rdf', 'jsonld', 'nt', 'trig', 'csv', 'nquads']
 const mimeTypes = createFormatMimeTypeMap(exportFormatKeys);
 const extensions = createFormatExtensionMap(exportFormatKeys);
 
-function idbRequest(req) {
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function idbTransactionDone(tx) {
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error || new Error('Transaction failed'));
-    tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
-  });
-}
-
 function cloneRowsForWorkspace(rows, expectedColumnCount = null) {
   if (FeatureUtils.cloneRowsForWorkspace) {
     return FeatureUtils.cloneRowsForWorkspace(rows, expectedColumnCount);
@@ -1348,21 +1322,6 @@ function getRecordOrderValue(record) {
   return typeof record?.id === 'number' ? record.id : -1;
 }
 
-async function getLatestSavedRecord(db, storeName) {
-  const tx = db.transaction(storeName, 'readonly');
-  const records = await storeGetAll(tx.objectStore(storeName));
-  await idbTransactionDone(tx);
-
-  if (!records.length) return null;
-  if (FeatureUtils.selectLatestRecord) {
-    return FeatureUtils.selectLatestRecord(records);
-  }
-  return records.reduce((latest, current) => {
-    if (!latest) return current;
-    return getRecordOrderValue(current) >= getRecordOrderValue(latest) ? current : latest;
-  }, null);
-}
-
 function applyWorkspaceSnapshot(snapshot) {
   const normalized = normalizeWorkspaceSnapshot(snapshot);
   if (!normalized || !hotInstance) return null;
@@ -1382,11 +1341,9 @@ function applyWorkspaceSnapshot(snapshot) {
 
 // Delete (optional)
 async function clearOntologySettings() {
-  const db = await ensureDb();
-  const tx = db.transaction(SETTINGS_STORE, 'readwrite');
-  tx.objectStore(SETTINGS_STORE).delete('ontologySettings');
-  await idbTransactionDone(tx);
-  showToast('Ontology settings cleared from database.', 'info');
+  await deleteTomOntologySettings();
+  SETTINGS_CACHE = null;
+  showToast('Ontology settings cleared from project storage.', 'info');
 }
 
 const handleExport = async (shouldDownload = false) => {
@@ -1427,17 +1384,16 @@ async function saveRDFtoIndexedDB() {
     const rdfString = await generateRdfString(rows, format);
     output.value = rdfString;
 
-    const db = await ensureDb();
     const timestamp = new Date().toISOString();
-    const tx = db.transaction([STORE_NAME, WORKSPACE_STORE], 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const workspaceStore = tx.objectStore(WORKSPACE_STORE);
-    store.add({ rdfData: rdfString, format, timestamp });
-    workspaceStore.add(buildWorkspaceSnapshot(timestamp));
-    await idbTransactionDone(tx);
+    await storeTomAuthoringSession({
+      workspaceSnapshot: buildWorkspaceSnapshot(timestamp),
+      rdfString,
+      format,
+      timestamp
+    });
 
-    console.info('Workspace and RDF data saved to IndexedDB successfully.');
-    showToast('Workspace and RDF data saved to database successfully.', 'success');
+    console.info('Workspace and RDF data saved to shared project storage successfully.');
+    showToast('Workspace and RDF data saved to project storage successfully.', 'success');
 
     updateReloadSessionButton(); // reflect availability immediately
   } catch (e) {
@@ -1447,44 +1403,12 @@ async function saveRDFtoIndexedDB() {
 };
 
 /**
- * Checks if there is a prior saved session in IndexedDB.
+ * Checks if there is a prior saved session in shared or legacy project storage.
  * @params none
  * @returns {Promise<boolean>} 
  */
 async function hasPriorSession() {
-  const db = await ensureDb();
-  const tx = db.transaction([STORE_NAME, WORKSPACE_STORE], 'readonly');
-  const rdfCount = await idbRequest(tx.objectStore(STORE_NAME).count());
-  const workspaceCount = await idbRequest(tx.objectStore(WORKSPACE_STORE).count());
-  await idbTransactionDone(tx);
-  return rdfCount > 0 || workspaceCount > 0;
-}
-
-/**
- * Ensures DB + object store exist; returns an IDBPDatabase instance
- * @params none
- * @returns {Promise<IDBPDatabase>}
- */
-function ensureDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onupgradeneeded = (event) => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
-      }
-      if (!db.objectStoreNames.contains(WORKSPACE_STORE)) {
-        db.createObjectStore(WORKSPACE_STORE, { keyPath: 'id', autoIncrement: true });
-      }
-      if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
-        db.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
-      }
-    };
-
-    request.onsuccess = () => resolve(request.result); // <- IDBDatabase
-    request.onerror = () => reject(request.error);
-  });
+  return hasTomSavedSession();
 }
 
 // Show/hide + enable/disable the button
@@ -1573,29 +1497,13 @@ function asObjectTerm(value) {
   return N3.DataFactory.literal(v);
 }
 
-async function storeGetAll(store) {
-  if ('getAll' in store) return idbRequest(store.getAll());
-  const out = [];
-  await new Promise((resolve, reject) => {
-    const req = store.openCursor();
-    req.onsuccess = (e) => {
-      const c = e.target.result;
-      if (c) { out.push(c.value); c.continue(); } else resolve();
-    };
-    req.onerror = () => reject(req.error);
-  });
-  return out;
-}
-
-// Reloads the most recent saved session from IndexedDB
+// Reloads the most recent saved session from shared project storage, with legacy fallback.
 async function reloadSavedSession() {
   try {
-    const db = await ensureDb();
-    const latestWorkspace = await getLatestSavedRecord(db, WORKSPACE_STORE);
-    const latestRdfRecord = await getLatestSavedRecord(db, STORE_NAME);
+    const { latestWorkspace, latestRdfRecord, source } = await readLatestTomSavedSession();
 
     if (!latestWorkspace && !latestRdfRecord) {
-      console.warn('No prior session found in IndexedDB.');
+      console.warn('No prior TOM session found in project or legacy IndexedDB storage.');
       showToast('No prior session found.', 'info');
       return;
     }
@@ -1606,7 +1514,7 @@ async function reloadSavedSession() {
     if (shouldUseWorkspace) {
       const restoredWorkspace = applyWorkspaceSnapshot(latestWorkspace);
       if (restoredWorkspace) {
-        showToast(`Reloaded ${restoredWorkspace.rows.length} row${restoredWorkspace.rows.length !== 1 ? 's' : ''} from latest saved workspace`, 'success');
+        showToast(`Reloaded ${restoredWorkspace.rows.length} row${restoredWorkspace.rows.length !== 1 ? 's' : ''} from latest saved workspace (${source})`, 'success');
         return;
       }
     }

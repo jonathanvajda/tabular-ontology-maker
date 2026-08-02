@@ -6,7 +6,7 @@
  * @typedef {Object} TextBlobOptions
  * @property {string} [mimeType='text/plain'] - MIME type to apply to the Blob.
  * @property {string | false} [charset='utf-8'] - Charset appended unless false or already present.
- * @property {typeof Blob} [BlobConstructor] - Test seam or browser Blob constructor.
+ * @property {typeof Blob} [BlobConstructor] - Browser Blob constructor, mainly supplied by tests.
  */
 
 /**
@@ -43,4 +43,3 @@ export function normalizeTextMimeType(mimeType = 'text/plain', charset = 'utf-8'
   if (charset === false || /;\s*charset=/i.test(base)) return base;
   return `${base};charset=${charset || 'utf-8'}`;
 }
-

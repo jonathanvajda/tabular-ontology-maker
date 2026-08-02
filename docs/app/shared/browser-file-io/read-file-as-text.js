@@ -9,7 +9,7 @@
  * @typedef {Object} ReadFileAsTextOptions
  * @property {string} [encoding] - Optional text encoding passed to FileReader.
  * @property {AbortSignal} [signal] - Optional signal used to abort a FileReader read.
- * @property {typeof FileReader} [FileReaderConstructor] - Test seam or browser FileReader constructor.
+ * @property {typeof FileReader} [FileReaderConstructor] - Browser FileReader constructor, mainly supplied by tests.
  * @property {boolean} [preferNativeText=true] - Use `file.text()` when available and no encoding/signal is needed.
  */
 
@@ -112,4 +112,3 @@ function createAbortError(reason) {
   error.name = 'AbortError';
   return error;
 }
-
