@@ -5,7 +5,7 @@
 /**
  * @typedef {Object} ReadFileAsArrayBufferOptions
  * @property {AbortSignal} [signal] - Optional signal used to abort a FileReader read.
- * @property {typeof FileReader} [FileReaderConstructor] - Test seam or browser FileReader constructor.
+ * @property {typeof FileReader} [FileReaderConstructor] - Browser FileReader constructor, mainly supplied by tests.
  * @property {boolean} [preferNativeArrayBuffer=true] - Use `file.arrayBuffer()` when available and no signal is needed.
  */
 
@@ -111,4 +111,3 @@ function createAbortError(reason) {
   error.name = 'AbortError';
   return error;
 }
-

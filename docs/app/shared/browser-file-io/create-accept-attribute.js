@@ -1,6 +1,7 @@
 /**
  * @file Pure helpers for browser file input accept attributes.
  */
+import { normalizeFileExtension } from './filename-utils.js';
 
 /**
  * @typedef {Readonly<{
@@ -60,10 +61,9 @@ function normalizeAcceptExtension(extension) {
   const value = String(extension || '').trim().toLowerCase();
   if (!value) return '';
   if (value.includes('/')) return normalizeMimeType(value);
-  return `.${value.replace(/^\.+/, '')}`;
+  return `.${normalizeFileExtension(value)}`;
 }
 
 function normalizeMimeType(mimeType) {
   return String(mimeType || '').trim().toLowerCase();
 }
-
