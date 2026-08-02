@@ -416,30 +416,12 @@ export const COMMON_NAMESPACE_REGISTRY = Object.freeze({
       Imp: 'Imp'
     }
   }),
-  cco: defineEntry({
-    prefix: 'cco',
-    namespaceIri: 'http://www.ontologyrepository.com/CommonCoreOntologies/',
-    ids: {
-      acronym: 'ont00001753',
-      curatedIn: 'ont00001760',
-      definition: 'definition',
-      definitionSource: 'definition_source',
-      exampleOfUsage: 'example_of_usage',
-      elucidation: 'elucidation',
-      hasTextValue: 'has_text_value',
-      hasIntegerValue: 'has_integer_value',
-      hasDecimalValue: 'has_decimal_value',
-      hasDateValue: 'has_date_value',
-      hasDatetimeValue: 'has_datetime_value',
-      hasBooleanValue: 'has_boolean_value',
-      legacyCuratedIn: 'is_curated_in_ontology'
-    }
-  }),
   cceo: defineEntry({
     prefix: 'cceo',
     namespaceIri: 'http://www.ontologyrepository.com/CommonCoreOntologies/',
     ids: {
       acronym: 'ont00001753',
+      ComputerProgramExecution: 'ComputerProgramExecution',
       definition: 'definition',
       definitionSource: 'definition_source',
       exampleOfUsage: 'example_of_usage',
@@ -458,13 +440,24 @@ export const COMMON_NAMESPACE_REGISTRY = Object.freeze({
     namespaceIri: 'https://www.commoncoreontologies.org/',
     ids: {
       database: 'ont00000756',
+      emailBox: 'ont00000906',
+      emailMessage: 'ont00000640',
+      emailMessaging: 'ont00000492',
+      informationContentEntity: 'ont00000958',
       person: 'ont00001262',
       acronym: 'ont00001753',
       definitionSource: 'ont00001754',
       curatedIn: 'ont00001760',
-      textValue: 'ont00001761',
-      emailAddressRelation: 'ont00001801',
-      EmailAddress: 'CommonCoreOntologies/EmailAddress'
+      isTokenizedBy: 'ont00001761',
+      hasTextValue: 'ont00001765',
+      hasDatetimeValue: 'ont00001767',
+      hasUriValue: 'ont00001768',
+      hasDecimalValue: 'ont00001769',
+      hasDoubleValue: 'ont00001770',
+      hasDateValue: 'ont00001771',
+      hasBooleanValue: 'ont00001772',
+      hasIntegerValue: 'ont00001773',
+      isSubjectOf: 'ont00001801'
     }
   }),
   foaf: defineEntry({
@@ -496,6 +489,46 @@ export const COMMON_NAMESPACE_REGISTRY = Object.freeze({
     prefix: 'vcard',
     namespaceIri: 'http://www.w3.org/2006/vcard/ns#',
     ids: {}
+  }),
+  okea: defineEntry({
+    prefix: 'okea',
+    namespaceIri: 'https://github.com/jonathanvajda/okea/',
+    ids: {
+      OntologyOfKnowledgeEngineeringArtifacts: 'OntologyOfKnowledgeEngineeringArtifacts',
+      Graph: 'Graph',
+      Project: 'Project',
+      Setting: 'Setting',
+      WorkspaceInclusion: 'WorkspaceInclusion',
+      activeArtifact: 'activeArtifact',
+      appId: 'appId',
+      artifact: 'artifact',
+      artifactKind: 'artifactKind',
+      documentCount: 'documentCount',
+      enabled: 'enabled',
+      fileExtension: 'fileExtension',
+      fileName: 'fileName',
+      fingerprint: 'fingerprint',
+      graphIri: 'graphIri',
+      includeMode: 'includeMode',
+      inputArtifact: 'inputArtifact',
+      materialization: 'materialization',
+      metadata: 'metadata',
+      ontologyCount: 'ontologyCount',
+      outputArtifact: 'outputArtifact',
+      payload: 'payload',
+      role: 'role',
+      runKind: 'runKind',
+      schemaVersion: 'schemaVersion',
+      scope: 'scope',
+      settingKey: 'settingKey',
+      storageBackend: 'storageBackend',
+      storageRef: 'storageRef',
+      summary: 'summary',
+      tag: 'tag',
+      target: 'target',
+      targetType: 'targetType',
+      uiState: 'uiState'
+    }
   })
 });
 

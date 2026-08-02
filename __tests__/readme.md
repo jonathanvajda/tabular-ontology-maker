@@ -1,35 +1,15 @@
-To set up jest:
-```
-npm init -y
-npm install --save-dev jest
-```
-Example project structure
+# TOM Jest Coverage
 
-```
-/project-root
-  └── /src
-      └── ontology-settings.js
-  └── /__tests__
-      └── ontology-settings.test.js
-  └── package.json
-  └── jest.config.js (optional)
-```
+The current TOM Jest suite covers the promoted shared-package migration paths:
 
+| Area | Coverage |
+| --- | --- |
+| Ontology settings utilities | Date parts, case conversion, registry-backed RDF/OWL/DCTERMS settings keys |
+| Project storage | Shared IndexedDB project settings, TOM workspace artifacts, generated RDF artifacts, legacy `TabularOntologyDB` migration |
+| RDF I/O | Bundled N3 adapter serialization through shared `rdf-io` without dropping triples |
+| Format registry | File extension and MIME detection for RDF, tabular, and unsupported inputs |
+| Tabular export | Shared `tabular-io` CSV serialization and TOM row normalization |
+| Ontology import | Ontology/version IRI target derivation |
+| Predicate and feature utilities | Predicate modes, registry normalization, workspace snapshot normalization |
 
-🧪 1. What to Test
-Here are the key functions to unit test:
-
-| Function | Inputs | Expected Output / Side Effect |
-| --- | --- | --- |
-| getCurrentDateParts()|–|Object with { year, month, day }|
-| toCamelCase(str)|String|CamelCased string|
-|generateOntologySettings()|baseIRI, label|Settings object + localStorage.setItem('ontologySettings')|
-|loadOntologySettings()|–|Parsed settings from localStorage|
-|isValidOntology(content)|RDF/OWL string|true or false|
-
-For others like handleImportFileUpload(), you’ll need DOM mocking or integration testing (e.g., using jsdom).
-
-Run tests
-```
-npm test
-```
+TOM should not use `localStorage` for durable settings. User/app/project settings now belong in shared IndexedDB project settings.

@@ -70,6 +70,29 @@ export function compactIriToCurie(iri, prefixes) {
 }
 
 /**
+ * Formats an IRI for compact UI display. It prefers strict CURIE output, then
+ * falls back to legacy local-name display for unknown namespaces.
+ *
+ * @param {string} iri - Full IRI.
+ * @param {Record<string, string>} prefixes - Prefix-to-namespace map.
+ * @returns {string} CURIE, local name, original IRI, or empty string.
+ */
+export function formatIriForDisplay(iri, prefixes) {
+  if (typeof iri !== 'string') return '';
+  const curie = compactIriToCurie(iri, prefixes);
+  if (curie.ok) return curie.value;
+
+  const match = findLongestPrefixMatch(iri, prefixes);
+  if (match.ok) return `${match.prefix}:${iri.slice(match.namespaceIri.length)}`;
+
+  const hash = iri.lastIndexOf('#');
+  if (hash >= 0) return iri.slice(hash + 1);
+  const slash = iri.lastIndexOf('/');
+  if (slash >= 0) return iri.slice(slash + 1);
+  return iri;
+}
+
+/**
  * Expands a CURIE into an absolute IRI using an explicit prefix map.
  *
  * Unknown prefixes are structured result errors rather than log messages or

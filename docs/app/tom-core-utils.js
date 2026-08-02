@@ -84,7 +84,11 @@ const NS = COMMON_NAMESPACE_IRIS;
 
   function buildCsvExportRows(options) {
     const headers = Array.isArray(options && options.headers) ? options.headers : [];
-    const rows = Array.isArray(options && options.rows) ? options.rows : [];
+    const rows = normalizeTomTableRows(options && options.rows, {
+      headers,
+      fields: options && options.fields,
+      expectedColumnCount: headers.length,
+    });
     const resolveCellValue =
       options && typeof options.resolveCellValue === "function"
         ? options.resolveCellValue
@@ -102,6 +106,47 @@ const NS = COMMON_NAMESPACE_IRIS;
       );
     });
     return csvRows;
+  }
+
+  /**
+   * Normalizes TOM table data to the array-row shape consumed by RDF and CSV
+   * generation.
+   *
+   * TOM historically used Handsontable and now uses a Glide Data Grid adapter.
+   * App code should not depend on either internal row representation here: the
+   * durable export contract is still ordered table rows.
+   *
+   * @param {unknown} rows Candidate rows from a grid adapter, snapshot, or test fixture.
+   * @param {object} [options]
+   * @param {string[]} [options.headers] Column headers to use as object keys.
+   * @param {string[]} [options.fields] Adapter field names to use as object keys.
+   * @param {number} [options.expectedColumnCount] Minimum output column count.
+   * @returns {string[][]} Array rows padded to the expected column count.
+   */
+  function normalizeTomTableRows(rows, options) {
+    const opts = options || {};
+    const headers = Array.isArray(opts.headers) ? opts.headers : [];
+    const fields = Array.isArray(opts.fields) ? opts.fields : [];
+    const expectedColumnCount = Number.isInteger(opts.expectedColumnCount)
+      ? Math.max(0, opts.expectedColumnCount)
+      : Math.max(headers.length, fields.length);
+
+    return (Array.isArray(rows) ? rows : []).map(function (row) {
+      const next = [];
+      const width = Math.max(expectedColumnCount, Array.isArray(row) ? row.length : 0);
+      for (let index = 0; index < width; index += 1) {
+        let value = "";
+        if (Array.isArray(row)) {
+          value = row[index] ?? "";
+        } else if (row && typeof row === "object") {
+          const field = fields[index];
+          const header = headers[index];
+          value = row[field] ?? row[header] ?? row[index] ?? "";
+        }
+        next.push(String(value ?? ""));
+      }
+      return next;
+    });
   }
 
   function generateCsvString(options) {
@@ -148,6 +193,7 @@ const api = {
   toSnakeCase,
   isValidOntology,
   generateOntologySettings,
+  normalizeTomTableRows,
   buildCsvExportRows,
   generateCsvString,
   deriveOntologyImportTarget,
@@ -160,6 +206,7 @@ export {
   toSnakeCase,
   isValidOntology,
   generateOntologySettings,
+  normalizeTomTableRows,
   buildCsvExportRows,
   generateCsvString,
   deriveOntologyImportTarget,

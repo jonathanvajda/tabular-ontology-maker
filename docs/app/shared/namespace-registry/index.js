@@ -7,8 +7,8 @@ export {
 } from './prefix-map.js';
 
 export {
-  COMMON_NAMESPACE_REGISTRY,
   COMMON_NAMESPACE_IRIS,
+  COMMON_NAMESPACE_REGISTRY,
   namespaceIriMapFromRegistry,
   namespacePrefixMapFromRegistry,
   namespaceToPrefixMap,
@@ -18,6 +18,7 @@ export {
 export {
   findLongestPrefixMatch,
   compactIriToCurie,
+  formatIriForDisplay,
   expandCurieToIri
 } from './curie.js';
 
@@ -36,6 +37,7 @@ export {
 
 export {
   createN3WriterOptionsWithPrefixes,
+  selectPrefixesUsedByRdfTerms,
   applyPrefixesToRdflibStore
 } from './rdf-serialization-prefixes.js';
 

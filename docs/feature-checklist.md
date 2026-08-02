@@ -11,7 +11,7 @@ Roadmap: [feature-roadmap.md](d:/GitHub/tabular-ontology-maker/docs/feature-road
 - [x] Export `is a` values as resolved IRIs in CSV
 
 ## JSON-LD
-- [x] Load local `./app/jsonld.min.js`
+- [x] Load local `./app/shared/vendor/jsonld.min.js`
 - [x] Export RDF as compacted JSON-LD
 - [x] Preview JSON-LD in the generated output panel
 - [x] Import ontology JSON-LD through the ontology import flow
