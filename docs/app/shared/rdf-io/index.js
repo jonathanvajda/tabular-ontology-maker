@@ -32,6 +32,15 @@ export {
 } from './object-to-rdf.js';
 
 export {
+  assertNonEmptyRdfGraphExport,
+  createRdfGraphExportDataset,
+  flattenRdfQuadsToDefaultGraph,
+  selectRdfGraphExportQuads,
+  serializeRdfGraphExport,
+  shouldFlattenGraphNamesForRdfGraphExport
+} from './graph-export.js';
+
+export {
   adapterForRdfFormat,
   createRdfIoRuntime,
   mimeTypeForRdfFormat,

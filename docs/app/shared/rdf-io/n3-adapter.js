@@ -49,13 +49,35 @@ export function serializeRdfDatasetWithN3(dataset, options = {}) {
     format: n3Format,
     prefixes: shouldUsePrefixes(options.format) ? options.prefixes || {} : undefined
   });
-  writer.addQuads(datasetToQuads(dataset));
+  writer.addQuads(datasetToQuads(dataset).map((item) => rdfJsQuadToN3Quad(item, N3.DataFactory)));
   return new Promise((resolve, reject) => {
     writer.end((error, result) => {
       if (error) reject(error);
       else resolve(result || '');
     });
   });
+}
+
+function rdfJsQuadToN3Quad(item, dataFactory = {}) {
+  if (typeof dataFactory.quad !== 'function') return item;
+  return dataFactory.quad(
+    rdfJsTermToN3Term(item.subject, dataFactory),
+    rdfJsTermToN3Term(item.predicate, dataFactory),
+    rdfJsTermToN3Term(item.object, dataFactory),
+    rdfJsTermToN3Term(item.graph, dataFactory)
+  );
+}
+
+function rdfJsTermToN3Term(term, dataFactory = {}) {
+  if (typeof dataFactory.fromTerm === 'function') return dataFactory.fromTerm(term);
+  if (!term || term.termType === 'DefaultGraph') return dataFactory.defaultGraph ? dataFactory.defaultGraph() : term;
+  if (term.termType === 'NamedNode') return dataFactory.namedNode ? dataFactory.namedNode(term.value) : term;
+  if (term.termType === 'BlankNode') return dataFactory.blankNode ? dataFactory.blankNode(term.value) : term;
+  if (term.termType === 'Literal' && dataFactory.literal) {
+    if (term.language) return dataFactory.literal(term.value, term.language);
+    return dataFactory.literal(term.value, rdfJsTermToN3Term(term.datatype, dataFactory));
+  }
+  return term;
 }
 
 function createN3StoreDataset(N3, quads) {

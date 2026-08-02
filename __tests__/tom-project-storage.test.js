@@ -1,6 +1,8 @@
 import {
   readLatestTomSavedSession,
   readTomOntologySettings,
+  migrateLegacyTomSessionToProjectStorage,
+  openTomProjectStores,
   resetTomProjectStorageForTests,
   storeTomAuthoringSession,
   writeTomOntologySettings
@@ -205,26 +207,73 @@ describe('TOM shared project storage adapter', () => {
     });
   });
 
-  test('falls back to read-only legacy TOM IndexedDB sessions', async () => {
+  test('migrates latest legacy TOM IndexedDB sessions into shared project storage', async () => {
     globalThis.indexedDB.seed('TabularOntologyDB', 'workspaceStore', [{
       id: 1,
       timestamp: '2026-07-01T12:00:00.000Z',
       rows: [['legacy']]
+    }, {
+      id: 2,
+      timestamp: '2026-07-02T12:00:00.000Z',
+      rows: [['latest legacy']]
     }]);
     globalThis.indexedDB.seed('TabularOntologyDB', 'rdfStore', [{
       id: 1,
       timestamp: '2026-07-01T12:00:00.000Z',
       rdfData: '@prefix legacy: <http://example.org/> .',
       format: 'ttl'
+    }, {
+      id: 2,
+      timestamp: '2026-07-02T12:00:00.000Z',
+      rdfData: '{"@id":"http://example.org/latest"}',
+      format: 'jsonld'
     }]);
 
     await expect(readLatestTomSavedSession()).resolves.toMatchObject({
-      source: 'legacy-indexeddb',
-      latestWorkspace: { rows: [['legacy']] },
+      source: 'legacy-migrated-to-shared-project-portfolio',
+      latestWorkspace: { rows: [['latest legacy']] },
       latestRdfRecord: {
-        rdfData: '@prefix legacy: <http://example.org/> .',
-        format: 'ttl'
+        rdfData: '{"@id":"http://example.org/latest"}',
+        format: 'jsonld'
       }
+    });
+
+    await expect(readLatestTomSavedSession()).resolves.toMatchObject({
+      source: 'shared-project-portfolio',
+      latestWorkspace: { rows: [['latest legacy']] },
+      latestRdfRecord: {
+        rdfData: '{"@id":"http://example.org/latest"}',
+        format: 'jsonld'
+      }
+    });
+  });
+
+  test('stores generated RDF artifact MIME and extension through the format registry', async () => {
+    await migrateLegacyTomSessionToProjectStorage({
+      latestWorkspace: {
+        timestamp: '2026-08-01T12:00:00.000Z',
+        rows: [['s']]
+      },
+      latestRdfRecord: {
+        timestamp: '2026-08-01T12:00:00.000Z',
+        rdfData: '<http://example.org/s> <http://example.org/p> <http://example.org/o> .',
+        format: 'nquads'
+      }
+    });
+
+    await expect(readLatestTomSavedSession()).resolves.toMatchObject({
+      latestRdfRecord: {
+        format: 'nquads',
+        rdfData: '<http://example.org/s> <http://example.org/p> <http://example.org/o> .'
+      }
+    });
+    const stores = await openTomProjectStores();
+    const artifacts = await stores.artifacts.listProjectArtifacts('project:default-workspace', {
+      artifactKind: 'ontology-rdf'
+    });
+    expect(artifacts[0]).toMatchObject({
+      mediaType: 'application/n-quads',
+      extension: 'nq'
     });
   });
 });

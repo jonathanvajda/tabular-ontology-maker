@@ -2,10 +2,6 @@ import {
   SUPPORTED_MIME_DESCRIPTORS,
   getSupportedMimeTypeForFilename
 } from './mime-registry.js';
-import {
-  createAcceptAttribute,
-  downloadTextFile as downloadBrowserTextFile
-} from '../browser-file-io/index.js';
 
 /**
  * @file Browser-side file action helpers for format-aware apps.
@@ -28,10 +24,18 @@ import {
 export function downloadTextFile(fileName, text, options = {}) {
   const detected = getSupportedMimeTypeForFilename(fileName);
   const mimeType = options.mimeType || (detected.ok ? detected.value.mimeType : 'text/plain');
-  return downloadBrowserTextFile(fileName, text, {
-    ...options,
-    mimeType
-  });
+  const charset = options.charset === false || /;\s*charset=/i.test(mimeType)
+    ? ''
+    : `;charset=${options.charset || 'utf-8'}`;
+  const blob = new Blob([text], { type: `${mimeType}${charset}` });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 /**
@@ -41,7 +45,10 @@ export function downloadTextFile(fileName, text, options = {}) {
  * @returns {string} Accept attribute value such as `.ttl,.rdf`.
  */
 export function getAcceptExtensions(category = '') {
-  return createAcceptAttribute(Object.values(SUPPORTED_MIME_DESCRIPTORS), { category });
+  return Object.values(SUPPORTED_MIME_DESCRIPTORS)
+    .filter((item) => !category || item.category === category)
+    .flatMap((item) => item.extensions.map((extension) => `.${extension}`))
+    .join(',');
 }
 
 /**

@@ -1706,6 +1706,9 @@ function createGrid(container, config) {
     getColHeader() {
       return state.schema.map((meta) => meta.header);
     },
+    getFields() {
+      return state.schema.map((meta) => meta.field);
+    },
     getHiddenColumns() {
       return state.schema
         .filter((meta) => meta.hidden === true)

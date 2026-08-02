@@ -14,7 +14,8 @@ import {
   findLongestPrefixMatch
 } from './shared/namespace-registry/curie.js';
 import {
-  createN3WriterOptionsWithPrefixes
+  createN3WriterOptionsWithPrefixes,
+  selectPrefixesUsedByRdfTerms
 } from './shared/namespace-registry/rdf-serialization-prefixes.js';
 import {
   createFormatExtensionMap,
@@ -1077,7 +1078,7 @@ function buildOntologyExportQuads(rows) {
     if (isCuratedInOntology) {
       pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
-        namedNode(NS.cco.curatedIn),
+        namedNode(NS.cco2.curatedIn),
         asObjectTerm(isCuratedInOntology)
       ));
     }
@@ -1117,9 +1118,14 @@ function buildOntologyExportQuads(rows) {
 
 async function serializeQuads(quads, format = 'ttl') {
   const mimeType = mimeTypes[format] || format;
-  const prefixOptions = createN3WriterOptionsWithPrefixes({ prefixes: iriPrefixes });
-  if (prefixOptions.warnings?.length) {
-    console.warn('[export] Ignored invalid prefixes:', prefixOptions.warnings);
+  const usedPrefixes = selectPrefixesUsedByRdfTerms(iriPrefixes, quads);
+  const prefixOptions = createN3WriterOptionsWithPrefixes({ prefixes: usedPrefixes.value });
+  const prefixWarnings = [
+    ...(usedPrefixes.warnings || []),
+    ...(prefixOptions.warnings || [])
+  ];
+  if (prefixWarnings.length) {
+    console.warn('[export] Ignored invalid prefixes:', prefixWarnings);
   }
   const serialized = await serializeRdfDatasetWithAdapters(quads, {
     format: mimeType,
@@ -1129,9 +1135,10 @@ async function serializeQuads(quads, format = 'ttl') {
   return serialized.text;
 }
 
-function buildJsonLdContext() {
+function buildJsonLdContext(quads = []) {
+  const usedPrefixes = selectPrefixesUsedByRdfTerms(iriPrefixes, quads);
   const context = {};
-  Object.entries(iriPrefixes).forEach(([prefix, iri]) => {
+  Object.entries(usedPrefixes.value).forEach(([prefix, iri]) => {
     context[prefix] = iri;
   });
   return context;
@@ -1143,7 +1150,7 @@ async function generateRdfString(rows, format = 'ttl') {
   if (format === 'jsonld') {
     const serialized = await serializeRdfDatasetWithAdapters(quads, {
       format: mimeTypes.jsonld,
-      context: buildJsonLdContext(),
+      context: buildJsonLdContext(quads),
       runtime: { N3, jsonld: window.jsonld, $rdf: window.$rdf }
     });
     return serialized.text;
@@ -1214,6 +1221,37 @@ function cloneRowsForWorkspace(rows, expectedColumnCount = null) {
   });
 }
 
+function readCurrentTableRows() {
+  const headers = getColumnHeaders();
+  const fields = typeof hotInstance?.getFields === 'function'
+    ? hotInstance.getFields()
+    : ['iri', 'label', 'elementType', 'definition', 'isA', 'isCuratedInOntology'];
+  const expectedColumnCount = headers.length;
+  const directRows = CoreUtils.normalizeTomTableRows(hotInstance?.getData?.() || [], {
+    headers,
+    fields,
+    expectedColumnCount,
+  });
+  if (directRows.some((row) => row.some((cell) => String(cell || '').trim()))) {
+    return directRows;
+  }
+
+  if (!hotInstance || typeof hotInstance.countRows !== 'function' || typeof hotInstance.getDataAtCell !== 'function') {
+    return directRows;
+  }
+
+  const fallbackRows = [];
+  const rowCount = hotInstance.countRows();
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    const row = [];
+    for (let colIndex = 0; colIndex < expectedColumnCount; colIndex += 1) {
+      row.push(String(hotInstance.getDataAtCell(rowIndex, colIndex) ?? ''));
+    }
+    fallbackRows.push(row);
+  }
+  return fallbackRows;
+}
+
 function isValidViewKey(viewKey) {
   return Object.values(VIEW_KEYS).includes(viewKey);
 }
@@ -1268,7 +1306,7 @@ function buildWorkspaceSnapshot(timestamp = new Date().toISOString()) {
     activeView: isValidViewKey(getActiveViewKey()) ? getActiveViewKey() : DEFAULT_VIEW,
     predicates,
     axioms: getPersistableAxiomRecords(),
-    rows: cloneRowsForWorkspace(hotInstance?.getData?.() || [], BASE_COLS + predicates.length),
+    rows: cloneRowsForWorkspace(readCurrentTableRows(), BASE_COLS + predicates.length),
   };
 }
 
@@ -1348,7 +1386,7 @@ async function clearOntologySettings() {
 
 const handleExport = async (shouldDownload = false) => {
   console.info('handleExport happened');
-  const rows = hotInstance.getData();
+  const rows = readCurrentTableRows();
   const selectedFormat = document.getElementById('exportFormat')?.value || 'ttl';
   const format = shouldDownload ? selectedFormat : getPreviewFormat(selectedFormat);
 
@@ -1369,14 +1407,13 @@ const handleExport = async (shouldDownload = false) => {
 };
 
 /**
- * Saves the current RDF data to IndexedDB.
- * Uses the idb library for IndexedDB operations.
- * @params none
+ * Stores the current TOM workspace and generated RDF in shared project storage.
+ *
  * @returns {Promise<void>}
  */
-async function saveRDFtoIndexedDB() {
-  console.info('saveRDFtoIndexedDB happened');
-  const rows = hotInstance.getData();
+async function storeTomWorkspaceProjectState() {
+  console.info('storeTomWorkspaceProjectState happened');
+  const rows = readCurrentTableRows();
   const selectedFormat = document.getElementById('exportFormat')?.value || 'ttl';
   const format = getSaveableRdfFormat(selectedFormat);
 
@@ -1392,13 +1429,13 @@ async function saveRDFtoIndexedDB() {
       timestamp
     });
 
-    console.info('Workspace and RDF data saved to shared project storage successfully.');
-    showToast('Workspace and RDF data saved to project storage successfully.', 'success');
+    console.info('Workspace and RDF artifact saved to shared project storage successfully.');
+    showToast('Workspace and RDF artifact saved to project storage successfully.', 'success');
 
     updateReloadSessionButton(); // reflect availability immediately
   } catch (e) {
-    console.error('saveRDFtoIndexedDB failed:', e);
-    showToast('Failed to save workspace data to database.', 'error');
+    console.error('storeTomWorkspaceProjectState failed:', e);
+    showToast('Failed to save workspace data to project storage.', 'error');
   }
 };
 
@@ -1604,7 +1641,7 @@ async function reloadSavedSession() {
         if (classish.length) isA = classish[0];
       }
 
-      const curatedVals = Array.from(pMap.get(NS.cco.curatedIn)?.values() || []);
+      const curatedVals = Array.from(pMap.get(NS.cco2.curatedIn)?.values() || []);
       const curatedIn = iriFromObjects(curatedVals) || firstLiteral(curatedVals);
 
       // base row
@@ -1620,7 +1657,7 @@ async function reloadSavedSession() {
       for (const p of pMap.keys()) {
         if (
           p === NS.rdfs.label || p === NS.skos.definition || p === NS.rdf.type ||
-          p === NS.rdfs.subClassOf || p === NS.rdfs.subPropertyOf || p === NS.cco.curatedIn
+          p === NS.rdfs.subClassOf || p === NS.rdfs.subPropertyOf || p === NS.cco2.curatedIn
         ) continue;
         extraPreds.add(p);
       }
@@ -2061,7 +2098,7 @@ function attachHotHooks() {
       if ((s.iriMode || 'opaque') !== 'readable') return;
 
       // gather existing iris for uniqueness checks
-      const allIris = new Set(hotInstance.getData().map(r => String(r?.[0] || '')));
+      const allIris = new Set(readCurrentTableRows().map(r => String(r?.[0] || '')));
 
       for (const ch of changes) {
         const row = ch[0];
@@ -2777,7 +2814,7 @@ async function confirmAddPredicate() {
 
         const newHeaders = getColumnHeaders(); // base + customs
         const newColumns = getColumnDefinitions();
-        const oldData = hotInstance.getData();
+        const oldData = readCurrentTableRows();
         const validTypes = getElementTypes();
 
         const cleanedRows = oldData.map(row => {
@@ -2824,7 +2861,7 @@ const BASE_HEADER_TO_PRED = new Map([
   ['label',        NS.rdfs.label],
   ['definition',   NS.skos.definition],
   ['element type', NS.rdf.type],
-  ['is curated in ontology', NS.cco.curatedIn],
+  ['is curated in ontology', NS.cco2.curatedIn],
 ]);
 
 // Expand a single header to one or more concrete predicate IRIs for curation rules
@@ -3132,7 +3169,7 @@ async function handleInsertDataSave() {
 
     // Merge clean data
     const { mergedRows, stats } = mergeTableData(
-      hotInstance.getData(),
+      readCurrentTableRows(),
       result.cleanedRows,
       insertMode
     );
@@ -3301,7 +3338,7 @@ function validateAndPivotOntologyData(quads, knownPredicates) {
       if (classish.length) isA = classish[0];
     }
 
-    const curatedVals = Array.from(pMap.get(NS.cco.curatedIn)?.values() || []);
+    const curatedVals = Array.from(pMap.get(NS.cco2.curatedIn)?.values() || []);
     const curatedIn = iriFromObjects(curatedVals) || firstLiteral(curatedVals);
 
     const newRow = new Array(knownPredicates.length).fill('');
@@ -3395,7 +3432,7 @@ async function handleInsertOntologySave() {
 
     // Merge clean data (this logic remains identical)
     const { mergedRows, stats } = mergeTableData(
-      hotInstance.getData(),
+      readCurrentTableRows(),
       result.cleanedRows,
       insertMode
     );
@@ -3690,7 +3727,7 @@ function showToast(message, type = "success", duration = 3000) {
 }
 
 // Attach event listener to the "Save to Database" button
-document.getElementById('saveToDatabaseBtn').addEventListener('click', saveRDFtoIndexedDB);
+document.getElementById('saveToDatabaseBtn').addEventListener('click', storeTomWorkspaceProjectState);
 
 // Ontology settings modal open/close/save
 document.getElementById('ontologySettingsModalSaveSettingsBtn').addEventListener('click', saveOntologySettingsFromModal);
@@ -4217,7 +4254,7 @@ TOM.Core = {
   setAxiomRecord,
   confirmAddPredicate,
   saveOntologySettingsFromModal,
-  saveRDFtoIndexedDB,
+  storeTomWorkspaceProjectState,
   reloadSavedSession,
   handlePrimarySave,
   handleExport,

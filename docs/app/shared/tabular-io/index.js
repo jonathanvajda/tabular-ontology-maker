@@ -7,6 +7,12 @@ export {
   serializeDelimitedRows
 } from './delimited-text.js';
 export {
+  applyHeaderRowOptions,
+  detectCsvOrTsvDelimiter,
+  parseDelimitedLine,
+  parseDelimitedTextAsHeaderRows
+} from './table-shape.js';
+export {
   QUERY_RECORD_HEADERS,
   parseQueryRecordsFromDelimitedText,
   serializeQueryRecordsToDelimitedText

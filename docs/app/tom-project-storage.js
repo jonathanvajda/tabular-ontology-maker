@@ -11,6 +11,10 @@ import {
   storeProjectArtifactData,
   storeProjectRunData
 } from './shared/indexeddb-data-management/index.js';
+import {
+  getMimeTypeForFormatKey,
+  getPreferredExtensionForMimeType
+} from './shared/format-registry/index.js';
 
 const TOM_LEGACY_DB_NAME = 'TabularOntologyDB';
 const TOM_LEGACY_RDF_STORE = 'rdfStore';
@@ -121,46 +125,18 @@ export async function storeTomAuthoringSession({
   timestamp = new Date().toISOString()
 }) {
   const stores = await openTomProjectStores();
-  const workspaceArtifact = await storeProjectArtifactData(stores, {
-    projectId: DEFAULT_PROJECT_PORTFOLIO_PROJECT_ID,
-    artifactKind: TOM_WORKSPACE_ARTIFACT_KIND,
-    role: 'staged',
-    label: 'TOM workspace snapshot',
-    mediaType: 'application/ld+json',
-    extension: 'jsonld',
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    source: {
-      appId: TOM_APP_ID
-    },
-    summary: {
-      rowCount: Array.isArray(workspaceSnapshot?.rows) ? workspaceSnapshot.rows.length : 0,
-      predicateCount: Array.isArray(workspaceSnapshot?.predicates) ? workspaceSnapshot.predicates.length : 0
-    }
-  }, workspaceSnapshot);
-  const rdfArtifact = await storeProjectArtifactData(stores, {
-    projectId: DEFAULT_PROJECT_PORTFOLIO_PROJECT_ID,
-    artifactKind: TOM_RDF_ARTIFACT_KIND,
-    role: 'generated',
-    label: `TOM generated ontology.${format || 'ttl'}`,
-    mediaType: mediaTypeForRdfFormat(format),
-    extension: extensionForRdfFormat(format),
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    source: {
-      appId: TOM_APP_ID
-    },
-    provenance: {
-      derivedFrom: [workspaceArtifact.artifactId]
-    },
-    summary: {
-      format: format || 'ttl',
-      byteLength: String(rdfString || '').length
-    }
-  }, {
+  const workspaceArtifact = await storeTomWorkspaceSnapshot(stores, workspaceSnapshot, {
+    timestamp,
+    source: { appId: TOM_APP_ID }
+  });
+  const rdfArtifact = await storeTomGeneratedRdfArtifact(stores, {
     rdfData: rdfString,
     format,
     timestamp
+  }, {
+    timestamp,
+    workspaceArtifactId: workspaceArtifact.artifactId,
+    source: { appId: TOM_APP_ID }
   });
   const run = await storeProjectRunData(stores, {
     projectId: DEFAULT_PROJECT_PORTFOLIO_PROJECT_ID,
@@ -179,6 +155,83 @@ export async function storeTomAuthoringSession({
     rdfArtifact,
     run
   };
+}
+
+/**
+ * Stores a TOM workspace snapshot as a staged project artifact.
+ *
+ * TOM's grid/session shape remains app-owned. The shared portfolio owns only
+ * artifact identity, project scope, timestamps, source metadata, and payload
+ * persistence.
+ *
+ * @param {object} stores Shared project portfolio stores.
+ * @param {object} workspaceSnapshot TOM workspace snapshot payload.
+ * @param {object} [options]
+ * @param {string} [options.timestamp] Storage timestamp.
+ * @param {object} [options.source] Artifact source metadata.
+ * @returns {Promise<object>} Stored workspace artifact metadata.
+ */
+export function storeTomWorkspaceSnapshot(stores, workspaceSnapshot, {
+  timestamp = new Date().toISOString(),
+  source = { appId: TOM_APP_ID }
+} = {}) {
+  return storeProjectArtifactData(stores, {
+    projectId: DEFAULT_PROJECT_PORTFOLIO_PROJECT_ID,
+    artifactKind: TOM_WORKSPACE_ARTIFACT_KIND,
+    role: 'staged',
+    label: 'TOM workspace snapshot',
+    mediaType: 'application/ld+json',
+    extension: 'jsonld',
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    source,
+    summary: {
+      rowCount: Array.isArray(workspaceSnapshot?.rows) ? workspaceSnapshot.rows.length : 0,
+      predicateCount: Array.isArray(workspaceSnapshot?.predicates) ? workspaceSnapshot.predicates.length : 0
+    }
+  }, workspaceSnapshot);
+}
+
+/**
+ * Stores a generated TOM ontology RDF serialization as a project artifact.
+ *
+ * @param {object} stores Shared project portfolio stores.
+ * @param {object} rdfRecord RDF payload with `rdfData` and `format`.
+ * @param {object} [options]
+ * @param {string} [options.timestamp] Storage timestamp.
+ * @param {string} [options.workspaceArtifactId] Source workspace artifact id.
+ * @param {object} [options.source] Artifact source metadata.
+ * @returns {Promise<object>} Stored RDF artifact metadata.
+ */
+export function storeTomGeneratedRdfArtifact(stores, rdfRecord, {
+  timestamp = new Date().toISOString(),
+  workspaceArtifactId = '',
+  source = { appId: TOM_APP_ID }
+} = {}) {
+  const formatDetails = resolveRdfFormatDetails(rdfRecord?.format);
+  const payloadFormat = rdfRecord?.format || formatDetails.format;
+  return storeProjectArtifactData(stores, {
+    projectId: DEFAULT_PROJECT_PORTFOLIO_PROJECT_ID,
+    artifactKind: TOM_RDF_ARTIFACT_KIND,
+    role: 'generated',
+    label: `TOM generated ontology.${formatDetails.extension}`,
+    mediaType: formatDetails.mediaType,
+    extension: formatDetails.extension,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    source,
+    provenance: {
+      derivedFrom: workspaceArtifactId ? [workspaceArtifactId] : []
+    },
+    summary: {
+      format: payloadFormat,
+      byteLength: String(rdfRecord?.rdfData || '').length
+    }
+  }, {
+    rdfData: rdfRecord?.rdfData || '',
+    format: payloadFormat,
+    timestamp
+  });
 }
 
 /**
@@ -201,7 +254,9 @@ export async function hasTomSavedSession() {
 export async function readLatestTomSavedSession() {
   const shared = await readLatestSharedTomSession();
   if (shared.latestWorkspace || shared.latestRdfRecord) return shared;
-  return readLatestLegacyTomSession();
+  const legacy = await readLatestLegacyTomSession();
+  if (!legacy.latestWorkspace && !legacy.latestRdfRecord) return legacy;
+  return migrateLegacyTomSessionToProjectStorage(legacy);
 }
 
 async function readLatestSharedTomSession() {
@@ -236,6 +291,59 @@ async function readLatestLegacyTomSession() {
     latestWorkspace: selectLatestLegacyRecord(workspaceRows),
     latestRdfRecord: selectLatestLegacyRecord(rdfRows),
     source: 'legacy-indexeddb'
+  };
+}
+
+/**
+ * Copies the latest legacy TOM session into the shared project portfolio.
+ *
+ * This intentionally does not delete `TabularOntologyDB`; deletion requires a
+ * separate user-confirmed cleanup after manual export/restore validation.
+ *
+ * @param {{latestWorkspace: object|null, latestRdfRecord: object|null}} legacySession Latest legacy data.
+ * @returns {Promise<{latestWorkspace: object|null, latestRdfRecord: object|null, source: string}>}
+ */
+export async function migrateLegacyTomSessionToProjectStorage(legacySession) {
+  const stores = await openTomProjectStores();
+  const timestamp = latestSessionTimestamp(legacySession);
+  const migratedSource = {
+    appId: TOM_APP_ID,
+    origin: 'legacy-migration',
+    databaseName: TOM_LEGACY_DB_NAME
+  };
+  const workspaceArtifact = legacySession.latestWorkspace
+    ? await storeTomWorkspaceSnapshot(stores, legacySession.latestWorkspace, {
+      timestamp,
+      source: { ...migratedSource, storeName: TOM_LEGACY_WORKSPACE_STORE }
+    })
+    : null;
+  const rdfArtifact = legacySession.latestRdfRecord
+    ? await storeTomGeneratedRdfArtifact(stores, legacySession.latestRdfRecord, {
+      timestamp,
+      workspaceArtifactId: workspaceArtifact?.artifactId || '',
+      source: { ...migratedSource, storeName: TOM_LEGACY_RDF_STORE }
+    })
+    : null;
+  await storeProjectRunData(stores, {
+    projectId: DEFAULT_PROJECT_PORTFOLIO_PROJECT_ID,
+    runKind: 'migration',
+    label: 'Migrate TOM legacy session',
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    inputArtifactIds: [],
+    outputArtifactIds: [workspaceArtifact?.artifactId, rdfArtifact?.artifactId].filter(Boolean),
+    metadata: {
+      appId: TOM_APP_ID,
+      migratedFrom: {
+        databaseName: TOM_LEGACY_DB_NAME,
+        stores: [TOM_LEGACY_WORKSPACE_STORE, TOM_LEGACY_RDF_STORE]
+      }
+    }
+  });
+  return {
+    latestWorkspace: legacySession.latestWorkspace || null,
+    latestRdfRecord: normalizeSharedRdfPayload(rdfArtifact ? { ...rdfArtifact, payload: legacySession.latestRdfRecord } : null),
+    source: 'legacy-migrated-to-shared-project-portfolio'
   };
 }
 
@@ -286,42 +394,21 @@ function normalizeSharedRdfPayload(artifact) {
   };
 }
 
-function mediaTypeForRdfFormat(format) {
-  switch (String(format || '').toLowerCase()) {
-    case 'jsonld':
-      return 'application/ld+json';
-    case 'rdf':
-    case 'xml':
-      return 'application/rdf+xml';
-    case 'nt':
-      return 'application/n-triples';
-    case 'nquads':
-    case 'nq':
-      return 'application/n-quads';
-    case 'trig':
-      return 'application/trig';
-    case 'ttl':
-    default:
-      return 'text/turtle';
-  }
+function latestSessionTimestamp(session) {
+  const candidates = [session?.latestWorkspace, session?.latestRdfRecord]
+    .map((record) => record?.updatedAt || record?.timestamp || record?.createdAt)
+    .filter(Boolean)
+    .sort((left, right) => Date.parse(right) - Date.parse(left));
+  return candidates[0] || new Date().toISOString();
 }
 
-function extensionForRdfFormat(format) {
-  switch (String(format || '').toLowerCase()) {
-    case 'jsonld':
-      return 'jsonld';
-    case 'rdf':
-    case 'xml':
-      return 'rdf';
-    case 'nt':
-      return 'nt';
-    case 'nquads':
-    case 'nq':
-      return 'nq';
-    case 'trig':
-      return 'trig';
-    case 'ttl':
-    default:
-      return 'ttl';
-  }
+function resolveRdfFormatDetails(format) {
+  const result = getMimeTypeForFormatKey(format || 'turtle');
+  const descriptor = result.ok ? result.value : getMimeTypeForFormatKey('turtle').value;
+  const extension = getPreferredExtensionForMimeType(descriptor.mimeType);
+  return {
+    format: descriptor.id,
+    mediaType: descriptor.mimeType,
+    extension: extension.ok ? extension.value : descriptor.extensions[0]
+  };
 }
