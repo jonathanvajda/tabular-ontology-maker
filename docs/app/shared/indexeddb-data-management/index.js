@@ -109,6 +109,13 @@ export {
 } from './project-export.js';
 
 export {
+  createRunOutputDownloadFileName,
+  downloadRunOutputForExport,
+  resolveOutputRunForExport,
+  serializeRunOutputForExport
+} from './run-output-export.js';
+
+export {
   PROJECT_FILE_MAX_SEGMENT_LENGTH,
   PROJECT_FILE_MAX_PATH_LENGTH,
   sanitizeProjectFileName,

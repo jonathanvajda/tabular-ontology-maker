@@ -72,6 +72,7 @@ const PRECACHE_MANIFEST = [
   { url: './app/shared/indexeddb-data-management/record-jsonld.js', revision: 'v0.2.0' },
   { url: './app/shared/indexeddb-data-management/record-store.js', revision: 'v0.2.0' },
   { url: './app/shared/indexeddb-data-management/records.js', revision: 'v0.2.0' },
+  { url: './app/shared/indexeddb-data-management/run-output-export.js', revision: 'v0.2.0' },
   { url: './app/shared/indexeddb-data-management/storage-error.js', revision: 'v0.2.0' },
   { url: './app/tom-ui.js',                   revision: 'v0.2.0' },
   { url: './app/tom-app.js',                  revision: 'v0.2.0' },

@@ -35,6 +35,9 @@ export {
   assertNonEmptyRdfGraphExport,
   createRdfGraphExportDataset,
   flattenRdfQuadsToDefaultGraph,
+  getRdfGraphExportGraphShape,
+  isSupportedRdfGraphExportMimeType,
+  RDF_GRAPH_EXPORT_MIME_TYPES,
   selectRdfGraphExportQuads,
   serializeRdfGraphExport,
   shouldFlattenGraphNamesForRdfGraphExport
