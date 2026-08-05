@@ -112,9 +112,8 @@ const NS = COMMON_NAMESPACE_IRIS;
    * Normalizes TOM table data to the array-row shape consumed by RDF and CSV
    * generation.
    *
-   * TOM historically used Handsontable and now uses a Glide Data Grid adapter.
-   * App code should not depend on either internal row representation here: the
-   * durable export contract is still ordered table rows.
+   * App code should not depend on a specific grid adapter row representation
+   * here: the durable export contract is ordered table rows.
    *
    * @param {unknown} rows Candidate rows from a grid adapter, snapshot, or test fixture.
    * @param {object} [options]
