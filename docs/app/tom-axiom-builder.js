@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
 import { COMMON_NAMESPACE_IRIS } from './shared/namespace-registry/namespace-registry.js';
+import { createUuid } from './shared/ontology-utils/index.js';
 
 const NS = COMMON_NAMESPACE_IRIS;
 const RDF_TYPE = NS.rdf.type;
@@ -107,7 +108,7 @@ const XSD_NON_NEGATIVE_INTEGER = NS.xsd.nonNegativeInteger;
 
     out.axioms = (Array.isArray(record?.axioms) ? record.axioms : [])
       .map((axiom) => ({
-        id: axiom.id || `ax_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        id: axiom.id || createAxiomRecordId(),
         kind: AXIOM_PREDICATES[axiom.kind] ? axiom.kind : "SubClassOf",
         expressionText: String(axiom.expressionText || "").trim(),
         expressionAst: axiom.expressionAst || null,
@@ -330,7 +331,7 @@ const XSD_NON_NEGATIVE_INTEGER = NS.xsd.nonNegativeInteger;
 
   function makeBlankNode(factory, seed) {
     if (factory?.blankNode) return factory.blankNode(seed);
-    return { termType: "BlankNode", value: seed || `b${Math.random().toString(36).slice(2)}` };
+    return { termType: "BlankNode", value: seed || `b${createUuid({ removeHyphens: true })}` };
   }
 
   function makeNamedNode(factory, iri) {
@@ -717,7 +718,7 @@ const XSD_NON_NEGATIVE_INTEGER = NS.xsd.nonNegativeInteger;
         event.preventDefault();
         const ast = parseExpression(textarea.value, resolver);
         currentRecord.axioms.push({
-          id: `ax_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          id: createAxiomRecordId(),
           kind: kind.value,
           expressionText: textarea.value.trim(),
           expressionAst: ast,
@@ -815,6 +816,10 @@ const XSD_NON_NEGATIVE_INTEGER = NS.xsd.nonNegativeInteger;
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  }
+
+  function createAxiomRecordId() {
+    return `ax_${createUuid({ removeHyphens: true })}`;
   }
 
   function insertAtCursor(textarea, token) {

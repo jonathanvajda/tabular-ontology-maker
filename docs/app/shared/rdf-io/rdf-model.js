@@ -14,6 +14,8 @@ export const XSD_NS = 'http://www.w3.org/2001/XMLSchema#';
 export const RDF_TYPE = `${RDF_NS}type`;
 export const XSD_STRING = `${XSD_NS}string`;
 
+let blankNodeCounter = 0;
+
 /**
  * Creates an RDF/JS named node.
  *
@@ -32,10 +34,21 @@ export function namedNode(value) {
  * @param {string} [value] - Blank node identifier without `_:` prefix.
  * @returns {{termType: 'BlankNode', value: string}} RDF/JS blank node.
  */
-export function blankNode(value = `b${Math.random().toString(36).slice(2)}`) {
+export function blankNode(value = createBlankNodeId()) {
   const id = String(value ?? '').replace(/^_:/, '').trim();
   if (!id) throw new TypeError('Blank node identifier must be a non-empty string.');
   return { termType: 'BlankNode', value: id };
+}
+
+function createBlankNodeId() {
+  const cryptoRef = globalThis.crypto;
+  if (cryptoRef && typeof cryptoRef.getRandomValues === 'function') {
+    const bytes = new Uint8Array(8);
+    cryptoRef.getRandomValues(bytes);
+    return `b${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+  }
+  blankNodeCounter += 1;
+  return `b${blankNodeCounter}`;
 }
 
 /**
