@@ -26,7 +26,7 @@ function randomSuffix() {
     cryptoRef.getRandomValues(bytes);
     return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
   }
-  return `${Date.now().toString(36)}-${Math.floor(Math.random() * 0xffffffff).toString(36)}`;
+  throw new StorageError('File write temp names require crypto.getRandomValues().', { code: 'CRYPTO_UNAVAILABLE' });
 }
 
 function isAbortError(error) {

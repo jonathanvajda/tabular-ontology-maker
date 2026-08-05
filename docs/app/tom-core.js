@@ -37,6 +37,7 @@ import {
   parseRdfTextWithAdapters,
   serializeRdfDatasetWithAdapters
 } from './shared/rdf-io/index.js';
+import { normalizeIriToken } from './shared/ontology-utils/index.js';
 import {
   deleteTomOntologySettings,
   hasTomSavedSession,
@@ -1892,12 +1893,6 @@ function displayLabelAndCurie(rec) {
   return `${rec.label || rec.curie || rec.iri} - ${(rec.curie || rec.iri)}`;
 }
 
-function normalizeIriishToken(value) {
-  const v = String(value || '').trim();
-  const displayParts = v.split(/\s(?:-|::)\s/);
-  return displayParts.length > 1 ? displayParts[displayParts.length - 1].trim() : v;
-}
-
 function searchPredicateVocab(q, { max = 20 } = {}) {
   return searchVocab(q, { max, typeHint: PREDICATE_LOOKUP_TYPES }).filter(isPredicateVocabRecord);
 }
@@ -1905,7 +1900,7 @@ function searchPredicateVocab(q, { max = 20 } = {}) {
 function getKnownVocabRecordForIriish(value) {
   if (!value) return null;
   const v = String(value).trim();
-  const token = normalizeIriishToken(v);
+  const token = normalizeIriToken(v);
 
   if (vocabByIri.has(token)) return vocabByIri.get(token);
   if (vocabByCurie.has(token)) return vocabByCurie.get(token);
@@ -1929,7 +1924,7 @@ function formatPredicateHeaderTitle(value) {
 function resolvePredicateInputToIri(value) {
   if (!value) return null;
   const v = String(value).trim();
-  const token = normalizeIriishToken(v);
+  const token = normalizeIriToken(v);
 
   if (/^https?:\/\/\S+$/i.test(token) || /^urn:[^:\s]+:.+/i.test(token) || /^<[^>\s]+>$/.test(token)) {
     return token.replace(/^<|>$/g, '');
