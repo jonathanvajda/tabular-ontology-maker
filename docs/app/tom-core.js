@@ -94,8 +94,8 @@ const hiddenColumnsByView = {
   [VIEW_KEYS.ONTOLOGY]: new Set(DEFAULT_HIDDEN_COLUMNS_BY_VIEW[VIEW_KEYS.ONTOLOGY]),
   [VIEW_KEYS.RELATA]: new Set(DEFAULT_HIDDEN_COLUMNS_BY_VIEW[VIEW_KEYS.RELATA])
 };
-let hotInstance = null;
-let hotInitDone = false;
+let gridInstance = null;
+let gridInitDone = false;
 let currentImportFile = null;
 let lastPreviewableRdfFormat = 'ttl';
 let axiomRecordsBySubject = new Map();
@@ -656,7 +656,7 @@ function buildReadableIri(label, settings, existingIris = new Set()) {
 
 
 
-// Gets the columns definitions for the Handsontable instance.
+// Gets the column definitions for the active Glide-backed grid.
 const getColumnDefinitions = (viewKey = getActiveViewKey()) => {
   const baseColumns = [
     { type: 'text', hidden: !isColumnVisibleInView(viewKey, 0) ? true : undefined }, // IRI / Subject
@@ -681,7 +681,7 @@ const getColumnDefinitions = (viewKey = getActiveViewKey()) => {
         try {
           // infer type constraints from the row's Element Type
           const row = this.row;
-          const elType = hotInstance.getDataAtCell(row, 2); // "element type"
+          const elType = gridInstance.getDataAtCell(row, 2); // "element type"
           let typeHint = null;
           if (elType === 'Class' || elType === 'NamedIndividual') typeHint = 'Class';
           else if (elType === 'ObjectProperty') typeHint = 'ObjectProperty';
@@ -720,13 +720,13 @@ const getInitialData = () => {
 ];
 };
 
-// Gets the column headers for the Handsontable instance.  
+// Gets the column headers for the active Glide-backed grid.
 const getColumnHeaders = (viewKey = getActiveViewKey()) => {
   console.info('getColumnHeaders happened');
   return getBaseHeadersForView(viewKey).concat(getCustomPredicateIris());
 };
 
-// Creates a Handsontable instance in the given container with the provided data and column definitions.
+// Creates the active Glide-backed grid in the given container with the provided data and column definitions.
 const createTable = (container, data, colHeaders, columns) => {
   console.info('createTable happened');
   return TOM.Grid.createGrid(container, {
@@ -811,7 +811,7 @@ function setIsCuratedInForAllRows() {
     return;
   }
 
-  const headers = hotInstance.getColHeader();
+  const headers = gridInstance.getColHeader();
   const columnIndex = headers.indexOf("is curated in ontology");
 
   if (columnIndex === -1) {
@@ -819,13 +819,13 @@ function setIsCuratedInForAllRows() {
     return;
   }
 
-  const totalRows = hotInstance.countRows();
+  const totalRows = gridInstance.countRows();
   let updatedCount = 0;
 
   for (let row = 0; row < totalRows; row++) {
-    const currentValue = hotInstance.getDataAtCell(row, columnIndex);
+    const currentValue = gridInstance.getDataAtCell(row, columnIndex);
     if (currentValue === null || currentValue === "") {
-      hotInstance.setDataAtCell(row, columnIndex, ontologyIRI);
+      gridInstance.setDataAtCell(row, columnIndex, ontologyIRI);
       updatedCount++;
     }
   }
@@ -834,8 +834,8 @@ function setIsCuratedInForAllRows() {
 }
 
 function syncCurrentViewHiddenColumns() {
-  if (!hotInstance?.getHiddenColumns) return;
-  setHiddenColumnsForView(getActiveViewKey(), hotInstance.getHiddenColumns());
+  if (!gridInstance?.getHiddenColumns) return;
+  setHiddenColumnsForView(getActiveViewKey(), gridInstance.getHiddenColumns());
 }
 
 function updateViewToggleButtons() {
@@ -849,24 +849,24 @@ function updateViewToggleButtons() {
 }
 
 function applyViewSchema(viewKey, options = {}) {
-  if (!hotInstance) return;
+  if (!gridInstance) return;
 
   const targetView = viewKey || DEFAULT_VIEW;
   const previousView = getActiveViewKey();
-  if (options.captureCurrent !== false && hotInstance && previousView) {
+  if (options.captureCurrent !== false && gridInstance && previousView) {
     syncCurrentViewHiddenColumns();
   }
 
   activeViewKey = targetView;
-  hotInstance.setSchema(getColumnHeaders(targetView), getColumnDefinitions(targetView));
+  gridInstance.setSchema(getColumnHeaders(targetView), getColumnDefinitions(targetView));
 
   const hidden = Array.from(getHiddenColumnsForView(targetView));
-  hotInstance.setHiddenColumns(hidden);
+  gridInstance.setHiddenColumns(hidden);
   updateViewToggleButtons();
 }
 
 function switchView(nextViewKey) {
-  if (!hotInstance) return;
+  if (!gridInstance) return;
   if (!Object.values(VIEW_KEYS).includes(nextViewKey)) return;
   if (nextViewKey === getActiveViewKey()) return;
   applyViewSchema(nextViewKey);
@@ -874,11 +874,11 @@ function switchView(nextViewKey) {
 }
 
 /**
- * Initialize Handsontable once
+ * Initializes the active Glide-backed grid once.
  */
-function initHandsontable() {
-  if (hotInitDone) return;
-  if (hotInstance) { try { hotInstance.destroy(); } catch (_) {} }
+function initializeOntologyGrid() {
+  if (gridInitDone) return;
+  if (gridInstance) { try { gridInstance.destroy(); } catch (_) {} }
 
   // 1) Build rows/schema
   const rows     = getInitialData();
@@ -886,28 +886,28 @@ function initHandsontable() {
   const columns  = getColumnDefinitions();
   const settings = getOntologySettings(); // IndexedDB-backed cache
 
-  // 2) Create HOT using 4-arg createTable
-  hotInstance = createTable(container, rows, headers, columns);
-  attachHotHooks?.();
+  // 2) Create the grid using the active adapter.
+  gridInstance = createTable(container, rows, headers, columns);
+  attachGridHooks?.();
   applyViewSchema(getActiveViewKey(), { captureCurrent: false });
 
   // 3) Finish init
   harvestRowsIntoVocab?.(rows);
-  hotInitDone = true;
+  gridInitDone = true;
   updateViewToggleButtons();
 }
 
 
 // This function checks if the element type is a predicate
 window.getIsAPredicateForRow = (rowIndex) => {
-  const row = hotInstance.getSourceDataAtRow(rowIndex);
+  const row = gridInstance.getSourceDataAtRow(rowIndex);
   const elementType = row ? row[2] : null;
   return getIsAPredicate(elementType);
 };
 
 // This set of functions are used for outputting RDF.
 // getOntologyIRI retrieves the ontology IRI or returns a default value.
-// generateRdfString takes the rows of the Handsontable instance and converts them into an RDF string in the specified format.
+// generateRdfString takes the grid rows and converts them into an RDF string in the specified format.
 // handleExport generates the file
 
 function getOntologyIRI() {
@@ -1223,11 +1223,11 @@ function cloneRowsForWorkspace(rows, expectedColumnCount = null) {
 
 function readCurrentTableRows() {
   const headers = getColumnHeaders();
-  const fields = typeof hotInstance?.getFields === 'function'
-    ? hotInstance.getFields()
+  const fields = typeof gridInstance?.getFields === 'function'
+    ? gridInstance.getFields()
     : ['iri', 'label', 'elementType', 'definition', 'isA', 'isCuratedInOntology'];
   const expectedColumnCount = headers.length;
-  const directRows = CoreUtils.normalizeTomTableRows(hotInstance?.getData?.() || [], {
+  const directRows = CoreUtils.normalizeTomTableRows(gridInstance?.getData?.() || [], {
     headers,
     fields,
     expectedColumnCount,
@@ -1236,16 +1236,16 @@ function readCurrentTableRows() {
     return directRows;
   }
 
-  if (!hotInstance || typeof hotInstance.countRows !== 'function' || typeof hotInstance.getDataAtCell !== 'function') {
+  if (!gridInstance || typeof gridInstance.countRows !== 'function' || typeof gridInstance.getDataAtCell !== 'function') {
     return directRows;
   }
 
   const fallbackRows = [];
-  const rowCount = hotInstance.countRows();
+  const rowCount = gridInstance.countRows();
   for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
     const row = [];
     for (let colIndex = 0; colIndex < expectedColumnCount; colIndex += 1) {
-      row.push(String(hotInstance.getDataAtCell(rowIndex, colIndex) ?? ''));
+      row.push(String(gridInstance.getDataAtCell(rowIndex, colIndex) ?? ''));
     }
     fallbackRows.push(row);
   }
@@ -1362,12 +1362,12 @@ function getRecordOrderValue(record) {
 
 function applyWorkspaceSnapshot(snapshot) {
   const normalized = normalizeWorkspaceSnapshot(snapshot);
-  if (!normalized || !hotInstance) return null;
+  if (!normalized || !gridInstance) return null;
 
   replacePredicateRegistry(normalized.predicates);
   mergeAxiomRecords(normalized.axioms, { replace: true });
   applyViewSchema(normalized.activeView, { captureCurrent: false });
-  hotInstance.replaceRows(normalized.rows, 'LoadData');
+  gridInstance.replaceRows(normalized.rows, 'LoadData');
   harvestRowsIntoVocab?.(normalized.rows);
 
   try {
@@ -1691,8 +1691,8 @@ async function reloadSavedSession() {
 
     const newHeaders = getColumnHeaders();
     const newColumns = getColumnDefinitions();
-    hotInstance.setSchema(newHeaders, newColumns);
-    hotInstance.replaceRows(finalRows, 'LoadData');
+    gridInstance.setSchema(newHeaders, newColumns);
+    gridInstance.replaceRows(finalRows, 'LoadData');
     mergeAxiomRecords(rdfFallbackAxiomRecords, { replace: true });
     harvestRowsIntoVocab?.(finalRows);
 
@@ -2027,7 +2027,7 @@ function resolveToIri(value) {
   return null;
 }
 
-// This function is used to harvest rows from a Handsontable instance into the vocabulary index.
+// This function is used to harvest rows from the grid into the vocabulary index.
 function harvestRowsIntoVocab(rows) {
   const IRI_COL = 0, LABEL_COL = 1, TYPE_COL = 2;
   const entries = [];
@@ -2052,7 +2052,7 @@ function normalizeIsAEdits(changes, source) {
     const newVal = ch[3];
 
     // Resolve prop to column index
-    const col = (typeof prop === 'number') ? prop : hotInstance.propToCol(prop);
+    const col = (typeof prop === 'number') ? prop : gridInstance.propToCol(prop);
     if (col !== 4) continue; // only "Is A" column
 
     const iri = resolveToIri(newVal);
@@ -2060,29 +2060,29 @@ function normalizeIsAEdits(changes, source) {
   }
 }
 
-function attachHotHooks() {
-  hotInstance.addHook('beforeChange', normalizeIsAEdits);
+function attachGridHooks() {
+  gridInstance.addHook('beforeChange', normalizeIsAEdits);
 
   // NEW: when rows are created, auto-assign IRIs
-  hotInstance.addHook('afterCreateRow', (index, amount, source) => {
+  gridInstance.addHook('afterCreateRow', (index, amount, source) => {
     try {
       const s = getOntologySettings();
       const mode = s.iriMode || 'opaque';
 
       if (mode === 'opaque') {
-        let maxNum = findMaxOpaqueNumber(hotInstance, s);
+        let maxNum = findMaxOpaqueNumber(gridInstance, s);
         for (let r = 0; r < amount; r++) {
           const rowIndex = index + r;
           maxNum += 1;
           const iri = buildOpaqueIri(maxNum, s);
-          hotInstance.setDataAtCell(rowIndex, 0, iri); // col 0 = IRI
+          gridInstance.setDataAtCell(rowIndex, 0, iri); // col 0 = IRI
         }
       } else {
         // readable: we'll fill when/if label appears (see afterChange)
         for (let r = 0; r < amount; r++) {
           const rowIndex = index + r;
           // leave IRI blank for now
-          hotInstance.setDataAtCell(rowIndex, 0, '');
+          gridInstance.setDataAtCell(rowIndex, 0, '');
         }
       }
     } catch (e) {
@@ -2091,7 +2091,7 @@ function attachHotHooks() {
   });
 
   // NEW: when label changes in readable mode, (re)build IRI if empty or previously auto-generated
-  hotInstance.addHook('afterChange', (changes, source) => {
+  gridInstance.addHook('afterChange', (changes, source) => {
     if (!Array.isArray(changes) || source === 'LoadData') return;
     try {
       const s = getOntologySettings();
@@ -2102,12 +2102,12 @@ function attachHotHooks() {
 
       for (const ch of changes) {
         const row = ch[0];
-        const col = (typeof ch[1] === 'number') ? ch[1] : hotInstance.propToCol(ch[1]);
+        const col = (typeof ch[1] === 'number') ? ch[1] : gridInstance.propToCol(ch[1]);
         const newVal = ch[3];
 
         // Column 1 = label
         if (col === 1) {
-          const currentIri = String(hotInstance.getDataAtCell(row, 0) || '');
+          const currentIri = String(gridInstance.getDataAtCell(row, 0) || '');
           const label = String(newVal || '').trim();
           if (!label) continue;
 
@@ -2120,7 +2120,7 @@ function attachHotHooks() {
             if (currentIri) allIris.delete(currentIri);
 
             const iri = buildReadableIri(label, s, allIris);
-            hotInstance.setDataAtCell(row, 0, iri);
+            gridInstance.setDataAtCell(row, 0, iri);
 
             allIris.add(iri); // reserve
           }
@@ -2132,10 +2132,10 @@ function attachHotHooks() {
   });
 }
 
-// This function backfills IRIs in the Handsontable instance based on the selected mode.
+// This function backfills IRIs in the grid based on the selected mode.
 function backfillIris() {
   try {
-    if (!hotInstance) {
+    if (!gridInstance) {
       console.warn('[IRI] No table instance');
       showToast('Table not ready', 'error');
       return;
@@ -2144,12 +2144,12 @@ function backfillIris() {
     const s = getEffectiveOntologySettings();
     const mode = s.iriMode || 'opaque';
 
-    const total = hotInstance.countRows();
+    const total = gridInstance.countRows();
 
     // collect already-used IRIs to ensure uniqueness
     const existing = new Set();
     for (let r = 0; r < total; r++) {
-      const iri = String(hotInstance.getDataAtCell(r, 0) || '').trim();
+      const iri = String(gridInstance.getDataAtCell(r, 0) || '').trim();
       if (iri) existing.add(iri);
     }
 
@@ -2158,14 +2158,14 @@ function backfillIris() {
 
     if (mode === 'opaque') {
       const startAt = Math.max(1, s.opaqueStart || 1);
-      const usedOpaqueNumbers = collectUsedOpaqueNumbers(hotInstance, s);
+      const usedOpaqueNumbers = collectUsedOpaqueNumbers(gridInstance, s);
 
       for (let r = 0; r < total; r++) {
-        const iri = String(hotInstance.getDataAtCell(r, 0) || '').trim();
+        const iri = String(gridInstance.getDataAtCell(r, 0) || '').trim();
         if (!iri) {
           const next = findNextAvailableOpaqueNumber(usedOpaqueNumbers, s, startAt);
           const newIri = buildOpaqueIri(next, s);
-          hotInstance.setDataAtCell(r, 0, newIri);
+          gridInstance.setDataAtCell(r, 0, newIri);
           existing.add(newIri);
           usedOpaqueNumbers.add(next);
           filled++;
@@ -2174,12 +2174,12 @@ function backfillIris() {
     } else {
       // human-readable: derive from label when present
       for (let r = 0; r < total; r++) {
-        const iri = String(hotInstance.getDataAtCell(r, 0) || '').trim();
+        const iri = String(gridInstance.getDataAtCell(r, 0) || '').trim();
         if (!iri) {
-          const label = String(hotInstance.getDataAtCell(r, 1) || '').trim();
+          const label = String(gridInstance.getDataAtCell(r, 1) || '').trim();
           if (!label) { skipped++; continue; }
           const newIri = buildReadableIri(label, s, existing);
-          hotInstance.setDataAtCell(r, 0, newIri);
+          gridInstance.setDataAtCell(r, 0, newIri);
           existing.add(newIri);
           filled++;
         }
@@ -2202,25 +2202,25 @@ function isValidOntology(content) {
   );
 }
 
-// Gets n rows to the bottom of the Handsontable instance.
+// Gets n rows to the bottom of the grid.
 function getRowCountInput() {
   const n = parseInt(document.getElementById("row-count").value, 10);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 
-// This function adds n blank rows to the bottom of the Handsontable instance.
+// This function adds n blank rows to the bottom of the grid.
 function addRowsToTable(n = 1) {
-  if (!hotInstance || n < 1) return;
-  hotInstance.insertRows(hotInstance.countRows(), n);
+  if (!gridInstance || n < 1) return;
+  gridInstance.insertRows(gridInstance.countRows(), n);
 }
 
-// This function deletes n rows from the bottom of the Handsontable instance.
+// This function deletes n rows from the bottom of the grid.
 function removeRowsFromBottom(n = 1) {
-  if (!hotInstance || n < 1) return;
-  const total = hotInstance.countRows();
+  if (!gridInstance || n < 1) return;
+  const total = gridInstance.countRows();
   const toRemove = Math.min(n, total);
-  if (toRemove > 0) hotInstance.removeRows(total - toRemove, toRemove);
+  if (toRemove > 0) gridInstance.removeRows(total - toRemove, toRemove);
 }
 
 
@@ -2229,8 +2229,8 @@ function removeRowsFromBottom(n = 1) {
  * Returns [ {index, header} ] for custom predicate columns (all columns after BASE_COLS).
  */
 function getCustomPredicateColumns() {
-  if (!hotInstance) return [];
-  const headers = hotInstance.getColHeader(); // includes hidden columns
+  if (!gridInstance) return [];
+  const headers = gridInstance.getColHeader(); // includes hidden columns
   const out = [];
   for (let c = BASE_COLS; c < headers.length; c++) {
     out.push({ index: c, header: String(headers[c]) });
@@ -2239,7 +2239,7 @@ function getCustomPredicateColumns() {
 }
 
 function getHiddenColumnIndexes() {
-  return hotInstance?.getHiddenColumns?.() || [];
+  return gridInstance?.getHiddenColumns?.() || [];
 }
 
 function getHiddenColumnSet() {
@@ -2304,8 +2304,8 @@ function setColumnsVisibilityForView(viewKey, indexes, visible) {
   });
 
   setHiddenColumnsForView(viewKey, hidden);
-  if (viewKey === getActiveViewKey() && hotInstance) {
-    hotInstance.setHiddenColumns(Array.from(hidden));
+  if (viewKey === getActiveViewKey() && gridInstance) {
+    gridInstance.setHiddenColumns(Array.from(hidden));
   }
 
   try {
@@ -2320,7 +2320,7 @@ function setViewColumnVisibility(viewKey, index, visible) {
 }
 
 function showAllViewColumns(viewKey) {
-  setColumnsVisibilityForView(viewKey, hotInstance?.getColHeader?.().map((_, index) => index) || [], true);
+  setColumnsVisibilityForView(viewKey, gridInstance?.getColHeader?.().map((_, index) => index) || [], true);
 }
 
 function openManagePredicatesModal() {
@@ -2343,13 +2343,13 @@ function closeAxiomBuilderDrawer() {
 }
 
 function openAxiomBuilderDrawer(rowIndex) {
-  if (!hotInstance || !AxiomBuilder.mount) {
+  if (!gridInstance || !AxiomBuilder.mount) {
     showToast('Axiom builder is not available.', 'error');
     return;
   }
 
-  harvestRowsIntoVocab?.(hotInstance.getData?.() || []);
-  const row = hotInstance.getSourceDataAtRow(rowIndex);
+  harvestRowsIntoVocab?.(gridInstance.getData?.() || []);
+  const row = gridInstance.getSourceDataAtRow(rowIndex);
   if (!row) return;
   const subjectIri = resolveToIri(row[0]) || String(row[0] || '').trim();
   if (!subjectIri) {
@@ -2408,15 +2408,15 @@ function openAxiomBuilderDrawer(rowIndex) {
 }
 
 function buildGridContextMenuItems(context) {
-  if (!hotInstance || !context) return [];
+  if (!gridInstance || !context) return [];
 
   const activeView = getActiveViewKey();
-  const totalColumns = hotInstance.getColHeader().length;
+  const totalColumns = gridInstance.getColHeader().length;
   const hiddenColumns = new Set(getHiddenColumnsForView(activeView));
   const selectedColumnIndexes = Array.from(new Set(context.colIndexes || []))
     .filter((index) => Number.isInteger(index) && index >= 0 && index < totalColumns);
   const selectedRowIndexes = Array.from(new Set(context.rowIndexes || []))
-    .filter((index) => Number.isInteger(index) && index >= 0 && index < hotInstance.countRows())
+    .filter((index) => Number.isInteger(index) && index >= 0 && index < gridInstance.countRows())
     .sort((a, b) => a - b);
 
   const items = [];
@@ -2464,7 +2464,7 @@ function buildGridContextMenuItems(context) {
       id: 'insert-rows-above',
       label: rowCount === 1 ? 'Insert Row Above' : `Insert ${rowCount} Rows Above`,
       onSelect: () => {
-        hotInstance.insertRows(startRow, rowCount);
+        gridInstance.insertRows(startRow, rowCount);
         showToast(`${rowCount} row${rowCount !== 1 ? 's' : ''} inserted above`, 'success');
       },
     });
@@ -2472,7 +2472,7 @@ function buildGridContextMenuItems(context) {
       id: 'insert-rows-below',
       label: rowCount === 1 ? 'Insert Row Below' : `Insert ${rowCount} Rows Below`,
       onSelect: () => {
-        hotInstance.insertRows(endRow + 1, rowCount);
+        gridInstance.insertRows(endRow + 1, rowCount);
         showToast(`${rowCount} row${rowCount !== 1 ? 's' : ''} inserted below`, 'success');
       },
     });
@@ -2480,7 +2480,7 @@ function buildGridContextMenuItems(context) {
       id: 'add-row-end',
       label: 'Add Row at End',
       onSelect: () => {
-        hotInstance.insertRows(hotInstance.countRows(), 1);
+        gridInstance.insertRows(gridInstance.countRows(), 1);
         showToast('1 row added at end', 'success');
       },
     });
@@ -2497,7 +2497,7 @@ function buildGridContextMenuItems(context) {
       id: 'remove-rows',
       label: rowCount === 1 ? 'Remove Row' : `Remove ${rowLabel}`,
       onSelect: () => {
-        hotInstance.removeRows(startRow, rowCount);
+        gridInstance.removeRows(startRow, rowCount);
         showToast(`${rowCount} row${rowCount !== 1 ? 's' : ''} removed`, 'info');
       },
     });
@@ -2662,8 +2662,8 @@ function renderPredicateModesChecklist(containerOrId) {
         syncPredicatePlacementToHiddenState(index, predicateRecord);
 
         const currentView = getActiveViewKey();
-        if (hotInstance) {
-          hotInstance.setHiddenColumns(Array.from(getHiddenColumnsForView(currentView)));
+        if (gridInstance) {
+          gridInstance.setHiddenColumns(Array.from(getHiddenColumnsForView(currentView)));
         }
         renderPredicateModesChecklist(container);
       });
@@ -2755,7 +2755,7 @@ function renderCustomPredicateChecklist(containerOrId, opts = {}) {
     }
     checkbox.checked = startChecked;
 
-    // (Optional) show if currently hidden in HOT
+    // Optionally show if currently hidden in the grid.
     const hiddenBadge = hiddenColumns.has(index) ? ' (hidden)' : '';
 
     const label = document.createElement('label');
@@ -2826,8 +2826,8 @@ async function confirmAddPredicate() {
           return fixed;
         });
 
-        hotInstance.setSchema(newHeaders, newColumns);
-        hotInstance.replaceRows(cleanedRows, 'LoadData');
+        gridInstance.setSchema(newHeaders, newColumns);
+        gridInstance.replaceRows(cleanedRows, 'LoadData');
         harvestRowsIntoVocab?.(cleanedRows);
          // Refresh the modes UI if the modal is open
          try { renderPredicateModesChecklist('predicate-modes-list'); } catch (_) {}
@@ -2885,10 +2885,10 @@ function headerToPredicateIrisForRules(header) {
   return iri ? [iri] : [];
 }
 
-// Build the predicate set from HOT headers (visible or hidden)
+// Build the predicate set from grid headers, visible or hidden.
 function collectPredicateIrisFromHeaders() {
-  if (!hotInstance) return [];
-  const headers = hotInstance.getColHeader(); // includes hidden
+  if (!gridInstance) return [];
+  const headers = gridInstance.getColHeader(); // includes hidden
   const set = new Set();
   for (const h of headers) {
     headerToPredicateIrisForRules(h).forEach((iri) => set.add(iri));
@@ -2950,14 +2950,14 @@ function presentPredicatesForRow(row, headers) {
 /**
  * Gathers all IRIs/CURIEs used as predicates in the table columns
  * (excluding utility columns like IRI, Label, Type).
- * This relies on the globally available hotInstance and curieToIri.
+ * This relies on the globally available gridInstance and curieToIri.
  * * @returns {Set<string>} A Set of unique predicate IRIs.
  */
 function getAllTablePredicates() {
-    if (!hotInstance) return new Set();
+    if (!gridInstance) return new Set();
 
     const allPredicates = new Set();
-    const headers = hotInstance.getColHeader();
+    const headers = gridInstance.getColHeader();
     
     // Adjust this based on where your first predicate column starts (e.g., 3 after IRI, Label, Type)
     const PREDICATE_START_INDEX = BASE_COLS - 3; // Assuming first 3 of BASE_COLS are not predicates
@@ -3175,8 +3175,8 @@ async function handleInsertDataSave() {
     );
     mergeAxiomRecords(result.axiomRecords, { replace: insertMode === 'replace' });
 
-    hotInstance.setSchema(allHeaders, allColumns);
-    hotInstance.replaceRows(mergedRows, 'LoadData');
+    gridInstance.setSchema(allHeaders, allColumns);
+    gridInstance.replaceRows(mergedRows, 'LoadData');
     harvestRowsIntoVocab?.(mergedRows);
 
     
@@ -3256,7 +3256,7 @@ function deriveOntologyImportTarget(quads) {
 }
 
 /**
- * Helper function to pivot N3.js quads into a Handsontable-compatible row structure.
+ * Helper function to pivot N3.js quads into the TOM grid row structure.
  * It groups triples by subject and maps predicates to known table columns.
  * @param {Array} quads - Array of quads from parseOntologyData.
  * @param {Array<string>} knownPredicates - Array of column headers (e.g., ["IRI", "rdfs:label", ...])
@@ -3438,8 +3438,8 @@ async function handleInsertOntologySave() {
     );
     mergeAxiomRecords(result.axiomRecords, { replace: insertMode === 'replace' });
 
-    hotInstance.setSchema(allHeaders, allColumns);
-    hotInstance.replaceRows(mergedRows, 'LoadData');
+    gridInstance.setSchema(allHeaders, allColumns);
+    gridInstance.replaceRows(mergedRows, 'LoadData');
     harvestRowsIntoVocab?.(mergedRows);
 
     
@@ -3656,7 +3656,7 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
 /**
  * Merges cleaned spreadsheet data into the current table data.
  *
- * @param {string[][]} currentRows - Existing HOT data rows
+ * @param {string[][]} currentRows - Existing grid data rows.
  * @param {string[][]} newRows - New validated rows
  * @param {'append'|'replace'} mode - How to insert data
  * @returns {{ mergedRows: string[][], stats: { original: number, appended: number, total: number } }}
@@ -4228,7 +4228,7 @@ function populateSettingsUi() {
 async function bootstrapApp() {
   await settingsLoad();
   await rehydrateImportedOntologies();
-  initHandsontable();
+  initializeOntologyGrid();
   populateSettingsUi();
   setIsCuratedInForAllRows();
   updateReloadSessionButton();
@@ -4237,7 +4237,7 @@ async function bootstrapApp() {
 
 TOM.Core = {
   bootstrap: bootstrapApp,
-  getHotInstance: () => hotInstance,
+  getGridInstance: () => gridInstance,
   getCustomPredicates: () => getCustomPredicateIris(),
   getPredicateRegistry: () => getPredicateRegistry().map((record) => ({ ...record })),
   getActiveView: () => getActiveViewKey(),

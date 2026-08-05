@@ -352,7 +352,10 @@ export const COMMON_NAMESPACE_REGISTRY = Object.freeze({
       title: 'title',
       description: 'description',
       rights: 'rights',
+      accessRights: 'accessRights',
+      bibliographicCitation: 'bibliographicCitation',
       license: 'license',
+      rightsHolder: 'rightsHolder',
       creator: 'creator',
       contributor: 'contributor'
     }
@@ -378,6 +381,7 @@ export const COMMON_NAMESPACE_REGISTRY = Object.freeze({
     namespaceIri: 'http://purl.obolibrary.org/obo/IAO_',
     ids: {
       definition: '0000115',
+      preferredTerm: '0000111',
       definitionSource: '0000119',
       exampleOfUsage: '0000112',
       editorNote: '0000116',
@@ -393,7 +397,8 @@ export const COMMON_NAMESPACE_REGISTRY = Object.freeze({
       elucidation: '0000600',
       obsolescenceReason: '0000231',
       requiresDiscussion: '0000428',
-      termReplacedBy: '0100001'
+      termReplacedBy: '0100001',
+      acronym: '0000606'
     }
   }),
   oboInOwl: defineEntry({
@@ -422,8 +427,10 @@ export const COMMON_NAMESPACE_REGISTRY = Object.freeze({
     ids: {
       acronym: 'ont00001753',
       ComputerProgramExecution: 'ComputerProgramExecution',
+      alternativeLabel: 'alternative_label',
       definition: 'definition',
       definitionSource: 'definition_source',
+      doctrinalSource: 'doctrinal_source',
       exampleOfUsage: 'example_of_usage',
       elucidation: 'elucidation',
       hasTextValue: 'has_text_value',
@@ -447,6 +454,7 @@ export const COMMON_NAMESPACE_REGISTRY = Object.freeze({
       person: 'ont00001262',
       acronym: 'ont00001753',
       definitionSource: 'ont00001754',
+      doctrinalSource: 'ont00001745',
       curatedIn: 'ont00001760',
       isTokenizedBy: 'ont00001761',
       hasTextValue: 'ont00001765',

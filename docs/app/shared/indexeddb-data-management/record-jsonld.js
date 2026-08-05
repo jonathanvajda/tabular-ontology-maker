@@ -1,4 +1,4 @@
-import { COMMON_NAMESPACE_IRIS, iriForNamespaceId, namespacePrefixMapFromRegistry } from '../namespace-registry/index.js';
+import { COMMON_NAMESPACE_IRIS, namespacePrefixMapFromRegistry } from '../namespace-registry/index.js';
 import {
   normalizeArtifactRecord,
   normalizeDatasetRecord,
@@ -266,15 +266,15 @@ export function convertGraphRecordToJsonLd(record, options = {}) {
  */
 export function createRecordJsonLdVocabulary() {
   return Object.freeze({
-    title: iriForNamespaceId('dcterms', 'title').value,
-    created: iriForNamespaceId('dcterms', 'created').value,
-    identifier: iriForNamespaceId('dcterms', 'identifier').value,
-    modified: iriForNamespaceId('dcterms', 'modified').value,
-    format: iriForNamespaceId('dcterms', 'format').value,
-    label: iriForNamespaceId('rdfs', 'label').value,
-    value: iriForNamespaceId('rdf', 'value').value,
-    informationContentEntity: iriForNamespaceId('cco2', 'informationContentEntity').value,
-    computerProgramExecution: iriForNamespaceId('cceo', 'ComputerProgramExecution').value,
-    okea: iriForNamespaceId('okea', 'OntologyOfKnowledgeEngineeringArtifacts').value
+    title: COMMON_NAMESPACE_IRIS.dcterms.title,
+    created: COMMON_NAMESPACE_IRIS.dcterms.created,
+    identifier: COMMON_NAMESPACE_IRIS.dcterms.identifier,
+    modified: COMMON_NAMESPACE_IRIS.dcterms.modified,
+    format: COMMON_NAMESPACE_IRIS.dcterms.format,
+    label: COMMON_NAMESPACE_IRIS.rdfs.label,
+    value: COMMON_NAMESPACE_IRIS.rdf.value,
+    informationContentEntity: COMMON_NAMESPACE_IRIS.cco2.informationContentEntity,
+    computerProgramExecution: COMMON_NAMESPACE_IRIS.cceo.ComputerProgramExecution,
+    okea: COMMON_NAMESPACE_IRIS.okea.OntologyOfKnowledgeEngineeringArtifacts
   });
 }
