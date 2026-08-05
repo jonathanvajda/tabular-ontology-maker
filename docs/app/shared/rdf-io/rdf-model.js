@@ -7,12 +7,7 @@
  * boundaries.
  */
 
-export const RDF_NS = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
-export const RDFS_NS = 'http://www.w3.org/2000/01/rdf-schema#';
-export const XSD_NS = 'http://www.w3.org/2001/XMLSchema#';
-
-export const RDF_TYPE = `${RDF_NS}type`;
-export const XSD_STRING = `${XSD_NS}string`;
+import { COMMON_NAMESPACE_IRIS } from '../namespace-registry/index.js';
 
 let blankNodeCounter = 0;
 
@@ -63,7 +58,9 @@ function createBlankNodeId() {
 export function literal(value, options = {}) {
   const opts = typeof options === 'string' ? { datatype: options } : options || {};
   const language = opts.language ? String(opts.language) : '';
-  const datatype = language ? `${RDF_NS}langString` : (opts.datatype || XSD_STRING);
+  const datatype = language
+    ? COMMON_NAMESPACE_IRIS.rdf.langString
+    : (opts.datatype || COMMON_NAMESPACE_IRIS.xsd.string);
   return {
     termType: 'Literal',
     value: value == null ? '' : String(value),
@@ -195,7 +192,7 @@ function normalizeTerm(term) {
   if (term.termType === 'Literal') {
     return literal(term.value, {
       language: term.language || '',
-      datatype: term.datatype?.value || term.datatype || XSD_STRING
+      datatype: term.datatype?.value || term.datatype || COMMON_NAMESPACE_IRIS.xsd.string
     });
   }
   if (term.termType === 'NamedNode') return namedNode(term.value);

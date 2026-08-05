@@ -1,9 +1,7 @@
-import { RDF_NS, createRdfDataset, datasetToQuads, defaultGraph, literal, namedNode, quad } from './rdf-model.js';
+import { COMMON_NAMESPACE_IRIS } from '../namespace-registry/index.js';
+import { createRdfDataset, datasetToQuads, defaultGraph, literal, namedNode, quad } from './rdf-model.js';
 
 const RDF_XML_MIME = 'application/rdf+xml';
-const RDF_FIRST = `${RDF_NS}first`;
-const RDF_REST = `${RDF_NS}rest`;
-const RDF_NIL = `${RDF_NS}nil`;
 
 /**
  * Parses RDF/XML through rdflib and converts statements to RDF/JS quads.
@@ -99,14 +97,18 @@ export function rdflibTermToRdfJs(term, targetQuads = []) {
 
 function rdflibCollectionToRdfList(term, targetQuads) {
   const items = Array.isArray(term.elements) ? term.elements : [];
-  if (!items.length) return namedNode(RDF_NIL);
+  if (!items.length) return namedNode(COMMON_NAMESPACE_IRIS.rdf.nil);
   const nodes = items.map((_item, index) => ({
     termType: 'BlankNode',
     value: index === 0 && term.value ? String(term.value).replace(/^_:/, '') : `list${targetQuads.length}_${index}`
   }));
   items.forEach((item, index) => {
-    targetQuads.push(quad(nodes[index], RDF_FIRST, rdflibTermToRdfJs(item, targetQuads)));
-    targetQuads.push(quad(nodes[index], RDF_REST, index === items.length - 1 ? namedNode(RDF_NIL) : nodes[index + 1]));
+    targetQuads.push(quad(nodes[index], COMMON_NAMESPACE_IRIS.rdf.first, rdflibTermToRdfJs(item, targetQuads)));
+    targetQuads.push(quad(
+      nodes[index],
+      COMMON_NAMESPACE_IRIS.rdf.rest,
+      index === items.length - 1 ? namedNode(COMMON_NAMESPACE_IRIS.rdf.nil) : nodes[index + 1]
+    ));
   });
   return nodes[0];
 }

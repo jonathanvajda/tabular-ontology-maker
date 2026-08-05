@@ -3,47 +3,22 @@
 import { COMMON_NAMESPACE_IRIS } from './shared/namespace-registry/namespace-registry.js';
 import { createUuid } from './shared/ontology-utils/index.js';
 
-const NS = COMMON_NAMESPACE_IRIS;
-const RDF_TYPE = NS.rdf.type;
-const RDF_FIRST = NS.rdf.first;
-const RDF_REST = NS.rdf.rest;
-const RDF_NIL = NS.rdf.nil;
-const RDFS_SUBCLASS = NS.rdfs.subClassOf;
-const OWL_RESTRICTION = NS.owl.Restriction;
-const OWL_ON_PROPERTY = NS.owl.onProperty;
-const OWL_SOME_VALUES_FROM = NS.owl.someValuesFrom;
-const OWL_ALL_VALUES_FROM = NS.owl.allValuesFrom;
-const OWL_HAS_VALUE = NS.owl.hasValue;
-const OWL_MIN_CARDINALITY = NS.owl.minCardinality;
-const OWL_MAX_CARDINALITY = NS.owl.maxCardinality;
-const OWL_CARDINALITY = NS.owl.cardinality;
-const OWL_MIN_QUALIFIED_CARDINALITY = NS.owl.minQualifiedCardinality;
-const OWL_MAX_QUALIFIED_CARDINALITY = NS.owl.maxQualifiedCardinality;
-const OWL_QUALIFIED_CARDINALITY = NS.owl.qualifiedCardinality;
-const OWL_ON_CLASS = NS.owl.onClass;
-const OWL_EQUIVALENT_CLASS = NS.owl.equivalentClass;
-const OWL_DISJOINT_WITH = NS.owl.disjointWith;
-const OWL_INTERSECTION_OF = NS.owl.intersectionOf;
-const OWL_UNION_OF = NS.owl.unionOf;
-const OWL_COMPLEMENT_OF = NS.owl.complementOf;
-const XSD_NON_NEGATIVE_INTEGER = NS.xsd.nonNegativeInteger;
-
   const AXIOM_PREDICATES = {
-    SubClassOf: RDFS_SUBCLASS,
-    EquivalentTo: OWL_EQUIVALENT_CLASS,
-    DisjointWith: OWL_DISJOINT_WITH,
+    SubClassOf: COMMON_NAMESPACE_IRIS.rdfs.subClassOf,
+    EquivalentTo: COMMON_NAMESPACE_IRIS.owl.equivalentClass,
+    DisjointWith: COMMON_NAMESPACE_IRIS.owl.disjointWith,
   };
 
   const CARDINALITY_PREDICATES = {
-    min: OWL_MIN_CARDINALITY,
-    max: OWL_MAX_CARDINALITY,
-    exactly: OWL_CARDINALITY,
+    min: COMMON_NAMESPACE_IRIS.owl.minCardinality,
+    max: COMMON_NAMESPACE_IRIS.owl.maxCardinality,
+    exactly: COMMON_NAMESPACE_IRIS.owl.cardinality,
   };
 
   const QUALIFIED_CARDINALITY_PREDICATES = {
-    min: OWL_MIN_QUALIFIED_CARDINALITY,
-    max: OWL_MAX_QUALIFIED_CARDINALITY,
-    exactly: OWL_QUALIFIED_CARDINALITY,
+    min: COMMON_NAMESPACE_IRIS.owl.minQualifiedCardinality,
+    max: COMMON_NAMESPACE_IRIS.owl.maxQualifiedCardinality,
+    exactly: COMMON_NAMESPACE_IRIS.owl.qualifiedCardinality,
   };
 
   function cloneTerm(term) {
@@ -69,7 +44,7 @@ const XSD_NON_NEGATIVE_INTEGER = NS.xsd.nonNegativeInteger;
       const escaped = String(term.value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
       if (term.language) return `"${escaped}"@${term.language}`;
       const dt = term.datatype?.value;
-      if (dt && dt !== NS.xsd.string) {
+      if (dt && dt !== COMMON_NAMESPACE_IRIS.xsd.string) {
         return `"${escaped}"^^${iriToDisplay(dt, prefixes)}`;
       }
       return `"${escaped}"`;
@@ -346,7 +321,7 @@ const XSD_NON_NEGATIVE_INTEGER = NS.xsd.nonNegativeInteger;
       termType: "Literal",
       value: String(value),
       language: "",
-      datatype: datatypeIri ? makeNamedNode(factory, datatypeIri) : makeNamedNode(factory, NS.xsd.string),
+      datatype: datatypeIri ? makeNamedNode(factory, datatypeIri) : makeNamedNode(factory, COMMON_NAMESPACE_IRIS.xsd.string),
     };
   }
 
@@ -362,31 +337,31 @@ const XSD_NON_NEGATIVE_INTEGER = NS.xsd.nonNegativeInteger;
     if (ast.type === "and" || ast.type === "or") {
       const node = makeBlankNode(factory, `${state.prefix || "axiom"}${state.nextBlank++}`);
       const list = makeRdfList((ast.items || []).map((item) => astToNode(item, out, factory, state)), out, factory, state);
-      addQuad(out, factory, node, ast.type === "and" ? OWL_INTERSECTION_OF : OWL_UNION_OF, list);
+      addQuad(out, factory, node, ast.type === "and" ? COMMON_NAMESPACE_IRIS.owl.intersectionOf : COMMON_NAMESPACE_IRIS.owl.unionOf, list);
       return node;
     }
     if (ast.type === "not") {
       const node = makeBlankNode(factory, `${state.prefix || "axiom"}${state.nextBlank++}`);
-      addQuad(out, factory, node, OWL_COMPLEMENT_OF, astToNode(ast.value, out, factory, state));
+      addQuad(out, factory, node, COMMON_NAMESPACE_IRIS.owl.complementOf, astToNode(ast.value, out, factory, state));
       return node;
     }
     if (ast.type === "restriction") {
       const node = makeBlankNode(factory, `${state.prefix || "axiom"}${state.nextBlank++}`);
-      addQuad(out, factory, node, RDF_TYPE, makeNamedNode(factory, OWL_RESTRICTION));
-      addQuad(out, factory, node, OWL_ON_PROPERTY, makeNamedNode(factory, ast.propertyIri));
+      addQuad(out, factory, node, COMMON_NAMESPACE_IRIS.rdf.type, makeNamedNode(factory, COMMON_NAMESPACE_IRIS.owl.Restriction));
+      addQuad(out, factory, node, COMMON_NAMESPACE_IRIS.owl.onProperty, makeNamedNode(factory, ast.propertyIri));
       if (ast.operator === "some") {
-        addQuad(out, factory, node, OWL_SOME_VALUES_FROM, astToNode(ast.filler, out, factory, state));
+        addQuad(out, factory, node, COMMON_NAMESPACE_IRIS.owl.someValuesFrom, astToNode(ast.filler, out, factory, state));
       } else if (ast.operator === "only") {
-        addQuad(out, factory, node, OWL_ALL_VALUES_FROM, astToNode(ast.filler, out, factory, state));
+        addQuad(out, factory, node, COMMON_NAMESPACE_IRIS.owl.allValuesFrom, astToNode(ast.filler, out, factory, state));
       } else if (ast.operator === "value") {
-        addQuad(out, factory, node, OWL_HAS_VALUE, makeNamedNode(factory, ast.valueIri));
+        addQuad(out, factory, node, COMMON_NAMESPACE_IRIS.owl.hasValue, makeNamedNode(factory, ast.valueIri));
       } else if (CARDINALITY_PREDICATES[ast.operator]) {
         const predicate = ast.filler
           ? QUALIFIED_CARDINALITY_PREDICATES[ast.operator]
           : CARDINALITY_PREDICATES[ast.operator];
-        addQuad(out, factory, node, predicate, makeLiteral(factory, ast.cardinality, XSD_NON_NEGATIVE_INTEGER));
+        addQuad(out, factory, node, predicate, makeLiteral(factory, ast.cardinality, COMMON_NAMESPACE_IRIS.xsd.nonNegativeInteger));
         if (ast.filler) {
-          addQuad(out, factory, node, OWL_ON_CLASS, astToNode(ast.filler, out, factory, state));
+          addQuad(out, factory, node, COMMON_NAMESPACE_IRIS.owl.onClass, astToNode(ast.filler, out, factory, state));
         }
       } else {
         throw new Error(`Unsupported restriction operator "${ast.operator}".`);
@@ -397,15 +372,15 @@ const XSD_NON_NEGATIVE_INTEGER = NS.xsd.nonNegativeInteger;
   }
 
   function makeRdfList(items, out, factory, state) {
-    if (!items.length) return makeNamedNode(factory, RDF_NIL);
+    if (!items.length) return makeNamedNode(factory, COMMON_NAMESPACE_IRIS.rdf.nil);
     const head = makeBlankNode(factory, `${state.prefix || "axiom"}list${state.nextBlank++}`);
     let current = head;
     items.forEach((item, index) => {
-      addQuad(out, factory, current, RDF_FIRST, item);
+      addQuad(out, factory, current, COMMON_NAMESPACE_IRIS.rdf.first, item);
       const next = index === items.length - 1
-        ? makeNamedNode(factory, RDF_NIL)
+        ? makeNamedNode(factory, COMMON_NAMESPACE_IRIS.rdf.nil)
         : makeBlankNode(factory, `${state.prefix || "axiom"}list${state.nextBlank++}`);
-      addQuad(out, factory, current, RDF_REST, next);
+      addQuad(out, factory, current, COMMON_NAMESPACE_IRIS.rdf.rest, next);
       current = next;
     });
     return head;
@@ -426,17 +401,17 @@ const XSD_NON_NEGATIVE_INTEGER = NS.xsd.nonNegativeInteger;
   function detectRestrictionAst(blankNode, bySubject, prefixes) {
     const pMap = bySubject.get(termKey(blankNode));
     if (!pMap) return null;
-    const types = pMap.get(RDF_TYPE) || [];
-    if (!types.some((term) => term.termType === "NamedNode" && term.value === OWL_RESTRICTION)) return null;
-    const prop = (pMap.get(OWL_ON_PROPERTY) || [])[0];
+    const types = pMap.get(COMMON_NAMESPACE_IRIS.rdf.type) || [];
+    if (!types.some((term) => term.termType === "NamedNode" && term.value === COMMON_NAMESPACE_IRIS.owl.Restriction)) return null;
+    const prop = (pMap.get(COMMON_NAMESPACE_IRIS.owl.onProperty) || [])[0];
     if (!prop || prop.termType !== "NamedNode") return null;
 
-    const some = (pMap.get(OWL_SOME_VALUES_FROM) || [])[0];
-    const only = (pMap.get(OWL_ALL_VALUES_FROM) || [])[0];
-    const value = (pMap.get(OWL_HAS_VALUE) || [])[0];
-    const min = (pMap.get(OWL_MIN_CARDINALITY) || [])[0];
-    const max = (pMap.get(OWL_MAX_CARDINALITY) || [])[0];
-    const exact = (pMap.get(OWL_CARDINALITY) || [])[0];
+    const some = (pMap.get(COMMON_NAMESPACE_IRIS.owl.someValuesFrom) || [])[0];
+    const only = (pMap.get(COMMON_NAMESPACE_IRIS.owl.allValuesFrom) || [])[0];
+    const value = (pMap.get(COMMON_NAMESPACE_IRIS.owl.hasValue) || [])[0];
+    const min = (pMap.get(COMMON_NAMESPACE_IRIS.owl.minCardinality) || [])[0];
+    const max = (pMap.get(COMMON_NAMESPACE_IRIS.owl.maxCardinality) || [])[0];
+    const exact = (pMap.get(COMMON_NAMESPACE_IRIS.owl.cardinality) || [])[0];
 
     if (some?.termType === "NamedNode") {
       return {
@@ -502,7 +477,7 @@ const XSD_NON_NEGATIVE_INTEGER = NS.xsd.nonNegativeInteger;
     const record = normalizeAxiomRecord({ subjectIri });
     if (!pMap) return record;
 
-    const subclassObjects = pMap.get(RDFS_SUBCLASS) || [];
+    const subclassObjects = pMap.get(COMMON_NAMESPACE_IRIS.rdfs.subClassOf) || [];
     let namedSeen = primaryIsA ? new Set([primaryIsA]) : new Set();
     subclassObjects.forEach((object) => {
       if (object.termType === "NamedNode") {
@@ -532,7 +507,7 @@ const XSD_NON_NEGATIVE_INTEGER = NS.xsd.nonNegativeInteger;
         } else {
           record.preservedTriples.push({
             subject: { termType: "NamedNode", value: subjectIri },
-            predicate: { termType: "NamedNode", value: RDFS_SUBCLASS },
+            predicate: { termType: "NamedNode", value: COMMON_NAMESPACE_IRIS.rdfs.subClassOf },
             object: cloneTerm(object),
           });
           collectBlankNodeComponent(object, quads).forEach((triple) => record.preservedTriples.push(triple));
@@ -836,56 +811,7 @@ const XSD_NON_NEGATIVE_INTEGER = NS.xsd.nonNegativeInteger;
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
-export const constants = Object.freeze({
-  RDF_TYPE,
-  RDF_FIRST,
-  RDF_REST,
-  RDF_NIL,
-  RDFS_SUBCLASS,
-  OWL_RESTRICTION,
-  OWL_ON_PROPERTY,
-  OWL_SOME_VALUES_FROM,
-  OWL_ALL_VALUES_FROM,
-  OWL_HAS_VALUE,
-  OWL_EQUIVALENT_CLASS,
-  OWL_DISJOINT_WITH,
-  OWL_MIN_CARDINALITY,
-  OWL_MAX_CARDINALITY,
-  OWL_CARDINALITY,
-  OWL_MIN_QUALIFIED_CARDINALITY,
-  OWL_MAX_QUALIFIED_CARDINALITY,
-  OWL_QUALIFIED_CARDINALITY,
-  OWL_ON_CLASS,
-  OWL_INTERSECTION_OF,
-  OWL_UNION_OF,
-  OWL_COMPLEMENT_OF,
-});
-
 const api = {
-    constants: {
-      RDF_TYPE,
-      RDF_FIRST,
-      RDF_REST,
-      RDF_NIL,
-      RDFS_SUBCLASS,
-      OWL_RESTRICTION,
-      OWL_ON_PROPERTY,
-      OWL_SOME_VALUES_FROM,
-      OWL_ALL_VALUES_FROM,
-      OWL_HAS_VALUE,
-      OWL_EQUIVALENT_CLASS,
-      OWL_DISJOINT_WITH,
-      OWL_MIN_CARDINALITY,
-      OWL_MAX_CARDINALITY,
-      OWL_CARDINALITY,
-      OWL_MIN_QUALIFIED_CARDINALITY,
-      OWL_MAX_QUALIFIED_CARDINALITY,
-      OWL_QUALIFIED_CARDINALITY,
-      OWL_ON_CLASS,
-      OWL_INTERSECTION_OF,
-      OWL_UNION_OF,
-      OWL_COMPLEMENT_OF,
-    },
     AXIOM_PREDICATES,
     normalizeAxiomRecord,
     parseExpression,

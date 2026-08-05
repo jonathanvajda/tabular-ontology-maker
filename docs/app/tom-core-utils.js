@@ -3,7 +3,6 @@
 import { COMMON_NAMESPACE_IRIS } from './shared/namespace-registry/namespace-registry.js';
 import { serializeDelimitedRows } from './shared/tabular-io/index.js';
 
-const NS = COMMON_NAMESPACE_IRIS;
 
   function getCurrentDateParts(date) {
     const now = date instanceof Date ? date : new Date();
@@ -67,11 +66,11 @@ const NS = COMMON_NAMESPACE_IRIS;
 
     return {
       iri: `${base}${delimiter}${normalizedLabel}`,
-      [NS.owl.versionIRI]: `${base}/${dateParts.year}-${dateParts.month}-${dateParts.day}${delimiter}${normalizedLabel}`,
-      [NS.owl.versionInfo]: `${dateParts.year}-${dateParts.month}-${dateParts.day}`,
-      [NS.rdfs.label]: label,
-      [NS.dcterms.creator]: creator,
-      [NS.dcterms.description]: description,
+      [COMMON_NAMESPACE_IRIS.owl.versionIRI]: `${base}/${dateParts.year}-${dateParts.month}-${dateParts.day}${delimiter}${normalizedLabel}`,
+      [COMMON_NAMESPACE_IRIS.owl.versionInfo]: `${dateParts.year}-${dateParts.month}-${dateParts.day}`,
+      [COMMON_NAMESPACE_IRIS.rdfs.label]: label,
+      [COMMON_NAMESPACE_IRIS.dcterms.creator]: creator,
+      [COMMON_NAMESPACE_IRIS.dcterms.description]: description,
       iriMode,
       opaqueLeading,
       opaqueDigits,
@@ -158,9 +157,9 @@ const NS = COMMON_NAMESPACE_IRIS;
 
   function deriveOntologyImportTarget(quads, iris) {
     const cfg = iris || {};
-    const rdfTypeIri = cfg.rdfTypeIri || NS.rdf.type;
-    const owlOntologyIri = cfg.owlOntologyIri || NS.owl.Ontology;
-    const owlVersionIri = cfg.owlVersionIri || NS.owl.versionIRI;
+    const rdfTypeIri = cfg.rdfTypeIri || COMMON_NAMESPACE_IRIS.rdf.type;
+    const owlOntologyIri = cfg.owlOntologyIri || COMMON_NAMESPACE_IRIS.owl.Ontology;
+    const owlVersionIri = cfg.owlVersionIri || COMMON_NAMESPACE_IRIS.owl.versionIRI;
     const ontologySubjects = new Set();
     const versionIris = new Map();
 
