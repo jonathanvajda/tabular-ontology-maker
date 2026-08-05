@@ -3,7 +3,7 @@
 
 import * as n3Module from "../docs/app/shared/vendor/n3.min.js";
 import { serializeRdfDatasetWithAdapters } from "../docs/app/shared/rdf-io/index.js";
-import { COMMON_NAMESPACE_IRIS as NS } from "../docs/app/shared/namespace-registry/namespace-registry.js";
+import { COMMON_NAMESPACE_IRIS } from "../docs/app/shared/namespace-registry/namespace-registry.js";
 import { selectPrefixesUsedByRdfTerms } from "../docs/app/shared/namespace-registry/index.js";
 
 const N3 = globalThis.N3 || n3Module.default || n3Module;
@@ -14,12 +14,12 @@ describe("RDF IO adapter integration", () => {
     const quads = [
       quad(
         namedNode("http://example.org/ont000001"),
-        namedNode(NS.rdf.type),
-        namedNode(NS.owl.Class)
+        namedNode(COMMON_NAMESPACE_IRIS.rdf.type),
+        namedNode(COMMON_NAMESPACE_IRIS.owl.Class)
       ),
       quad(
         namedNode("http://example.org/ont000001"),
-        namedNode(NS.rdfs.label),
+        namedNode(COMMON_NAMESPACE_IRIS.rdfs.label),
         literal("Doctor")
       ),
     ];
@@ -44,12 +44,12 @@ describe("RDF IO adapter integration", () => {
     const quads = [
       quad(
         namedNode("http://example.org/ont000001"),
-        namedNode(NS.rdf.type),
-        namedNode(NS.owl.Class)
+        namedNode(COMMON_NAMESPACE_IRIS.rdf.type),
+        namedNode(COMMON_NAMESPACE_IRIS.owl.Class)
       ),
       quad(
         namedNode("http://example.org/ont000001"),
-        namedNode(NS.rdfs.label),
+        namedNode(COMMON_NAMESPACE_IRIS.rdfs.label),
         literal("Doctor")
       ),
     ];

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Jonathan Vajda
 
 import { deriveOntologyImportTarget } from "../docs/app/tom-core-utils.js";
-import { COMMON_NAMESPACE_IRIS as NS } from "../docs/app/shared/namespace-registry/namespace-registry.js";
+import { COMMON_NAMESPACE_IRIS } from "../docs/app/shared/namespace-registry/namespace-registry.js";
 
 function quad(subject, predicate, object) {
   return {
@@ -17,12 +17,12 @@ describe("ontology import target derivation", () => {
     const quads = [
       quad(
         "http://example.org/ontology",
-        NS.rdf.type,
-        NS.owl.Ontology
+        COMMON_NAMESPACE_IRIS.rdf.type,
+        COMMON_NAMESPACE_IRIS.owl.Ontology
       ),
       quad(
         "http://example.org/ontology",
-        NS.owl.versionIRI,
+        COMMON_NAMESPACE_IRIS.owl.versionIRI,
         "http://example.org/ontology/2026-04-13"
       ),
     ];
@@ -37,8 +37,8 @@ describe("ontology import target derivation", () => {
     const quads = [
       quad(
         "http://example.org/ontology",
-        NS.rdf.type,
-        NS.owl.Ontology
+        COMMON_NAMESPACE_IRIS.rdf.type,
+        COMMON_NAMESPACE_IRIS.owl.Ontology
       ),
     ];
 
@@ -52,8 +52,8 @@ describe("ontology import target derivation", () => {
     const quads = [
       quad(
         "http://example.org/class1",
-        NS.rdf.type,
-        NS.owl.Class
+        COMMON_NAMESPACE_IRIS.rdf.type,
+        COMMON_NAMESPACE_IRIS.owl.Class
       ),
     ];
 

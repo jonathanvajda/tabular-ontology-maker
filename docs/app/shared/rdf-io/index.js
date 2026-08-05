@@ -1,9 +1,4 @@
 export {
-  RDF_NS,
-  RDF_TYPE,
-  RDFS_NS,
-  XSD_NS,
-  XSD_STRING,
   blankNode,
   createRdfDataset,
   datasetToQuads,

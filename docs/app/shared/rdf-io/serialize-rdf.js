@@ -1,4 +1,5 @@
-import { RDF_TYPE, XSD_STRING, datasetToQuads, literal, namedNode, quad } from './rdf-model.js';
+import { COMMON_NAMESPACE_IRIS } from '../namespace-registry/index.js';
+import { datasetToQuads, literal, namedNode, quad } from './rdf-model.js';
 import { parseRdfTextWithN3, serializeRdfDatasetWithN3 } from './n3-adapter.js';
 import { parseJsonLdTextToRdfDataset, serializeRdfDatasetWithJsonLd } from './jsonld-adapter.js';
 import { parseRdfXmlTextToRdfDataset, serializeRdfDatasetWithRdflib } from './rdflib-adapter.js';
@@ -138,10 +139,10 @@ export function rdfDatasetToJsonLdGraph(dataset, options = {}) {
     const id = termToJsonLdId(item.subject);
     if (!nodes.has(id)) nodes.set(id, { '@id': id });
     const node = nodes.get(id);
-    const key = item.predicate.value === RDF_TYPE
+    const key = item.predicate.value === COMMON_NAMESPACE_IRIS.rdf.type
       ? '@type'
       : compactJsonLdPredicate(item.predicate.value, options.context);
-    const value = item.predicate.value === RDF_TYPE ? termToJsonLdId(item.object) : termToJsonLdValue(item.object);
+    const value = item.predicate.value === COMMON_NAMESPACE_IRIS.rdf.type ? termToJsonLdId(item.object) : termToJsonLdValue(item.object);
     appendJsonLdValue(node, key, value);
   }
   return Array.from(nodes.values());
@@ -351,7 +352,7 @@ function parseObjectToken(token) {
     if (!literalMatch) throw new SyntaxError(`Invalid RDF literal token: ${token}`);
     return literal(unescapeLiteral(literalMatch[1]), {
       language: literalMatch[2] || '',
-      datatype: literalMatch[3] || XSD_STRING
+      datatype: literalMatch[3] || COMMON_NAMESPACE_IRIS.xsd.string
     });
   }
   return parseResourceToken(token);
@@ -363,8 +364,8 @@ function termToNTriples(term) {
   if (term.termType === 'Literal') {
     const escaped = escapeLiteral(term.value);
     if (term.language) return `"${escaped}"@${term.language}`;
-    const datatype = term.datatype?.value || XSD_STRING;
-    return datatype === XSD_STRING ? `"${escaped}"` : `"${escaped}"^^<${datatype}>`;
+    const datatype = term.datatype?.value || COMMON_NAMESPACE_IRIS.xsd.string;
+    return datatype === COMMON_NAMESPACE_IRIS.xsd.string ? `"${escaped}"` : `"${escaped}"^^<${datatype}>`;
   }
   throw new TypeError(`Cannot serialize RDF term type: ${term.termType}`);
 }
@@ -380,7 +381,7 @@ function termToJsonLdValue(term) {
   if (term.termType === 'Literal') {
     const out = { '@value': term.value };
     if (term.language) out['@language'] = term.language;
-    else if ((term.datatype?.value || XSD_STRING) !== XSD_STRING) out['@type'] = term.datatype.value;
+    else if ((term.datatype?.value || COMMON_NAMESPACE_IRIS.xsd.string) !== COMMON_NAMESPACE_IRIS.xsd.string) out['@type'] = term.datatype.value;
     return out;
   }
   return String(term.value ?? '');

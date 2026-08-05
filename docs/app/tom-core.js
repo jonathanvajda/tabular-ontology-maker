@@ -52,7 +52,6 @@ import * as FeatureUtils from './tom-feature-utils.js';
 
 (function () {
 const TOM = (window.TOM = window.TOM || {});
-const NS = COMMON_NAMESPACE_IRIS;
 
 const VIEW_KEYS = {
   ONTOLOGY: 'ontology',
@@ -134,13 +133,13 @@ const getIsAPredicate = (elementType) => {
   console.info('getIsAPredicate happened');
   switch (elementType) {
     case 'Class':
-      return NS.rdfs.subClassOf ;
+      return COMMON_NAMESPACE_IRIS.rdfs.subClassOf ;
     case 'ObjectProperty':
     case 'DatatypeProperty':
     case 'AnnotationProperty':
-      return NS.rdfs.subPropertyOf;
+      return COMMON_NAMESPACE_IRIS.rdfs.subPropertyOf;
     case 'NamedIndividual':
-      return NS.rdf.type;
+      return COMMON_NAMESPACE_IRIS.rdf.type;
     default:
       return null;
   }
@@ -427,11 +426,11 @@ function generateOntologySettings(
 
   return {
     iri: `${base}${delimiter}${normalizedLabel}`,
-    [NS.owl.versionIRI]: `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`,
-    [NS.owl.versionInfo]: `${year}-${month}-${day}`,
-    [NS.rdfs.label]: label,
-    [NS.dcterms.creator]: creator,
-    [NS.dcterms.description]: description,
+    [COMMON_NAMESPACE_IRIS.owl.versionIRI]: `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`,
+    [COMMON_NAMESPACE_IRIS.owl.versionInfo]: `${year}-${month}-${day}`,
+    [COMMON_NAMESPACE_IRIS.rdfs.label]: label,
+    [COMMON_NAMESPACE_IRIS.dcterms.creator]: creator,
+    [COMMON_NAMESPACE_IRIS.dcterms.description]: description,
     iriMode,
     opaqueLeading,
     opaqueDigits,
@@ -500,9 +499,9 @@ function openOntologySettingsModal() {
 
   // existing fields
   document.getElementById("ontology-base-iri-input").value = (s.base || s.iri.split("/").slice(0, -1).join("/"));
-  document.getElementById("ontology-label-input").value = s[NS.rdfs.label] || "";
-  document.getElementById("ontology-creator-input").value = s[NS.dcterms.creator] || "";
-  document.getElementById("ontology-description-input").value = s[NS.dcterms.description] || "";
+  document.getElementById("ontology-label-input").value = s[COMMON_NAMESPACE_IRIS.rdfs.label] || "";
+  document.getElementById("ontology-creator-input").value = s[COMMON_NAMESPACE_IRIS.dcterms.creator] || "";
+  document.getElementById("ontology-description-input").value = s[COMMON_NAMESPACE_IRIS.dcterms.description] || "";
 
   // delimiter
   const delim = s.delimiter || getSelectedDelimiter();
@@ -993,8 +992,8 @@ function buildOntologyExportQuads(rows) {
   pushUniqueQuad(quads, seen,
     N3.DataFactory.quad(
       namedNode(ontologyIRI),
-      namedNode(NS.rdf.type),
-      namedNode(NS.owl.Ontology)
+      namedNode(COMMON_NAMESPACE_IRIS.rdf.type),
+      namedNode(COMMON_NAMESPACE_IRIS.owl.Ontology)
     )
   );
 
@@ -1004,11 +1003,11 @@ function buildOntologyExportQuads(rows) {
 
   for (const [key, value] of Object.entries(settings)) {
     if (key === 'iri' || key === 'owlImportsLocal') continue;
-    if (key === NS.owl.imports && Array.isArray(value)) {
+    if (key === COMMON_NAMESPACE_IRIS.owl.imports && Array.isArray(value)) {
       for (const importIRI of value) {
         pushUniqueQuad(quads, seen, N3.DataFactory.quad(
           namedNode(ontologyIRI),
-          namedNode(NS.owl.imports),
+          namedNode(COMMON_NAMESPACE_IRIS.owl.imports),
           namedNode(importIRI)
         ));
       }
@@ -1031,17 +1030,17 @@ function buildOntologyExportQuads(rows) {
     if (!subject) return;
 
     const structuralTypeMap = {
-      Class: NS.owl.Class,
-      NamedIndividual: NS.owl.NamedIndividual,
-      ObjectProperty: NS.owl.ObjectProperty,
-      DatatypeProperty: NS.owl.DatatypeProperty,
-      AnnotationProperty: NS.owl.AnnotationProperty,
+      Class: COMMON_NAMESPACE_IRIS.owl.Class,
+      NamedIndividual: COMMON_NAMESPACE_IRIS.owl.NamedIndividual,
+      ObjectProperty: COMMON_NAMESPACE_IRIS.owl.ObjectProperty,
+      DatatypeProperty: COMMON_NAMESPACE_IRIS.owl.DatatypeProperty,
+      AnnotationProperty: COMMON_NAMESPACE_IRIS.owl.AnnotationProperty,
     };
     const structuralTypeIri = structuralTypeMap[type];
     if (structuralTypeIri) {
       pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
-        namedNode(NS.rdf.type),
+        namedNode(COMMON_NAMESPACE_IRIS.rdf.type),
         namedNode(structuralTypeIri)
       ));
     }
@@ -1049,7 +1048,7 @@ function buildOntologyExportQuads(rows) {
     if (label) {
       pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
-        namedNode(NS.rdfs.label),
+        namedNode(COMMON_NAMESPACE_IRIS.rdfs.label),
         literal(label)
       ));
     }
@@ -1057,7 +1056,7 @@ function buildOntologyExportQuads(rows) {
     if (definition) {
       pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
-        namedNode(NS.skos.definition),
+        namedNode(COMMON_NAMESPACE_IRIS.skos.definition),
         literal(definition)
       ));
     }
@@ -1079,7 +1078,7 @@ function buildOntologyExportQuads(rows) {
     if (isCuratedInOntology) {
       pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
-        namedNode(NS.cco2.curatedIn),
+        namedNode(COMMON_NAMESPACE_IRIS.cco2.curatedIn),
         asObjectTerm(isCuratedInOntology)
       ));
     }
@@ -1490,12 +1489,12 @@ function iriFromObjects(objs) {
 
 function getSemanticRdfTypes(rdfTypes) {
   const structuralTypes = new Set([
-    NS.owl.Class,
-    NS.owl.ObjectProperty,
-    NS.owl.DatatypeProperty,
-    NS.owl.AnnotationProperty,
-    NS.owl.NamedIndividual,
-    NS.owl.Ontology,
+    COMMON_NAMESPACE_IRIS.owl.Class,
+    COMMON_NAMESPACE_IRIS.owl.ObjectProperty,
+    COMMON_NAMESPACE_IRIS.owl.DatatypeProperty,
+    COMMON_NAMESPACE_IRIS.owl.AnnotationProperty,
+    COMMON_NAMESPACE_IRIS.owl.NamedIndividual,
+    COMMON_NAMESPACE_IRIS.owl.Ontology,
   ]);
 
   return (rdfTypes || [])
@@ -1583,7 +1582,7 @@ async function reloadSavedSession() {
       let o;
       if (q.object.termType === 'Literal') {
         const lang = q.object.language ? `@${q.object.language}` : '';
-        const dt = q.object.datatype && q.object.datatype.value !== NS.xsd.string
+        const dt = q.object.datatype && q.object.datatype.value !== COMMON_NAMESPACE_IRIS.xsd.string
           ? `^^<${q.object.datatype.value}>` : '';
         o = `"${q.object.value}"${lang}${dt}`;
       } else if (q.object.termType === 'BlankNode') {
@@ -1616,33 +1615,33 @@ async function reloadSavedSession() {
     for (const [s, pMap] of subjMap.entries()) {
 
       if (s === ontologyIriFromSettings) continue;
-      const rdfTypes = Array.from(pMap.get(NS.rdf.type)?.values() || []);
+      const rdfTypes = Array.from(pMap.get(COMMON_NAMESPACE_IRIS.rdf.type)?.values() || []);
       const hasType = iri => rdfTypes.includes(`<${iri}>`);
-      if (hasType(NS.owl.Ontology)) continue;
+      if (hasType(COMMON_NAMESPACE_IRIS.owl.Ontology)) continue;
 
       let elementType = '';
-      if (hasType(NS.owl.Class))           elementType = 'Class';
-      else if (hasType(NS.owl.ObjectProperty))    elementType = 'ObjectProperty';
-      else if (hasType(NS.owl.DatatypeProperty))   elementType = 'DatatypeProperty';
-      else if (hasType(NS.owl.AnnotationProperty))   elementType = 'AnnotationProperty';
-      else if (hasType(NS.owl.NamedIndividual))   elementType = 'NamedIndividual';
-      else if (hasType(NS.owl.Ontology))   elementType = 'Ontology'; // This is an outlier case, mostly for error handling
+      if (hasType(COMMON_NAMESPACE_IRIS.owl.Class))           elementType = 'Class';
+      else if (hasType(COMMON_NAMESPACE_IRIS.owl.ObjectProperty))    elementType = 'ObjectProperty';
+      else if (hasType(COMMON_NAMESPACE_IRIS.owl.DatatypeProperty))   elementType = 'DatatypeProperty';
+      else if (hasType(COMMON_NAMESPACE_IRIS.owl.AnnotationProperty))   elementType = 'AnnotationProperty';
+      else if (hasType(COMMON_NAMESPACE_IRIS.owl.NamedIndividual))   elementType = 'NamedIndividual';
+      else if (hasType(COMMON_NAMESPACE_IRIS.owl.Ontology))   elementType = 'Ontology'; // This is an outlier case, mostly for error handling
       else if (rdfTypes.length)                elementType = 'NamedIndividual';
 
-      const label = firstLiteral(Array.from(pMap.get(NS.rdfs.label)?.values() || []));
-      const definition = firstLiteral(Array.from(pMap.get(NS.skos.definition)?.values() || []));
+      const label = firstLiteral(Array.from(pMap.get(COMMON_NAMESPACE_IRIS.rdfs.label)?.values() || []));
+      const definition = firstLiteral(Array.from(pMap.get(COMMON_NAMESPACE_IRIS.skos.definition)?.values() || []));
 
       let isA = '';
       if (elementType === 'Class') {
-        isA = iriFromObjects(Array.from(pMap.get(NS.rdfs.subClassOf)?.values() || []));
+        isA = iriFromObjects(Array.from(pMap.get(COMMON_NAMESPACE_IRIS.rdfs.subClassOf)?.values() || []));
       } else if (elementType === 'ObjectProperty' || elementType === 'DatatypeProperty' || elementType === 'AnnotationProperty') {
-        isA = iriFromObjects(Array.from(pMap.get(NS.rdfs.subPropertyOf)?.values() || []));
+        isA = iriFromObjects(Array.from(pMap.get(COMMON_NAMESPACE_IRIS.rdfs.subPropertyOf)?.values() || []));
       } else if (elementType === 'NamedIndividual') {
         const classish = getSemanticRdfTypes(rdfTypes);
         if (classish.length) isA = classish[0];
       }
 
-      const curatedVals = Array.from(pMap.get(NS.cco2.curatedIn)?.values() || []);
+      const curatedVals = Array.from(pMap.get(COMMON_NAMESPACE_IRIS.cco2.curatedIn)?.values() || []);
       const curatedIn = iriFromObjects(curatedVals) || firstLiteral(curatedVals);
 
       // base row
@@ -1657,8 +1656,8 @@ async function reloadSavedSession() {
       // gather extra predicates (not mapped to base columns)
       for (const p of pMap.keys()) {
         if (
-          p === NS.rdfs.label || p === NS.skos.definition || p === NS.rdf.type ||
-          p === NS.rdfs.subClassOf || p === NS.rdfs.subPropertyOf || p === NS.cco2.curatedIn
+          p === COMMON_NAMESPACE_IRIS.rdfs.label || p === COMMON_NAMESPACE_IRIS.skos.definition || p === COMMON_NAMESPACE_IRIS.rdf.type ||
+          p === COMMON_NAMESPACE_IRIS.rdfs.subClassOf || p === COMMON_NAMESPACE_IRIS.rdfs.subPropertyOf || p === COMMON_NAMESPACE_IRIS.cco2.curatedIn
         ) continue;
         extraPreds.add(p);
       }
@@ -1792,14 +1791,14 @@ function extractOntologyVocabEntries(quads, source = "Imported Ontology") {
     }
     const entry = subjectData.get(subject);
 
-    if (predicate === NS.rdfs.label && !entry.label) entry.label = object;
-    if (predicate === NS.skos.altLabel) entry.altLabels.push(object);
-    if (predicate === NS.rdf.type) {
-      if (object === NS.owl.Class) entry.type = 'Class';
-      else if (object === NS.owl.ObjectProperty) entry.type = 'ObjectProperty';
-      else if (object === NS.owl.DatatypeProperty) entry.type = 'DatatypeProperty';
-      else if (object === NS.owl.AnnotationProperty) entry.type = 'AnnotationProperty';
-      else if (object === NS.owl.NamedIndividual) entry.type = 'NamedIndividual';
+    if (predicate === COMMON_NAMESPACE_IRIS.rdfs.label && !entry.label) entry.label = object;
+    if (predicate === COMMON_NAMESPACE_IRIS.skos.altLabel) entry.altLabels.push(object);
+    if (predicate === COMMON_NAMESPACE_IRIS.rdf.type) {
+      if (object === COMMON_NAMESPACE_IRIS.owl.Class) entry.type = 'Class';
+      else if (object === COMMON_NAMESPACE_IRIS.owl.ObjectProperty) entry.type = 'ObjectProperty';
+      else if (object === COMMON_NAMESPACE_IRIS.owl.DatatypeProperty) entry.type = 'DatatypeProperty';
+      else if (object === COMMON_NAMESPACE_IRIS.owl.AnnotationProperty) entry.type = 'AnnotationProperty';
+      else if (object === COMMON_NAMESPACE_IRIS.owl.NamedIndividual) entry.type = 'NamedIndividual';
     }
   }
 
@@ -2853,10 +2852,10 @@ function iriToNiceLabel(iri) {
 
 // base header map
 const BASE_HEADER_TO_PRED = new Map([
-  ['label',        NS.rdfs.label],
-  ['definition',   NS.skos.definition],
-  ['element type', NS.rdf.type],
-  ['is curated in ontology', NS.cco2.curatedIn],
+  ['label',        COMMON_NAMESPACE_IRIS.rdfs.label],
+  ['definition',   COMMON_NAMESPACE_IRIS.skos.definition],
+  ['element type', COMMON_NAMESPACE_IRIS.rdf.type],
+  ['is curated in ontology', COMMON_NAMESPACE_IRIS.cco2.curatedIn],
 ]);
 
 // Expand a single header to one or more concrete predicate IRIs for curation rules
@@ -2869,9 +2868,9 @@ function headerToPredicateIrisForRules(header) {
   // Special: "is a" expands
   if (h === 'is a') {
     return [
-      NS.rdf.type,
-      NS.rdfs.subClassOf,
-      NS.rdfs.subPropertyOf,
+      COMMON_NAMESPACE_IRIS.rdf.type,
+      COMMON_NAMESPACE_IRIS.rdfs.subClassOf,
+      COMMON_NAMESPACE_IRIS.rdfs.subPropertyOf,
     ].filter(Boolean);
   }
 
@@ -3218,9 +3217,9 @@ async function parseOntologyData(file) {
 function deriveOntologyImportTarget(quads) {
   if (CoreUtils.deriveOntologyImportTarget) {
     return CoreUtils.deriveOntologyImportTarget(quads, {
-      rdfTypeIri: NS.rdf.type,
-      owlOntologyIri: NS.owl.Ontology,
-      owlVersionIri: NS.owl.versionIRI
+      rdfTypeIri: COMMON_NAMESPACE_IRIS.rdf.type,
+      owlOntologyIri: COMMON_NAMESPACE_IRIS.owl.Ontology,
+      owlVersionIri: COMMON_NAMESPACE_IRIS.owl.versionIRI
     });
   }
 
@@ -3233,10 +3232,10 @@ function deriveOntologyImportTarget(quads) {
     const object = quad.object?.value;
     if (!subject || !predicate || !object) continue;
 
-    if (predicate === NS.rdf.type && object === NS.owl.Ontology) {
+    if (predicate === COMMON_NAMESPACE_IRIS.rdf.type && object === COMMON_NAMESPACE_IRIS.owl.Ontology) {
       ontologySubjects.add(subject);
     }
-    if (predicate === NS.owl.versionIRI) {
+    if (predicate === COMMON_NAMESPACE_IRIS.owl.versionIRI) {
       versionIris.set(subject, object);
     }
   }
@@ -3273,7 +3272,7 @@ function validateAndPivotOntologyData(quads, knownPredicates) {
 
     if (q.object.termType === 'Literal') {
       const lang = q.object.language ? `@${q.object.language}` : '';
-      const dt = q.object.datatype && q.object.datatype.value !== NS.xsd.string
+      const dt = q.object.datatype && q.object.datatype.value !== COMMON_NAMESPACE_IRIS.xsd.string
         ? `^^<${q.object.datatype.value}>` : '';
       o = `"${q.object.value}"${lang}${dt}`;
     } else if (q.object.termType === 'BlankNode') {
@@ -3305,35 +3304,35 @@ function validateAndPivotOntologyData(quads, knownPredicates) {
   for (const [subjectUri, pMap] of subjectData.entries()) {
     if (!subjectUri || subjectUri.startsWith('_:')) continue;
 
-    const rdfTypes = Array.from(pMap.get(NS.rdf.type)?.values() || []);
+    const rdfTypes = Array.from(pMap.get(COMMON_NAMESPACE_IRIS.rdf.type)?.values() || []);
     const hasType = iri => rdfTypes.includes(`<${iri}>`);
-    if (hasType(NS.owl.Ontology)) continue;
+    if (hasType(COMMON_NAMESPACE_IRIS.owl.Ontology)) continue;
 
     let elementType = '';
-    if (hasType(NS.owl.Class)) elementType = 'Class';
-    else if (hasType(NS.owl.ObjectProperty)) elementType = 'ObjectProperty';
-    else if (hasType(NS.owl.DatatypeProperty)) elementType = 'DatatypeProperty';
-    else if (hasType(NS.owl.AnnotationProperty)) elementType = 'AnnotationProperty';
-    else if (hasType(NS.owl.NamedIndividual)) elementType = 'NamedIndividual';
+    if (hasType(COMMON_NAMESPACE_IRIS.owl.Class)) elementType = 'Class';
+    else if (hasType(COMMON_NAMESPACE_IRIS.owl.ObjectProperty)) elementType = 'ObjectProperty';
+    else if (hasType(COMMON_NAMESPACE_IRIS.owl.DatatypeProperty)) elementType = 'DatatypeProperty';
+    else if (hasType(COMMON_NAMESPACE_IRIS.owl.AnnotationProperty)) elementType = 'AnnotationProperty';
+    else if (hasType(COMMON_NAMESPACE_IRIS.owl.NamedIndividual)) elementType = 'NamedIndividual';
     else {
       const classish = getSemanticRdfTypes(rdfTypes);
       if (classish.length) elementType = 'NamedIndividual';
     }
 
-    const label = firstLiteral(Array.from(pMap.get(NS.rdfs.label)?.values() || []));
-    const definition = firstLiteral(Array.from(pMap.get(NS.skos.definition)?.values() || []));
+    const label = firstLiteral(Array.from(pMap.get(COMMON_NAMESPACE_IRIS.rdfs.label)?.values() || []));
+    const definition = firstLiteral(Array.from(pMap.get(COMMON_NAMESPACE_IRIS.skos.definition)?.values() || []));
 
     let isA = '';
     if (elementType === 'Class') {
-      isA = iriFromObjects(Array.from(pMap.get(NS.rdfs.subClassOf)?.values() || []));
+      isA = iriFromObjects(Array.from(pMap.get(COMMON_NAMESPACE_IRIS.rdfs.subClassOf)?.values() || []));
     } else if (elementType === 'ObjectProperty' || elementType === 'DatatypeProperty' || elementType === 'AnnotationProperty') {
-      isA = iriFromObjects(Array.from(pMap.get(NS.rdfs.subPropertyOf)?.values() || []));
+      isA = iriFromObjects(Array.from(pMap.get(COMMON_NAMESPACE_IRIS.rdfs.subPropertyOf)?.values() || []));
     } else if (elementType === 'NamedIndividual') {
       const classish = getSemanticRdfTypes(rdfTypes);
       if (classish.length) isA = classish[0];
     }
 
-    const curatedVals = Array.from(pMap.get(NS.cco2.curatedIn)?.values() || []);
+    const curatedVals = Array.from(pMap.get(COMMON_NAMESPACE_IRIS.cco2.curatedIn)?.values() || []);
     const curatedIn = iriFromObjects(curatedVals) || firstLiteral(curatedVals);
 
     const newRow = new Array(knownPredicates.length).fill('');
@@ -3536,31 +3535,31 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
     "subject": activeSubjectHeader,
     "label": "label",
     "rdfs:label": "label",
-    [NS.rdfs.label]: "label",
+    [COMMON_NAMESPACE_IRIS.rdfs.label]: "label",
     "element type": "element type",
     "type": "element type",
     "rdf:type": "element type",
-    [NS.rdf.type]: "element type",
+    [COMMON_NAMESPACE_IRIS.rdf.type]: "element type",
     "definition": "definition",
     "skos:definition": "definition",
-    [NS.skos.definition]: "definition",
+    [COMMON_NAMESPACE_IRIS.skos.definition]: "definition",
     "is a": "is a",
     "subclass of": "is a",
     "rdfs:subClassOf": "is a",
-    [NS.rdfs.subClassOf]: "is a",
+    [COMMON_NAMESPACE_IRIS.rdfs.subClassOf]: "is a",
     "subproperty of": "is a",
     "rdfs:subPropertyOf": "is a",
-    [NS.rdfs.subPropertyOf]: "is a",
+    [COMMON_NAMESPACE_IRIS.rdfs.subPropertyOf]: "is a",
     "is curated in": "is curated in",
     "is defined by": "is curated in",
     "is curated in ontology": "is curated in",
     "cco2:ont00001760": "is curated in",
-    [NS.cco2.curatedIn]: "is curated in",
+    [COMMON_NAMESPACE_IRIS.cco2.curatedIn]: "is curated in",
     "has curation status": "has curation status",
     "obo:IAO_0000114": "has curation status",
-    [NS.iao.curationStatus]: "has curation status",
+    [COMMON_NAMESPACE_IRIS.iao.curationStatus]: "has curation status",
     "cco2:ont00001753": "acronym",
-    [NS.cco2.acronym]: "acronym",
+    [COMMON_NAMESPACE_IRIS.cco2.acronym]: "acronym",
     "cceo:acronym": "acronym"
     // Add more aliases as needed
   };
@@ -3870,9 +3869,9 @@ async function setLocalImport(iri, { content, mediaType }) {
   const settings = getOntologySettings();
 
   // Ensure owl:imports list exists and includes the IRI
-  settings[NS.owl.imports] = settings[NS.owl.imports] || [];
-  if (!settings[NS.owl.imports].includes(iri)) {
-    settings[NS.owl.imports].push(iri);
+  settings[COMMON_NAMESPACE_IRIS.owl.imports] = settings[COMMON_NAMESPACE_IRIS.owl.imports] || [];
+  if (!settings[COMMON_NAMESPACE_IRIS.owl.imports].includes(iri)) {
+    settings[COMMON_NAMESPACE_IRIS.owl.imports].push(iri);
   }
 
   // Store local cache under a separate key
@@ -3894,9 +3893,9 @@ function fileNameForMediaType(mediaType) {
 
 async function cacheImportedOntology({ iri, ontologyIri, content, mediaType, quads }) {
   const settings = getOntologySettings();
-  settings[NS.owl.imports] = settings[NS.owl.imports] || [];
-  if (!settings[NS.owl.imports].includes(iri)) {
-    settings[NS.owl.imports].push(iri);
+  settings[COMMON_NAMESPACE_IRIS.owl.imports] = settings[COMMON_NAMESPACE_IRIS.owl.imports] || [];
+  if (!settings[COMMON_NAMESPACE_IRIS.owl.imports].includes(iri)) {
+    settings[COMMON_NAMESPACE_IRIS.owl.imports].push(iri);
   }
 
   settings.owlImportsLocal = settings.owlImportsLocal || {};
@@ -3949,7 +3948,7 @@ async function openImportsModal() {
 
   // ensure cache is loaded
   const settings = getOntologySettings();
-  const imports = settings[NS.owl.imports] || [];
+  const imports = settings[COMMON_NAMESPACE_IRIS.owl.imports] || [];
   const importsMap = getImportsMap();
 
   imports.forEach((iri) => {
@@ -4015,9 +4014,9 @@ async function addImportIRI() {
   if (!iri) return;
 
   const settings = getOntologySettings();
-  settings[NS.owl.imports] = settings[NS.owl.imports] || [];
-  if (!settings[NS.owl.imports].includes(iri)) {
-    settings[NS.owl.imports].push(iri);
+  settings[COMMON_NAMESPACE_IRIS.owl.imports] = settings[COMMON_NAMESPACE_IRIS.owl.imports] || [];
+  if (!settings[COMMON_NAMESPACE_IRIS.owl.imports].includes(iri)) {
+    settings[COMMON_NAMESPACE_IRIS.owl.imports].push(iri);
     await saveOntologySettings(settings);
   }
 
@@ -4201,9 +4200,9 @@ setupInsertDataModalListeners();
 
 function populateSettingsUi() {
   const s = getOntologySettings();
-  document.getElementById('ontology-label-input').value = s[NS.rdfs.label] || '';
-  document.getElementById('ontology-creator-input').value = s[NS.dcterms.creator] || '';
-  document.getElementById('ontology-description-input').value = s[NS.dcterms.description] || '';
+  document.getElementById('ontology-label-input').value = s[COMMON_NAMESPACE_IRIS.rdfs.label] || '';
+  document.getElementById('ontology-creator-input').value = s[COMMON_NAMESPACE_IRIS.dcterms.creator] || '';
+  document.getElementById('ontology-description-input').value = s[COMMON_NAMESPACE_IRIS.dcterms.description] || '';
   document.getElementById('ontology-base-iri-input').value = s.base || '';
 
   const delimiterRadio = document.querySelector(`input[name="base-iri-delimiter"][value="${s.delimiter || '/'}"]`);

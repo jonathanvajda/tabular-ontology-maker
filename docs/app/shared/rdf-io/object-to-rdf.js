@@ -1,4 +1,5 @@
-import { RDF_TYPE, XSD_STRING, blankNode, literal, namedNode, quad } from './rdf-model.js';
+import { COMMON_NAMESPACE_IRIS } from '../namespace-registry/index.js';
+import { blankNode, literal, namedNode, quad } from './rdf-model.js';
 
 /**
  * @typedef {object} ObjectToRdfPropertySpec
@@ -58,7 +59,7 @@ export function createRdfQuadsFromObjects(objects, options = {}) {
     const graph = options.graph ? termFromResourceValue(readMappedValue(record, options.graph, { record, rowNumber })) : undefined;
 
     for (const typeIri of valuesFrom(readMappedValue(record, options.type, { record, rowNumber }), options.type)) {
-      if (!isMissingValue(typeIri)) out.push(quad(subject, RDF_TYPE, namedNode(typeIri), graph));
+      if (!isMissingValue(typeIri)) out.push(quad(subject, COMMON_NAMESPACE_IRIS.rdf.type, namedNode(typeIri), graph));
     }
 
     for (const [key, rawSpec] of Object.entries(options.properties)) {
@@ -138,7 +139,7 @@ function jsonLdValueToObjectMappingValue(value) {
       value: value['@value'],
       termType: 'literal',
       language: value['@language'] || '',
-      datatype: value['@type'] || XSD_STRING
+      datatype: value['@type'] || COMMON_NAMESPACE_IRIS.xsd.string
     };
   }
   return value;
@@ -176,7 +177,7 @@ function objectTermFromValue(rawValue, spec, context) {
   if (termType === 'iri') return namedNode(value.value);
   if (termType === 'blank') return blankNode(value.value);
   return literal(value.value, {
-    datatype: value.datatype || spec.datatype || XSD_STRING,
+    datatype: value.datatype || spec.datatype || COMMON_NAMESPACE_IRIS.xsd.string,
     language: value.language || resolveLanguage(spec.language, context) || ''
   });
 }
