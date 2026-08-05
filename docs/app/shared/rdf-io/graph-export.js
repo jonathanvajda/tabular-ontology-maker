@@ -1,6 +1,15 @@
 import { serializeRdfDatasetWithAdapters } from './serialize-rdf.js';
 import { normalizeRdfFormat } from './runtime.js';
 
+export const RDF_GRAPH_EXPORT_MIME_TYPES = Object.freeze([
+  'text/turtle',
+  'application/n-triples',
+  'application/n-quads',
+  'application/trig',
+  'application/rdf+xml',
+  'application/ld+json'
+]);
+
 /**
  * Selects quads for a graph export scope.
  *
@@ -131,5 +140,31 @@ export function flattenRdfQuadsToDefaultGraph(quads, dataFactory = {}) {
 export function shouldFlattenGraphNamesForRdfGraphExport(options = {}) {
   if (typeof options.flattenGraphNames === 'boolean') return options.flattenGraphNames;
   const format = normalizeRdfFormat(options.format || options.mimeType || '');
-  return format === 'turtle' || format === 'ntriples';
+  return format === 'turtle' || format === 'ntriples' || format === 'rdfxml';
+}
+
+/**
+ * Reports whether a MIME type is part of the promoted RDF graph export set.
+ *
+ * @param {string} mimeType - MIME type selected by an export UI.
+ * @returns {boolean} True when the MIME type is supported.
+ */
+export function isSupportedRdfGraphExportMimeType(mimeType) {
+  return RDF_GRAPH_EXPORT_MIME_TYPES.includes(String(mimeType || '').trim());
+}
+
+/**
+ * Reports whether the selected RDF export format preserves graph names or
+ * flattens quads to default-graph triples.
+ *
+ * @param {string} mimeType - MIME type selected by an export UI.
+ * @returns {'quads'|'triples'} Export graph shape.
+ * @throws {TypeError} When the MIME type is not in the promoted RDF export set.
+ */
+export function getRdfGraphExportGraphShape(mimeType) {
+  const text = String(mimeType || '').trim();
+  if (!isSupportedRdfGraphExportMimeType(text)) {
+    throw new TypeError(`Unsupported RDF graph export MIME type: ${mimeType}`);
+  }
+  return shouldFlattenGraphNamesForRdfGraphExport({ mimeType: text }) ? 'triples' : 'quads';
 }
