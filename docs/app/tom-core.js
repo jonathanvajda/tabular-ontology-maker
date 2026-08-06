@@ -37,7 +37,7 @@ import {
   parseRdfTextWithAdapters,
   serializeRdfDatasetWithAdapters
 } from './shared/rdf-io/index.js';
-import { normalizeIriToken } from './shared/ontology-utils/index.js';
+import { isBlankNodeTerm, normalizeIriToken } from './shared/ontology-utils/index.js';
 import {
   deleteTomOntologySettings,
   hasTomSavedSession,
@@ -972,7 +972,7 @@ function appendAxiomRecordQuads(quads, seen, record) {
 
 function termFromSnapshot(term) {
   if (term.termType === 'NamedNode') return N3.DataFactory.namedNode(term.value);
-  if (term.termType === 'BlankNode') return N3.DataFactory.blankNode(term.value);
+  if (isBlankNodeTerm(term)) return N3.DataFactory.blankNode(term.value);
   if (term.termType === 'Literal') {
     if (term.language) return N3.DataFactory.literal(term.value, term.language);
     if (term.datatype?.value) return N3.DataFactory.literal(term.value, N3.DataFactory.namedNode(term.datatype.value));
@@ -1576,7 +1576,7 @@ async function reloadSavedSession() {
     const extraPreds = new Set();
 
     for (const q of quads) {
-      const s = q.subject.termType === 'BlankNode' ? `_:${q.subject.value}` : q.subject.value;
+      const s = isBlankNodeTerm(q.subject) ? `_:${q.subject.value}` : q.subject.value;
       const p = q.predicate.value;
 
       let o;
@@ -1585,7 +1585,7 @@ async function reloadSavedSession() {
         const dt = q.object.datatype && q.object.datatype.value !== COMMON_NAMESPACE_IRIS.xsd.string
           ? `^^<${q.object.datatype.value}>` : '';
         o = `"${q.object.value}"${lang}${dt}`;
-      } else if (q.object.termType === 'BlankNode') {
+      } else if (isBlankNodeTerm(q.object)) {
         o = `_:${q.object.value}`;
       } else {
         o = `<${q.object.value}>`;
@@ -3264,7 +3264,7 @@ function validateAndPivotOntologyData(quads, knownPredicates) {
   const customPredicatesByIndex = customHeaders.map((header) => curieToIri(header) || header);
 
   for (const q of quads || []) {
-    if (!q?.subject?.value || q.subject.termType === 'BlankNode') continue;
+    if (!q?.subject?.value || isBlankNodeTerm(q.subject)) continue;
 
     const s = q.subject.value;
     const p = q.predicate.value;
@@ -3275,7 +3275,7 @@ function validateAndPivotOntologyData(quads, knownPredicates) {
       const dt = q.object.datatype && q.object.datatype.value !== COMMON_NAMESPACE_IRIS.xsd.string
         ? `^^<${q.object.datatype.value}>` : '';
       o = `"${q.object.value}"${lang}${dt}`;
-    } else if (q.object.termType === 'BlankNode') {
+    } else if (isBlankNodeTerm(q.object)) {
       o = `_:${q.object.value}`;
     } else {
       o = `<${q.object.value}>`;

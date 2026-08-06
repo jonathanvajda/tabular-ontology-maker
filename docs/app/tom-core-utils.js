@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Jonathan Vajda
 import { COMMON_NAMESPACE_IRIS } from './shared/namespace-registry/namespace-registry.js';
 import { serializeDelimitedRows } from './shared/tabular-io/index.js';
+import { classifyOntologyInput } from './shared/ontology-utils/index.js';
 
 
   function getCurrentDateParts(date) {
@@ -42,11 +43,7 @@ import { serializeDelimitedRows } from './shared/tabular-io/index.js';
   }
 
   function isValidOntology(content) {
-    return (
-      typeof content === "string" &&
-      content.length > 0 &&
-      /rdf:RDF|@prefix|owl:Ontology|"@context"\s*:/.test(content)
-    );
+    return classifyOntologyInput({ text: content }).isOntologyCandidate;
   }
 
   function generateOntologySettings(options) {
