@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
 import { COMMON_NAMESPACE_IRIS } from './shared/namespace-registry/namespace-registry.js';
-import { createUuid } from './shared/ontology-utils/index.js';
+import { createUuid, isBlankNodeTerm } from './shared/ontology-utils/index.js';
 
   const AXIOM_PREDICATES = {
     SubClassOf: COMMON_NAMESPACE_IRIS.rdfs.subClassOf,
@@ -39,7 +39,7 @@ import { createUuid } from './shared/ontology-utils/index.js';
   function termToTurtle(term, prefixes) {
     if (!term) return "";
     if (term.termType === "NamedNode") return iriToDisplay(term.value, prefixes);
-    if (term.termType === "BlankNode") return `_:${term.value}`;
+    if (isBlankNodeTerm(term)) return `_:${term.value}`;
     if (term.termType === "Literal") {
       const escaped = String(term.value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
       if (term.language) return `"${escaped}"@${term.language}`;
@@ -494,7 +494,7 @@ import { createUuid } from './shared/ontology-utils/index.js';
         return;
       }
 
-      if (object.termType === "BlankNode") {
+      if (isBlankNodeTerm(object)) {
         const ast = detectRestrictionAst(object, bySubject, prefixes);
         if (ast) {
           record.axioms.push({
@@ -519,7 +519,7 @@ import { createUuid } from './shared/ontology-utils/index.js';
 
   function collectBlankNodeComponent(blankNode, quads, visited) {
     const seen = visited || new Set();
-    if (!blankNode || blankNode.termType !== "BlankNode") return [];
+    if (!isBlankNodeTerm(blankNode)) return [];
     const key = termKey(blankNode);
     if (seen.has(key)) return [];
     seen.add(key);
@@ -533,7 +533,7 @@ import { createUuid } from './shared/ontology-utils/index.js';
         object: cloneTerm(quad.object),
       };
       out.push(triple);
-      if (quad.object?.termType === "BlankNode") {
+      if (isBlankNodeTerm(quad.object)) {
         out.push(...collectBlankNodeComponent(quad.object, quads, seen));
       }
     });
