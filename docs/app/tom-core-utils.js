@@ -2,7 +2,6 @@
 // Copyright (C) 2026 Jonathan Vajda
 import { COMMON_NAMESPACE_IRIS } from './shared/namespace-registry/namespace-registry.js';
 import { serializeDelimitedRows } from './shared/tabular-io/index.js';
-import { classifyOntologyInput } from './shared/ontology-utils/index.js';
 
 
   function getCurrentDateParts(date) {
@@ -40,10 +39,6 @@ import { classifyOntologyInput } from './shared/ontology-utils/index.js';
       .replace(/[^a-zA-Z0-9]+/g, "_")
       .replace(/^_+|_+$/g, "")
       .toLowerCase();
-  }
-
-  function isValidOntology(content) {
-    return classifyOntologyInput({ text: content }).isOntologyCandidate;
   }
 
   function generateOntologySettings(options) {
@@ -186,7 +181,6 @@ const api = {
   toCamelCase,
   toPascalCase,
   toSnakeCase,
-  isValidOntology,
   generateOntologySettings,
   normalizeTomTableRows,
   buildCsvExportRows,
@@ -199,7 +193,6 @@ export {
   toCamelCase,
   toPascalCase,
   toSnakeCase,
-  isValidOntology,
   generateOntologySettings,
   normalizeTomTableRows,
   buildCsvExportRows,

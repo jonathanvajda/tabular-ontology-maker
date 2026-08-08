@@ -2187,15 +2187,6 @@ function backfillIris() {
   }
 }
 
-function isValidOntology(content) {
-  if (CoreUtils.isValidOntology) return CoreUtils.isValidOntology(content);
-  return (
-    typeof content === 'string' &&
-    content.length > 0 &&
-    /rdf:RDF|@prefix|owl:Ontology|"@context"\s*:/.test(content)
-  );
-}
-
 // Gets n rows to the bottom of the grid.
 function getRowCountInput() {
   const n = parseInt(document.getElementById("row-count").value, 10);
