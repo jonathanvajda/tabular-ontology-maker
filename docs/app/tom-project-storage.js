@@ -3,6 +3,7 @@
 
 import {
   DEFAULT_PROJECT_PORTFOLIO_PROJECT_ID,
+  PROJECT_RECORD_JSONLD_CONTEXT,
   createProjectPortfolioStores,
   ensureProjectPortfolioProject,
   inspectLegacyIndexedDbDatabase,
@@ -11,6 +12,7 @@ import {
   storeProjectArtifactData,
   storeProjectRunData
 } from './shared/indexeddb-data-management/index.js';
+import { COMMON_NAMESPACE_IRIS } from './shared/namespace-registry/index.js';
 import {
   getMimeTypeForFormatKey,
   getPreferredExtensionForMimeType
@@ -26,6 +28,7 @@ const TOM_PROJECT_LABEL = 'Default Cross-App Workspace';
 const TOM_WORKSPACE_ARTIFACT_KIND = 'tom-workspace-snapshot';
 const TOM_RDF_ARTIFACT_KIND = 'ontology-rdf';
 const TOM_SETTINGS_KEY = 'ontologySettings';
+const JSON_LD_FORMAT_KEY = 'jsonLd';
 
 let portfolioPromise = null;
 
@@ -70,7 +73,7 @@ export async function openTomProjectStores() {
 export async function readTomOntologySettings() {
   const stores = await openTomProjectStores();
   const sharedValue = await stores.settings.readSettingValue(TOM_SETTINGS_KEY, null);
-  if (sharedValue) return sharedValue;
+  if (sharedValue) return readTomSettingsFromJsonLd(sharedValue);
   const legacy = await readLegacyOntologySettings();
   if (!legacy) return null;
   await writeTomOntologySettings(legacy, { migratedFromLegacy: true });
@@ -89,10 +92,13 @@ export async function writeTomOntologySettings(settings, { migratedFromLegacy = 
   await stores.settings.storeSettingRecord({
     scope: DEFAULT_PROJECT_PORTFOLIO_PROJECT_ID,
     key: TOM_SETTINGS_KEY,
-    value: settings,
+    value: convertTomSettingsToJsonLd(settings),
     appId: TOM_APP_ID,
     metadata: migratedFromLegacy
-      ? { migratedFrom: { databaseName: TOM_LEGACY_DB_NAME, storeName: TOM_LEGACY_SETTINGS_STORE } }
+      ? {
+        [COMMON_NAMESPACE_IRIS.okea.appId]: TOM_APP_ID,
+        migratedFrom: { databaseName: TOM_LEGACY_DB_NAME, storeName: TOM_LEGACY_SETTINGS_STORE }
+      }
       : {}
   });
   return settings;
@@ -127,7 +133,7 @@ export async function storeTomAuthoringSession({
   const stores = await openTomProjectStores();
   const workspaceArtifact = await storeTomWorkspaceSnapshot(stores, workspaceSnapshot, {
     timestamp,
-    source: { appId: TOM_APP_ID }
+    source: createTomSourceMetadata()
   });
   const rdfArtifact = await storeTomGeneratedRdfArtifact(stores, {
     rdfData: rdfString,
@@ -136,7 +142,7 @@ export async function storeTomAuthoringSession({
   }, {
     timestamp,
     workspaceArtifactId: workspaceArtifact.artifactId,
-    source: { appId: TOM_APP_ID }
+    source: createTomSourceMetadata()
   });
   const run = await storeProjectRunData(stores, {
     projectId: DEFAULT_PROJECT_PORTFOLIO_PROJECT_ID,
@@ -147,7 +153,7 @@ export async function storeTomAuthoringSession({
     inputArtifactIds: [workspaceArtifact.artifactId],
     outputArtifactIds: [rdfArtifact.artifactId],
     metadata: {
-      appId: TOM_APP_ID
+      [COMMON_NAMESPACE_IRIS.okea.appId]: TOM_APP_ID
     }
   });
   return {
@@ -173,23 +179,26 @@ export async function storeTomAuthoringSession({
  */
 export function storeTomWorkspaceSnapshot(stores, workspaceSnapshot, {
   timestamp = new Date().toISOString(),
-  source = { appId: TOM_APP_ID }
+  source = createTomSourceMetadata()
 } = {}) {
+  const formatDetails = resolveJsonLdFormatDetails();
   return storeProjectArtifactData(stores, {
     projectId: DEFAULT_PROJECT_PORTFOLIO_PROJECT_ID,
     artifactKind: TOM_WORKSPACE_ARTIFACT_KIND,
     role: 'staged',
     label: 'TOM workspace snapshot',
-    mediaType: 'application/ld+json',
-    extension: 'jsonld',
+    mediaType: formatDetails.mediaType,
+    extension: formatDetails.extension,
     createdAt: timestamp,
     updatedAt: timestamp,
     source,
     summary: {
-      rowCount: Array.isArray(workspaceSnapshot?.rows) ? workspaceSnapshot.rows.length : 0,
-      predicateCount: Array.isArray(workspaceSnapshot?.predicates) ? workspaceSnapshot.predicates.length : 0
+      [COMMON_NAMESPACE_IRIS.okea.documentCount]: Array.isArray(workspaceSnapshot?.rows) ? workspaceSnapshot.rows.length : 0,
+      [COMMON_NAMESPACE_IRIS.okea.metadata]: {
+        predicateCount: Array.isArray(workspaceSnapshot?.predicates) ? workspaceSnapshot.predicates.length : 0
+      }
     }
-  }, workspaceSnapshot);
+  }, convertTomWorkspaceSnapshotToJsonLd(workspaceSnapshot, { timestamp }));
 }
 
 /**
@@ -206,7 +215,7 @@ export function storeTomWorkspaceSnapshot(stores, workspaceSnapshot, {
 export function storeTomGeneratedRdfArtifact(stores, rdfRecord, {
   timestamp = new Date().toISOString(),
   workspaceArtifactId = '',
-  source = { appId: TOM_APP_ID }
+  source = createTomSourceMetadata()
 } = {}) {
   const formatDetails = resolveRdfFormatDetails(rdfRecord?.format);
   const payloadFormat = rdfRecord?.format || formatDetails.format;
@@ -224,14 +233,16 @@ export function storeTomGeneratedRdfArtifact(stores, rdfRecord, {
       derivedFrom: workspaceArtifactId ? [workspaceArtifactId] : []
     },
     summary: {
-      format: payloadFormat,
-      byteLength: String(rdfRecord?.rdfData || '').length
+      [COMMON_NAMESPACE_IRIS.dcterms.format]: payloadFormat,
+      [COMMON_NAMESPACE_IRIS.okea.metadata]: {
+        byteLength: String(rdfRecord?.rdfData || '').length
+      }
     }
-  }, {
+  }, convertTomRdfPayloadToJsonLd({
     rdfData: rdfRecord?.rdfData || '',
     format: payloadFormat,
     timestamp
-  });
+  }));
 }
 
 /**
@@ -272,7 +283,7 @@ async function readLatestSharedTomSession() {
   const latestWorkspaceArtifact = selectLatestArtifact(workspaceArtifacts);
   const latestRdfArtifact = selectLatestArtifact(rdfArtifacts);
   return {
-    latestWorkspace: latestWorkspaceArtifact?.payload || null,
+    latestWorkspace: readTomWorkspaceSnapshotFromJsonLd(latestWorkspaceArtifact?.payload) || null,
     latestRdfRecord: normalizeSharedRdfPayload(latestRdfArtifact),
     source: 'shared-project-portfolio'
   };
@@ -307,7 +318,7 @@ export async function migrateLegacyTomSessionToProjectStorage(legacySession) {
   const stores = await openTomProjectStores();
   const timestamp = latestSessionTimestamp(legacySession);
   const migratedSource = {
-    appId: TOM_APP_ID,
+    [COMMON_NAMESPACE_IRIS.okea.appId]: TOM_APP_ID,
     origin: 'legacy-migration',
     databaseName: TOM_LEGACY_DB_NAME
   };
@@ -333,7 +344,7 @@ export async function migrateLegacyTomSessionToProjectStorage(legacySession) {
     inputArtifactIds: [],
     outputArtifactIds: [workspaceArtifact?.artifactId, rdfArtifact?.artifactId].filter(Boolean),
     metadata: {
-      appId: TOM_APP_ID,
+      [COMMON_NAMESPACE_IRIS.okea.appId]: TOM_APP_ID,
       migratedFrom: {
         databaseName: TOM_LEGACY_DB_NAME,
         stores: [TOM_LEGACY_WORKSPACE_STORE, TOM_LEGACY_RDF_STORE]
@@ -385,11 +396,11 @@ function recordTime(record) {
 
 function normalizeSharedRdfPayload(artifact) {
   if (!artifact) return null;
-  const payload = artifact.payload;
+  const payload = readTomRdfPayloadFromJsonLd(artifact.payload) || artifact.payload;
   if (payload && typeof payload === 'object' && typeof payload.rdfData === 'string') return payload;
   return {
     rdfData: typeof payload === 'string' ? payload : '',
-    format: artifact.summary?.format || artifact.extension || 'ttl',
+    format: artifact.summary?.[COMMON_NAMESPACE_IRIS.dcterms.format] || artifact.summary?.format || artifact.extension || 'ttl',
     timestamp: artifact.updatedAt || artifact.createdAt || ''
   };
 }
@@ -410,5 +421,84 @@ function resolveRdfFormatDetails(format) {
     format: descriptor.id,
     mediaType: descriptor.mimeType,
     extension: extension.ok ? extension.value : descriptor.extensions[0]
+  };
+}
+
+function resolveJsonLdFormatDetails() {
+  const result = getMimeTypeForFormatKey(JSON_LD_FORMAT_KEY);
+  const descriptor = result.ok ? result.value : getMimeTypeForFormatKey('json').value;
+  const extension = getPreferredExtensionForMimeType(descriptor.mimeType);
+  return {
+    mediaType: descriptor.mimeType,
+    extension: extension.ok ? extension.value : descriptor.extensions[0]
+  };
+}
+
+function createTomSourceMetadata() {
+  return { [COMMON_NAMESPACE_IRIS.okea.appId]: TOM_APP_ID };
+}
+
+function createJsonLdStringLiteral(value) {
+  return { '@value': String(value ?? ''), '@type': COMMON_NAMESPACE_IRIS.xsd.string };
+}
+
+function createJsonLdDateTimeLiteral(value) {
+  return { '@value': value, '@type': COMMON_NAMESPACE_IRIS.xsd.dateTime };
+}
+
+function convertTomSettingsToJsonLd(settings) {
+  return {
+    '@context': PROJECT_RECORD_JSONLD_CONTEXT,
+    '@type': COMMON_NAMESPACE_IRIS.okea.Setting,
+    [COMMON_NAMESPACE_IRIS.okea.appId]: TOM_APP_ID,
+    [COMMON_NAMESPACE_IRIS.okea.settingKey]: TOM_SETTINGS_KEY,
+    [COMMON_NAMESPACE_IRIS.rdf.value]: settings || {}
+  };
+}
+
+function readTomSettingsFromJsonLd(value) {
+  if (value && typeof value === 'object' && COMMON_NAMESPACE_IRIS.rdf.value in value) {
+    return value[COMMON_NAMESPACE_IRIS.rdf.value] || null;
+  }
+  return value;
+}
+
+function convertTomWorkspaceSnapshotToJsonLd(workspaceSnapshot, { timestamp = new Date().toISOString() } = {}) {
+  return {
+    '@context': PROJECT_RECORD_JSONLD_CONTEXT,
+    '@type': COMMON_NAMESPACE_IRIS.cco2.informationContentEntity,
+    [COMMON_NAMESPACE_IRIS.okea.appId]: TOM_APP_ID,
+    [COMMON_NAMESPACE_IRIS.okea.artifactKind]: TOM_WORKSPACE_ARTIFACT_KIND,
+    [COMMON_NAMESPACE_IRIS.dcterms.modified]: createJsonLdDateTimeLiteral(timestamp),
+    [COMMON_NAMESPACE_IRIS.rdf.value]: workspaceSnapshot || {}
+  };
+}
+
+function readTomWorkspaceSnapshotFromJsonLd(value) {
+  if (value && typeof value === 'object' && COMMON_NAMESPACE_IRIS.rdf.value in value) {
+    return value[COMMON_NAMESPACE_IRIS.rdf.value] || null;
+  }
+  return value || null;
+}
+
+function convertTomRdfPayloadToJsonLd(rdfRecord) {
+  return {
+    '@context': PROJECT_RECORD_JSONLD_CONTEXT,
+    '@type': COMMON_NAMESPACE_IRIS.cco2.informationContentEntity,
+    [COMMON_NAMESPACE_IRIS.okea.appId]: TOM_APP_ID,
+    [COMMON_NAMESPACE_IRIS.okea.artifactKind]: TOM_RDF_ARTIFACT_KIND,
+    [COMMON_NAMESPACE_IRIS.dcterms.format]: rdfRecord.format,
+    [COMMON_NAMESPACE_IRIS.dcterms.modified]: createJsonLdDateTimeLiteral(rdfRecord.timestamp || new Date().toISOString()),
+    [COMMON_NAMESPACE_IRIS.rdf.value]: createJsonLdStringLiteral(rdfRecord.rdfData || '')
+  };
+}
+
+function readTomRdfPayloadFromJsonLd(value) {
+  if (!value || typeof value !== 'object' || !(COMMON_NAMESPACE_IRIS.rdf.value in value)) return null;
+  const textValue = value[COMMON_NAMESPACE_IRIS.rdf.value];
+  return {
+    rdfData: textValue && typeof textValue === 'object' && '@value' in textValue ? textValue['@value'] : String(textValue ?? ''),
+    format: value[COMMON_NAMESPACE_IRIS.dcterms.format] || 'turtle',
+    timestamp: value[COMMON_NAMESPACE_IRIS.dcterms.modified]?.['@value'] || ''
   };
 }

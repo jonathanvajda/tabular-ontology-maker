@@ -1,4 +1,7 @@
 import {
+  COMMON_NAMESPACE_IRIS
+} from '../docs/app/shared/namespace-registry/index.js';
+import {
   readLatestTomSavedSession,
   readTomOntologySettings,
   migrateLegacyTomSessionToProjectStorage,
@@ -178,6 +181,14 @@ describe('TOM shared project storage adapter', () => {
       iri: 'http://example.org#Ontology',
       label: 'Ontology'
     });
+    const stores = await openTomProjectStores();
+    const stored = await stores.settings.readSettingValue('ontologySettings');
+    expect(stored['@type']).toBe(COMMON_NAMESPACE_IRIS.okea.Setting);
+    expect(stored[COMMON_NAMESPACE_IRIS.okea.settingKey]).toBe('ontologySettings');
+    expect(stored[COMMON_NAMESPACE_IRIS.rdf.value]).toEqual({
+      iri: 'http://example.org#Ontology',
+      label: 'Ontology'
+    });
   });
 
   test('stores TOM sessions as workspace and RDF project artifacts', async () => {
@@ -204,6 +215,21 @@ describe('TOM shared project storage adapter', () => {
         rdfData: '@prefix ex: <http://example.org/> .',
         format: 'ttl'
       }
+    });
+    const stores = await openTomProjectStores();
+    const workspaceArtifacts = await stores.artifacts.listProjectArtifacts('project:default-workspace', {
+      artifactKind: 'tom-workspace-snapshot'
+    });
+    const rdfArtifacts = await stores.artifacts.listProjectArtifacts('project:default-workspace', {
+      artifactKind: 'ontology-rdf'
+    });
+    expect(workspaceArtifacts[0].payload[COMMON_NAMESPACE_IRIS.rdf.value].rows).toEqual([
+      ['http://example.org#A', 'A']
+    ]);
+    expect(rdfArtifacts[0].payload[COMMON_NAMESPACE_IRIS.dcterms.format]).toBe('ttl');
+    expect(rdfArtifacts[0].payload[COMMON_NAMESPACE_IRIS.rdf.value]).toEqual({
+      '@value': '@prefix ex: <http://example.org/> .',
+      '@type': COMMON_NAMESPACE_IRIS.xsd.string
     });
   });
 
