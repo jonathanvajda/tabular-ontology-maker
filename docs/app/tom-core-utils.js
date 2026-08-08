@@ -1,49 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
 import { COMMON_NAMESPACE_IRIS } from './shared/namespace-registry/namespace-registry.js';
+import {
+  getLocalDateParts,
+  normalizeStringToPascalCase
+} from './shared/normalization-utils/index.js';
 import { serializeDelimitedRows } from './shared/tabular-io/index.js';
-
-
-  function getCurrentDateParts(date) {
-    const now = date instanceof Date ? date : new Date();
-    return {
-      year: now.getFullYear(),
-      month: String(now.getMonth() + 1).padStart(2, "0"),
-      day: String(now.getDate()).padStart(2, "0"),
-    };
-  }
-
-  function toCamelCase(str) {
-    return String(str || "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+(.)/g, function (_, chr) {
-        return chr.toUpperCase();
-      });
-  }
-
-  function toPascalCase(str) {
-    return String(str || "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+(.)/g, function (_, chr) {
-        return chr.toUpperCase();
-      })
-      .replace(/^./, function (chr) {
-        return chr.toUpperCase();
-      });
-  }
-
-  function toSnakeCase(str) {
-    return String(str || "")
-      .trim()
-      .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-      .replace(/[^a-zA-Z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .toLowerCase();
-  }
 
   function generateOntologySettings(options) {
     const opts = options || {};
-    const dateParts = opts.dateParts || getCurrentDateParts();
+    const dateParts = opts.dateParts || getLocalDateParts();
     const base = opts.base || "http://example.org";
     const label = opts.label || "Example Ontology";
     const creator = opts.creator || "Barry Guarino";
@@ -54,7 +20,7 @@ import { serializeDelimitedRows } from './shared/tabular-io/index.js';
     const opaqueDigits = opts.opaqueDigits == null ? 6 : opts.opaqueDigits;
     const opaqueStart = opts.opaqueStart == null ? 1 : opts.opaqueStart;
     const readableCase = opts.readableCase || "PascalCase";
-    const normalizedLabel = toPascalCase(label);
+    const normalizedLabel = normalizeStringToPascalCase(label);
 
     return {
       iri: `${base}${delimiter}${normalizedLabel}`,
@@ -177,10 +143,6 @@ import { serializeDelimitedRows } from './shared/tabular-io/index.js';
   }
 
 const api = {
-  getCurrentDateParts,
-  toCamelCase,
-  toPascalCase,
-  toSnakeCase,
   generateOntologySettings,
   normalizeTomTableRows,
   buildCsvExportRows,
@@ -189,10 +151,6 @@ const api = {
 };
 
 export {
-  getCurrentDateParts,
-  toCamelCase,
-  toPascalCase,
-  toSnakeCase,
   generateOntologySettings,
   normalizeTomTableRows,
   buildCsvExportRows,

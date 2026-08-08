@@ -39,6 +39,11 @@ import {
 } from './shared/rdf-io/index.js';
 import { isBlankNodeTerm, normalizeIriToken } from './shared/ontology-utils/index.js';
 import {
+  getLocalDateParts,
+  normalizeStringToCase,
+  normalizeStringToPascalCase
+} from './shared/normalization-utils/index.js';
+import {
   deleteTomOntologySettings,
   hasTomSavedSession,
   readLatestTomSavedSession,
@@ -378,8 +383,8 @@ function updateOntologyPreview() {
     const base = (settings.base || '').trim() || 'http://example.org';
     const label = (document.getElementById("ontology-label-input").value || '').trim() || 'Example Ontology';
     const delimiter = settings.delimiter || getSelectedDelimiter();
-    const { year, month, day } = getCurrentDateParts();
-    const normalizedLabel = toPascalCase(label);
+    const { year, month, day } = getLocalDateParts();
+    const normalizedLabel = normalizeStringToPascalCase(label);
     const entityPreview = settings.iriMode === 'readable'
       ? buildReadableIri('Example Entity', settings, new Set())
       : buildOpaqueIri(settings.opaqueStart || 1, settings);
@@ -417,12 +422,12 @@ function generateOntologySettings(
       opaqueDigits,
       opaqueStart,
       readableCase,
-      dateParts: getCurrentDateParts()
+      dateParts: getLocalDateParts()
     });
   }
 
-  const { year, month, day } = getCurrentDateParts();
-  const normalizedLabel = toPascalCase(label);
+  const { year, month, day } = getLocalDateParts();
+  const normalizedLabel = normalizeStringToPascalCase(label);
 
   return {
     iri: `${base}${delimiter}${normalizedLabel}`,
@@ -554,24 +559,9 @@ function zeroPad(n, width) {
   return s.length >= width ? s : '0'.repeat(width - s.length) + s;
 }
 
-function toSnakeCase(str) {
-  if (CoreUtils.toSnakeCase) return CoreUtils.toSnakeCase(str);
-  return String(str || '')
-    .trim()
-    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .toLowerCase();
-}
-
 function fromLabelWithCase(label, caseStyle) {
   const raw = String(label || '').trim();
-  switch (caseStyle) {
-    case 'camelCase':   return toCamelCase(raw);
-    case 'snake_case':  return toSnakeCase(raw);
-    case 'PascalCase':
-    default:            return toPascalCase(raw);
-  }
+  return normalizeStringToCase(raw, caseStyle, { fallbackStyle: 'PascalCase' });
 }
 
 // Returns { base, delimiter } where base excludes trailing delimiter
@@ -1701,38 +1691,6 @@ async function reloadSavedSession() {
     console.error('[reloadSavedSession] failed:', e);
     showToast('Failed to reload prior session - see console', 'error');
   }
-}
-
-/**
- * Gets the current date parts (year, month, day) as zero-padded strings.
- * @returns 
- */
-function getCurrentDateParts() {
-  return (CoreUtils.getCurrentDateParts || (() => {
-    const now = new Date();
-    return {
-      year: now.getFullYear(),
-      month: String(now.getMonth() + 1).padStart(2, '0'),
-      day: String(now.getDate()).padStart(2, '0')
-    };
-  }))();
-}
-
-// This is called by generateOntologySettings to get the camelCase version of the label
-function toCamelCase(str) {
-  if (CoreUtils.toCamelCase) return CoreUtils.toCamelCase(str);
-  return str
-    .toLowerCase()
-    .replace(/[^a-z0-9]+(.)/g, (_, chr) => chr.toUpperCase());
-}
-
-// Converts a string to PascalCase (e.g., "example term" -> "ExampleTerm")
-function toPascalCase(str) {
-  if (CoreUtils.toPascalCase) return CoreUtils.toPascalCase(str);
-  return str
-    .toLowerCase()
-    .replace(/[^a-z0-9]+(.)/g, (_, chr) => chr.toUpperCase()) // handle word boundaries
-    .replace(/^./, chr => chr.toUpperCase()); // capitalize first letter
 }
 
 /*

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
+import { normalizeStringToSnakeCase } from './shared/normalization-utils/index.js';
 
 const TOM = (window.TOM = window.TOM || {});
 const GDG = window.GlideDataGrid || {};
@@ -80,11 +81,7 @@ function canRenderPortal() {
 }
 
 function slugify(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "") || "column";
+  return normalizeStringToSnakeCase(value) || "column";
 }
 
 function createEmptySelection() {
