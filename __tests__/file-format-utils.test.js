@@ -6,7 +6,7 @@ import {
   getInputKindForExtension,
   guessRdfMimeTypeFromText,
 } from "../docs/app/shared/format-registry/index.js";
-import { isValidOntology } from "../docs/app/tom-core-utils.js";
+import { classifyOntologyInput } from "../docs/app/shared/ontology-utils/index.js";
 
 describe("file and media type helpers", () => {
   test("shared getFilenameExtension handles common and edge-case filenames", () => {
@@ -38,11 +38,11 @@ describe("file and media type helpers", () => {
     expect(guessRdfMimeTypeFromText('plain text')).toBe("text/plain");
   });
 
-  test("isValidOntology accepts Turtle, RDF/XML, and JSON-LD markers", () => {
-    expect(isValidOntology('@prefix ex: <http://example.org/> .')).toBe(true);
-    expect(isValidOntology('<rdf:RDF></rdf:RDF>')).toBe(true);
-    expect(isValidOntology('{ "@context": { "ex": "http://example.org/" } }')).toBe(true);
-    expect(isValidOntology("")).toBe(false);
-    expect(isValidOntology("just some text")).toBe(false);
+  test("shared classifyOntologyInput accepts Turtle, RDF/XML, and JSON-LD markers", () => {
+    expect(classifyOntologyInput({ text: '@prefix ex: <http://example.org/> .' }).isOntologyCandidate).toBe(true);
+    expect(classifyOntologyInput({ text: '<rdf:RDF></rdf:RDF>' }).isOntologyCandidate).toBe(true);
+    expect(classifyOntologyInput({ text: '{ "@context": { "ex": "http://example.org/" } }' }).isOntologyCandidate).toBe(true);
+    expect(classifyOntologyInput({ text: "" }).isOntologyCandidate).toBe(false);
+    expect(classifyOntologyInput({ text: "just some text" }).isOntologyCandidate).toBe(false);
   });
 });
