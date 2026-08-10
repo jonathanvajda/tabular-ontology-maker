@@ -1,43 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
-import { COMMON_NAMESPACE_IRIS } from './shared/namespace-registry/namespace-registry.js';
 import {
-  getLocalDateParts,
-  normalizeStringToPascalCase
-} from './shared/normalization-utils/index.js';
+  deriveOntologyImportTarget,
+  generateOntologySettings
+} from './shared/ontology-metadata/index.js';
 import { serializeDelimitedRows } from './shared/tabular-io/index.js';
-
-  function generateOntologySettings(options) {
-    const opts = options || {};
-    const dateParts = opts.dateParts || getLocalDateParts();
-    const base = opts.base || "http://example.org";
-    const label = opts.label || "Example Ontology";
-    const creator = opts.creator || "Barry Guarino";
-    const description = opts.description || "An example ontology";
-    const delimiter = opts.delimiter || "/";
-    const iriMode = opts.iriMode || "opaque";
-    const opaqueLeading = opts.opaqueLeading || "ont";
-    const opaqueDigits = opts.opaqueDigits == null ? 6 : opts.opaqueDigits;
-    const opaqueStart = opts.opaqueStart == null ? 1 : opts.opaqueStart;
-    const readableCase = opts.readableCase || "PascalCase";
-    const normalizedLabel = normalizeStringToPascalCase(label);
-
-    return {
-      iri: `${base}${delimiter}${normalizedLabel}`,
-      [COMMON_NAMESPACE_IRIS.owl.versionIRI]: `${base}/${dateParts.year}-${dateParts.month}-${dateParts.day}${delimiter}${normalizedLabel}`,
-      [COMMON_NAMESPACE_IRIS.owl.versionInfo]: `${dateParts.year}-${dateParts.month}-${dateParts.day}`,
-      [COMMON_NAMESPACE_IRIS.rdfs.label]: label,
-      [COMMON_NAMESPACE_IRIS.dcterms.creator]: creator,
-      [COMMON_NAMESPACE_IRIS.dcterms.description]: description,
-      iriMode,
-      opaqueLeading,
-      opaqueDigits,
-      opaqueStart,
-      readableCase,
-      delimiter,
-      base,
-    };
-  }
 
   function buildCsvExportRows(options) {
     const headers = Array.isArray(options && options.headers) ? options.headers : [];
@@ -111,35 +78,6 @@ import { serializeDelimitedRows } from './shared/tabular-io/index.js';
       newline: "\r\n",
       trailingNewline: false,
     });
-  }
-
-  function deriveOntologyImportTarget(quads, iris) {
-    const cfg = iris || {};
-    const rdfTypeIri = cfg.rdfTypeIri || COMMON_NAMESPACE_IRIS.rdf.type;
-    const owlOntologyIri = cfg.owlOntologyIri || COMMON_NAMESPACE_IRIS.owl.Ontology;
-    const owlVersionIri = cfg.owlVersionIri || COMMON_NAMESPACE_IRIS.owl.versionIRI;
-    const ontologySubjects = new Set();
-    const versionIris = new Map();
-
-    (Array.isArray(quads) ? quads : []).forEach(function (quad) {
-      const subject = quad && quad.subject && quad.subject.value;
-      const predicate = quad && quad.predicate && quad.predicate.value;
-      const object = quad && quad.object && quad.object.value;
-      if (!subject || !predicate || !object) return;
-
-      if (predicate === rdfTypeIri && object === owlOntologyIri) {
-        ontologySubjects.add(subject);
-      }
-      if (predicate === owlVersionIri) {
-        versionIris.set(subject, object);
-      }
-    });
-
-    const ontologyIri = ontologySubjects.values().next().value || null;
-    return {
-      ontologyIri,
-      importIri: ontologyIri ? versionIris.get(ontologyIri) || ontologyIri : null,
-    };
   }
 
 const api = {

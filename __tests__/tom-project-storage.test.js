@@ -175,20 +175,38 @@ describe('TOM shared project storage adapter', () => {
   });
 
   test('writes and reads ontology settings through shared project settings', async () => {
-    await writeTomOntologySettings({ iri: 'http://example.org#Ontology', label: 'Ontology' });
-
-    await expect(readTomOntologySettings()).resolves.toEqual({
+    await writeTomOntologySettings({
       iri: 'http://example.org#Ontology',
-      label: 'Ontology'
+      base: 'http://example.org',
+      label: 'Ontology',
+      creator: 'Creator',
+      contributor: ['Contributor']
+    });
+
+    await expect(readTomOntologySettings()).resolves.toMatchObject({
+      iri: 'http://example.org#Ontology',
+      base: 'http://example.org',
+      [COMMON_NAMESPACE_IRIS.rdfs.label]: 'Ontology',
+      [COMMON_NAMESPACE_IRIS.dcterms.creator]: 'Creator',
+      [COMMON_NAMESPACE_IRIS.dcterms.contributor]: ['Contributor']
     });
     const stores = await openTomProjectStores();
-    const stored = await stores.settings.readSettingValue('ontologySettings');
+    const stored = await stores.settings.readSettingValue(COMMON_NAMESPACE_IRIS.okea.OntologyMetadataProfile);
     expect(stored['@type']).toBe(COMMON_NAMESPACE_IRIS.okea.Setting);
-    expect(stored[COMMON_NAMESPACE_IRIS.okea.settingKey]).toBe('ontologySettings');
-    expect(stored[COMMON_NAMESPACE_IRIS.rdf.value]).toEqual({
-      iri: 'http://example.org#Ontology',
-      label: 'Ontology'
+    expect(stored[COMMON_NAMESPACE_IRIS.okea.settingKey]).toBe(COMMON_NAMESPACE_IRIS.okea.OntologyMetadataProfile);
+    expect(stored[COMMON_NAMESPACE_IRIS.rdf.value]).toMatchObject({
+      '@id': 'http://example.org#Ontology',
+      '@type': [COMMON_NAMESPACE_IRIS.owl.Ontology],
+      [COMMON_NAMESPACE_IRIS.dcterms.title]: [{ '@value': 'Ontology', '@language': 'en' }],
+      [COMMON_NAMESPACE_IRIS.dcterms.creator]: [{ '@value': 'Creator' }],
+      [COMMON_NAMESPACE_IRIS.dcterms.contributor]: [{ '@value': 'Contributor' }]
     });
+    expect(stored[COMMON_NAMESPACE_IRIS.rdf.value][COMMON_NAMESPACE_IRIS.okea.hasOntologyBaseIri]).toEqual([
+      { '@value': 'http://example.org', '@type': COMMON_NAMESPACE_IRIS.xsd.anyURI }
+    ]);
+    expect(stored[COMMON_NAMESPACE_IRIS.rdf.value][COMMON_NAMESPACE_IRIS.okea.hasIriPolicyModeTextValue]).toEqual([
+      { '@value': 'opaque' }
+    ]);
   });
 
   test('stores TOM sessions as workspace and RDF project artifacts', async () => {

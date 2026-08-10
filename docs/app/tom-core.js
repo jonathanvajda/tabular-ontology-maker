@@ -40,9 +40,18 @@ import {
 import { isBlankNodeTerm, normalizeIriToken } from './shared/ontology-utils/index.js';
 import {
   getLocalDateParts,
-  normalizeStringToCase,
   normalizeStringToPascalCase
 } from './shared/normalization-utils/index.js';
+import {
+  buildOpaqueOntologyIri,
+  buildReadableOntologyIri,
+  collectUsedOpaqueOntologyIriNumbers,
+  deriveOntologyImportTarget,
+  findMaxOpaqueOntologyIriNumber,
+  findNextAvailableOpaqueOntologyIriNumber,
+  generateOntologySettings,
+  writeOntologyMetadataQuads
+} from './shared/ontology-metadata/index.js';
 import {
   deleteTomOntologySettings,
   hasTomSavedSession,
@@ -386,8 +395,8 @@ function updateOntologyPreview() {
     const { year, month, day } = getLocalDateParts();
     const normalizedLabel = normalizeStringToPascalCase(label);
     const entityPreview = settings.iriMode === 'readable'
-      ? buildReadableIri('Example Entity', settings, new Set())
-      : buildOpaqueIri(settings.opaqueStart || 1, settings);
+      ? buildReadableOntologyIri('Example Entity', settings, new Set())
+      : buildOpaqueOntologyIri(settings.opaqueStart || 1, settings);
 
     document.getElementById("version-iri-preview").textContent =
       `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`;
@@ -396,54 +405,6 @@ function updateOntologyPreview() {
   } catch (e) {
     console.error("[Preview] Failed to update preview", e);
   }
-}
-
-function generateOntologySettings(
-  base = "http://example.org",
-  label = "Example Ontology",
-  creator = "Barry Guarino",
-  description = "An example ontology",
-  delimiter = "/",
-  iriMode = "opaque",                 // "opaque" | "readable"
-  opaqueLeading = "ont",
-  opaqueDigits = 6,
-  opaqueStart = 1,
-  readableCase = "PascalCase"         // "PascalCase" | "camelCase" | "snake_case"
-) {
-  if (CoreUtils.generateOntologySettings) {
-    return CoreUtils.generateOntologySettings({
-      base,
-      label,
-      creator,
-      description,
-      delimiter,
-      iriMode,
-      opaqueLeading,
-      opaqueDigits,
-      opaqueStart,
-      readableCase,
-      dateParts: getLocalDateParts()
-    });
-  }
-
-  const { year, month, day } = getLocalDateParts();
-  const normalizedLabel = normalizeStringToPascalCase(label);
-
-  return {
-    iri: `${base}${delimiter}${normalizedLabel}`,
-    [COMMON_NAMESPACE_IRIS.owl.versionIRI]: `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`,
-    [COMMON_NAMESPACE_IRIS.owl.versionInfo]: `${year}-${month}-${day}`,
-    [COMMON_NAMESPACE_IRIS.rdfs.label]: label,
-    [COMMON_NAMESPACE_IRIS.dcterms.creator]: creator,
-    [COMMON_NAMESPACE_IRIS.dcterms.description]: description,
-    iriMode,
-    opaqueLeading,
-    opaqueDigits,
-    opaqueStart,
-    readableCase,
-    delimiter,
-    base
-  };
 }
 
 function getEffectiveOntologySettings() {
@@ -545,103 +506,26 @@ async function saveOntologySettingsFromModal() {
   const opaqueStart   = +document.getElementById('opaque-start').value;
   const readableCase  = document.getElementById('readable-case').value;
 
-  const next = generateOntologySettings(
-    base, label, creator, description, delimiter,
-    iriMode, opaqueLeading, opaqueDigits, opaqueStart, readableCase
-  );
+  const next = generateOntologySettings({
+    base,
+    label,
+    creator,
+    description,
+    delimiter,
+    iriMode,
+    opaqueLeading,
+    opaqueDigits,
+    opaqueStart,
+    readableCase,
+    dateParts: getLocalDateParts()
+  });
 
   await saveOntologySettings(next);
   document.getElementById('ontology-settings-modal').style.display = 'none';
 }
 
-function zeroPad(n, width) {
-  const s = String(Math.max(0, n|0));
-  return s.length >= width ? s : '0'.repeat(width - s.length) + s;
-}
-
-function fromLabelWithCase(label, caseStyle) {
-  const raw = String(label || '').trim();
-  return normalizeStringToCase(raw, caseStyle, { fallbackStyle: 'PascalCase' });
-}
-
-// Returns { base, delimiter } where base excludes trailing delimiter
-function getBaseAndDelimiter(settings) {
-  const base = (settings.base || '').replace(/[\/#]+$/,'') || 'http://example.org';
-  const delimiter = settings.delimiter || '/';
-  return { base, delimiter };
-}
-
-
-// Scan current grid for largest opaque number already used
-function findMaxOpaqueNumber(grid, settings) {
-  const { base, delimiter } = getBaseAndDelimiter(settings);
-  const lead = settings.opaqueLeading || 'ont';
-  const digits = Math.max(1, settings.opaqueDigits || 6);
-
-  const iriPrefix = `${base}${delimiter}${lead}`;
-  const re = new RegExp('^' + iriPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d{' + digits + '})$');
-
-  let max = (settings.opaqueStart ? settings.opaqueStart - 1 : 0);
-  const rows = grid.getData();
-  for (const row of rows) {
-    const iri = row?.[0] || '';
-    const m = re.exec(String(iri));
-    if (m) {
-      const num = parseInt(m[1], 10);
-      if (Number.isFinite(num) && num > max) max = num;
-    }
-  }
-  return max;
-}
-
-function collectUsedOpaqueNumbers(grid, settings) {
-  const { base, delimiter } = getBaseAndDelimiter(settings);
-  const lead = settings.opaqueLeading || 'ont';
-  const digits = Math.max(1, settings.opaqueDigits || 6);
-  const iriPrefix = `${base}${delimiter}${lead}`;
-  const re = new RegExp('^' + iriPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d{' + digits + '})$');
-  const used = new Set();
-  const rows = grid.getData();
-
-  for (const row of rows) {
-    const iri = row?.[0] || '';
-    const m = re.exec(String(iri));
-    if (!m) continue;
-    const num = parseInt(m[1], 10);
-    if (Number.isFinite(num)) used.add(num);
-  }
-
-  return used;
-}
-
-function findNextAvailableOpaqueNumber(usedNumbers, settings, startAt) {
-  let next = Math.max(1, Number(startAt) || 1);
-  while (usedNumbers.has(next)) {
-    next += 1;
-  }
-  return next;
-}
-
-function buildOpaqueIri(nextNum, settings) {
-  const { base, delimiter } = getBaseAndDelimiter(settings);
-  const lead   = settings.opaqueLeading || 'ont';
-  const digits = Math.max(1, settings.opaqueDigits || 6);
-  return `${base}${delimiter}${lead}${zeroPad(nextNum, digits)}`;
-}
-
-function buildReadableIri(label, settings, existingIris = new Set()) {
-  const { base, delimiter } = getBaseAndDelimiter(settings);
-  const style = settings.readableCase || 'PascalCase';
-
-  let local = fromLabelWithCase(label, style) || 'Unnamed';
-  let candidate = `${base}${delimiter}${local}`;
-
-  // Ensure uniqueness within current table
-  let i = 2;
-  while (existingIris.has(candidate)) {
-    candidate = `${base}${delimiter}${local}_${i++}`;
-  }
-  return candidate;
+function readGridSubjectIris(grid) {
+  return (grid?.getData?.() || []).map((row) => row?.[0] || '');
 }
 
 
@@ -908,8 +792,11 @@ function getOntologyIRI() {
 function quadSignature(quad) {
   const s = `${quad.subject.termType}:${quad.subject.value}`;
   const p = `${quad.predicate.termType}:${quad.predicate.value}`;
-  const o = `${quad.object.termType}:${quad.object.value}`;
-  return `${s}|${p}|${o}`;
+  const oDatatype = quad.object.datatype?.value ? `^^${quad.object.datatype.value}` : '';
+  const oLanguage = quad.object.language ? `@${quad.object.language}` : '';
+  const o = `${quad.object.termType}:${quad.object.value}${oDatatype}${oLanguage}`;
+  const g = `${quad.graph?.termType || 'DefaultGraph'}:${quad.graph?.value || ''}`;
+  return `${s}|${p}|${o}|${g}`;
 }
 
 function pushUniqueQuad(quads, seen, quad) {
@@ -975,45 +862,11 @@ function buildOntologyExportQuads(rows) {
   const quads = [];
   const seen = new Set();
   const settings = getOntologySettings();
-  const ontologyIRI = settings["iri"];
   const namedNode = N3.DataFactory.namedNode;
   const literal = N3.DataFactory.literal;
 
-  pushUniqueQuad(quads, seen,
-    N3.DataFactory.quad(
-      namedNode(ontologyIRI),
-      namedNode(COMMON_NAMESPACE_IRIS.rdf.type),
-      namedNode(COMMON_NAMESPACE_IRIS.owl.Ontology)
-    )
-  );
-
-  const resolvePredicate = (k) => {
-    return resolveNamedNodeIri(k);
-  };
-
-  for (const [key, value] of Object.entries(settings)) {
-    if (key === 'iri' || key === 'owlImportsLocal') continue;
-    if (key === COMMON_NAMESPACE_IRIS.owl.imports && Array.isArray(value)) {
-      for (const importIRI of value) {
-        pushUniqueQuad(quads, seen, N3.DataFactory.quad(
-          namedNode(ontologyIRI),
-          namedNode(COMMON_NAMESPACE_IRIS.owl.imports),
-          namedNode(importIRI)
-        ));
-      }
-      continue;
-    }
-
-    const pred = resolvePredicate(key);
-    const isScalar = ['string', 'number', 'boolean'].includes(typeof value);
-    if (pred && isScalar) {
-      pushUniqueQuad(quads, seen, N3.DataFactory.quad(
-        namedNode(ontologyIRI),
-        namedNode(pred),
-        literal(String(value))
-      ));
-    }
-  }
+  writeOntologyMetadataQuads(settings)
+    .forEach((metadataQuad) => pushUniqueQuad(quads, seen, metadataQuad));
 
   rows.forEach((row) => {
     const [subject, label, type, definition, isAObject, isCuratedInOntology] = row;
@@ -2022,11 +1875,11 @@ function attachGridHooks() {
       const mode = s.iriMode || 'opaque';
 
       if (mode === 'opaque') {
-        let maxNum = findMaxOpaqueNumber(gridInstance, s);
+        let maxNum = findMaxOpaqueOntologyIriNumber(readGridSubjectIris(gridInstance), s);
         for (let r = 0; r < amount; r++) {
           const rowIndex = index + r;
           maxNum += 1;
-          const iri = buildOpaqueIri(maxNum, s);
+          const iri = buildOpaqueOntologyIri(maxNum, s);
           gridInstance.setDataAtCell(rowIndex, 0, iri); // col 0 = IRI
         }
       } else {
@@ -2064,14 +1917,15 @@ function attachGridHooks() {
           if (!label) continue;
 
           // Rebuild if IRI is blank OR was previously auto-generated (matches our base+delimiter)
-          const { base, delimiter } = getBaseAndDelimiter(s);
+          const base = String(s.base || '').replace(/[\/#]+$/, '') || 'http://example.org';
+          const delimiter = s.delimiter || '/';
           const looksAuto = currentIri.startsWith(`${base}${delimiter}`);
 
           if (!currentIri || looksAuto) {
             // Temporarily exclude our own current IRI to avoid self-collision logic
             if (currentIri) allIris.delete(currentIri);
 
-            const iri = buildReadableIri(label, s, allIris);
+            const iri = buildReadableOntologyIri(label, s, allIris);
             gridInstance.setDataAtCell(row, 0, iri);
 
             allIris.add(iri); // reserve
@@ -2110,13 +1964,13 @@ function backfillIris() {
 
     if (mode === 'opaque') {
       const startAt = Math.max(1, s.opaqueStart || 1);
-      const usedOpaqueNumbers = collectUsedOpaqueNumbers(gridInstance, s);
+      const usedOpaqueNumbers = collectUsedOpaqueOntologyIriNumbers(readGridSubjectIris(gridInstance), s);
 
       for (let r = 0; r < total; r++) {
         const iri = String(gridInstance.getDataAtCell(r, 0) || '').trim();
         if (!iri) {
-          const next = findNextAvailableOpaqueNumber(usedOpaqueNumbers, s, startAt);
-          const newIri = buildOpaqueIri(next, s);
+          const next = findNextAvailableOpaqueOntologyIriNumber(usedOpaqueNumbers, s, startAt);
+          const newIri = buildOpaqueOntologyIri(next, s);
           gridInstance.setDataAtCell(r, 0, newIri);
           existing.add(newIri);
           usedOpaqueNumbers.add(next);
@@ -2130,7 +1984,7 @@ function backfillIris() {
         if (!iri) {
           const label = String(gridInstance.getDataAtCell(r, 1) || '').trim();
           if (!label) { skipped++; continue; }
-          const newIri = buildReadableIri(label, s, existing);
+          const newIri = buildReadableOntologyIri(label, s, existing);
           gridInstance.setDataAtCell(r, 0, newIri);
           existing.add(newIri);
           filled++;
@@ -3161,41 +3015,6 @@ async function parseOntologyData(file) {
   // Browser file I/O stops here; RDF parser selection belongs to the RDF parsing cycle.
   const fileContent = await readFileAsText(file);
   return parseOntologyText(fileContent, file.name);
-}
-
-function deriveOntologyImportTarget(quads) {
-  if (CoreUtils.deriveOntologyImportTarget) {
-    return CoreUtils.deriveOntologyImportTarget(quads, {
-      rdfTypeIri: COMMON_NAMESPACE_IRIS.rdf.type,
-      owlOntologyIri: COMMON_NAMESPACE_IRIS.owl.Ontology,
-      owlVersionIri: COMMON_NAMESPACE_IRIS.owl.versionIRI
-    });
-  }
-
-  const ontologySubjects = new Set();
-  const versionIris = new Map();
-
-  for (const quad of quads || []) {
-    const subject = quad.subject?.value;
-    const predicate = quad.predicate?.value;
-    const object = quad.object?.value;
-    if (!subject || !predicate || !object) continue;
-
-    if (predicate === COMMON_NAMESPACE_IRIS.rdf.type && object === COMMON_NAMESPACE_IRIS.owl.Ontology) {
-      ontologySubjects.add(subject);
-    }
-    if (predicate === COMMON_NAMESPACE_IRIS.owl.versionIRI) {
-      versionIris.set(subject, object);
-    }
-  }
-
-  const ontologyIri = ontologySubjects.values().next().value || null;
-  const importIri = ontologyIri ? (versionIris.get(ontologyIri) || ontologyIri) : null;
-
-  return {
-    ontologyIri,
-    importIri
-  };
 }
 
 /**
