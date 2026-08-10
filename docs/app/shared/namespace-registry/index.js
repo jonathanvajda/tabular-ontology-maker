@@ -30,12 +30,6 @@ export {
 } from './rdf-prefixes.js';
 
 export {
-  extractSparqlPrefixesFromText,
-  formatSparqlPrefixDeclarations,
-  prependSparqlPrefixes
-} from './sparql-prefixes.js';
-
-export {
   createN3WriterOptionsWithPrefixes,
   selectPrefixesUsedByRdfTerms,
   applyPrefixesToRdflibStore

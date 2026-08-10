@@ -17,6 +17,11 @@ import {
   getMimeTypeForFormatKey,
   getPreferredExtensionForMimeType
 } from './shared/format-registry/index.js';
+import {
+  ONTOLOGY_METADATA_PROFILE_SETTING_KEY,
+  createOntologySettingsViewFromMetadataRecord,
+  normalizeOntologyMetadataRecord
+} from './shared/ontology-metadata/index.js';
 
 const TOM_LEGACY_DB_NAME = 'TabularOntologyDB';
 const TOM_LEGACY_RDF_STORE = 'rdfStore';
@@ -27,7 +32,8 @@ const TOM_APP_ID = 'tabular-ontology-maker';
 const TOM_PROJECT_LABEL = 'Default Cross-App Workspace';
 const TOM_WORKSPACE_ARTIFACT_KIND = 'tom-workspace-snapshot';
 const TOM_RDF_ARTIFACT_KIND = 'ontology-rdf';
-const TOM_SETTINGS_KEY = 'ontologySettings';
+const TOM_LEGACY_SETTINGS_KEY = 'ontologySettings';
+const TOM_SETTINGS_KEY = ONTOLOGY_METADATA_PROFILE_SETTING_KEY;
 const JSON_LD_FORMAT_KEY = 'jsonLd';
 
 let portfolioPromise = null;
@@ -74,6 +80,13 @@ export async function readTomOntologySettings() {
   const stores = await openTomProjectStores();
   const sharedValue = await stores.settings.readSettingValue(TOM_SETTINGS_KEY, null);
   if (sharedValue) return readTomSettingsFromJsonLd(sharedValue);
+  const legacySharedValue = await stores.settings.readSettingValue(TOM_LEGACY_SETTINGS_KEY, null);
+  if (legacySharedValue) {
+    const migrated = readTomSettingsFromJsonLd(legacySharedValue);
+    await writeTomOntologySettings(migrated, { migratedFromLegacy: true });
+    await stores.settings.deleteSettingRecord(TOM_LEGACY_SETTINGS_KEY);
+    return migrated;
+  }
   const legacy = await readLegacyOntologySettings();
   if (!legacy) return null;
   await writeTomOntologySettings(legacy, { migratedFromLegacy: true });
@@ -89,10 +102,11 @@ export async function readTomOntologySettings() {
  */
 export async function writeTomOntologySettings(settings, { migratedFromLegacy = false } = {}) {
   const stores = await openTomProjectStores();
+  const metadataRecord = normalizeOntologyMetadataRecord(settings);
   await stores.settings.storeSettingRecord({
     scope: DEFAULT_PROJECT_PORTFOLIO_PROJECT_ID,
     key: TOM_SETTINGS_KEY,
-    value: convertTomSettingsToJsonLd(settings),
+    value: convertTomSettingsToJsonLd(metadataRecord),
     appId: TOM_APP_ID,
     metadata: migratedFromLegacy
       ? {
@@ -101,7 +115,7 @@ export async function writeTomOntologySettings(settings, { migratedFromLegacy = 
       }
       : {}
   });
-  return settings;
+  return createOntologySettingsViewFromMetadataRecord(metadataRecord);
 }
 
 /**
@@ -111,7 +125,9 @@ export async function writeTomOntologySettings(settings, { migratedFromLegacy = 
  */
 export async function deleteTomOntologySettings() {
   const stores = await openTomProjectStores();
-  return stores.settings.deleteSettingRecord(TOM_SETTINGS_KEY);
+  const deleted = await stores.settings.deleteSettingRecord(TOM_SETTINGS_KEY);
+  await stores.settings.deleteSettingRecord(TOM_LEGACY_SETTINGS_KEY);
+  return deleted;
 }
 
 /**
@@ -362,7 +378,7 @@ async function readLegacyOntologySettings() {
   const status = await inspectLegacyIndexedDbDatabase(TOM_LEGACY_DB_NAME);
   if (!status.exists) return null;
   const rows = await safeReadLegacyRows(TOM_LEGACY_SETTINGS_STORE);
-  const record = rows.find((row) => row?.key === TOM_SETTINGS_KEY);
+  const record = rows.find((row) => row?.key === TOM_LEGACY_SETTINGS_KEY || row?.key === TOM_SETTINGS_KEY);
   return record?.value || null;
 }
 
@@ -447,20 +463,21 @@ function createJsonLdDateTimeLiteral(value) {
 }
 
 function convertTomSettingsToJsonLd(settings) {
+  const metadataRecord = normalizeOntologyMetadataRecord(settings);
   return {
     '@context': PROJECT_RECORD_JSONLD_CONTEXT,
     '@type': COMMON_NAMESPACE_IRIS.okea.Setting,
     [COMMON_NAMESPACE_IRIS.okea.appId]: TOM_APP_ID,
     [COMMON_NAMESPACE_IRIS.okea.settingKey]: TOM_SETTINGS_KEY,
-    [COMMON_NAMESPACE_IRIS.rdf.value]: settings || {}
+    [COMMON_NAMESPACE_IRIS.rdf.value]: metadataRecord
   };
 }
 
 function readTomSettingsFromJsonLd(value) {
   if (value && typeof value === 'object' && COMMON_NAMESPACE_IRIS.rdf.value in value) {
-    return value[COMMON_NAMESPACE_IRIS.rdf.value] || null;
+    return createOntologySettingsViewFromMetadataRecord(normalizeOntologyMetadataRecord(value[COMMON_NAMESPACE_IRIS.rdf.value])) || null;
   }
-  return value;
+  return createOntologySettingsViewFromMetadataRecord(normalizeOntologyMetadataRecord(value)) || value;
 }
 
 function convertTomWorkspaceSnapshotToJsonLd(workspaceSnapshot, { timestamp = new Date().toISOString() } = {}) {
