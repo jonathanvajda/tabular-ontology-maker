@@ -204,6 +204,14 @@ export const SUPPORTED_MIME_DESCRIPTORS = Object.freeze({
     extensions: ['html', 'htm'],
     aliases: ['html', 'htm', 'text/html']
   }),
+  yaml: defineDescriptor({
+    id: 'yaml',
+    mimeType: 'text/yaml',
+    label: 'YAML',
+    category: 'data',
+    extensions: ['yaml', 'yml'],
+    aliases: ['yaml', 'yml', 'text/yaml', 'application/yaml', 'application/x-yaml']
+  }),
   json: defineDescriptor({
     id: 'json',
     mimeType: 'application/json',
