@@ -60,6 +60,7 @@ import {
   storeTomAuthoringSession,
   writeTomOntologySettings
 } from './tom-project-storage.js';
+import { renderToastNotification } from './shared/ui-feedback/index.js';
 import * as CoreUtils from './tom-core-utils.js';
 import AxiomBuilder from './tom-axiom-builder.js';
 import * as FeatureUtils from './tom-feature-utils.js';
@@ -3469,23 +3470,13 @@ function mergeTableData(currentRows, newRows, mode) {
  * @param {*} duration 
  */
 function showToast(message, type = "success", duration = 3000) {
-  try {
-    const container = document.getElementById("toast-container");
-    const toast = document.createElement("div");
-
-    toast.classList.add("toast", type);
-    toast.textContent = message;
-
-    container.appendChild(toast);
-    setTimeout(() => toast.classList.add("show"), 200);
-
-    setTimeout(() => {
-      toast.classList.remove("show");
-      setTimeout(() => container.removeChild(toast), 1000);
-    }, duration);
-  } catch (error) {
-    console.error("Toast error:", error);
-  }
+  const result = renderToastNotification({
+    message,
+    severity: type,
+    timeoutMs: duration,
+    containerId: 'toast-container'
+  });
+  if (!result.ok) console.error("Toast error:", result.error);
 }
 
 // Attach event listener to the "Save to Database" button
