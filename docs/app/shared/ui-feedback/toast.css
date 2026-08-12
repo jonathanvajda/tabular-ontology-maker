@@ -1,0 +1,76 @@
+/*
+ * Shared toast notification styles.
+ *
+ * These selectors are intentionally not app-scoped. Toast notifications are a
+ * cross-app UI feedback primitive, so apps should converge on this class
+ * contract rather than carrying app-specific variants such as sviz-toast.
+ */
+
+#toast-container,
+.toast-region {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 9999;
+  max-width: min(24rem, calc(100vw - 2rem));
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  min-width: min(18rem, calc(100vw - 2rem));
+  max-width: 24rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--ont-border, rgba(0, 0, 0, 0.12));
+  border-left-width: 6px;
+  border-radius: 8px;
+  background: var(--ont-panel-bg, #ffffff);
+  color: var(--ont-text, #111827);
+  box-shadow: var(--ont-shadow-lg, 0 10px 30px rgba(0, 0, 0, 0.14));
+  font: 0.95rem/1.35 var(--ont-font-body, system-ui, sans-serif);
+  pointer-events: auto;
+}
+
+.toast--info {
+  border-left-color: var(--ont-info, #2563eb);
+}
+
+.toast--success {
+  border-left-color: var(--ont-success, #15803d);
+}
+
+.toast--warning {
+  border-left-color: var(--ont-warning, #d97706);
+}
+
+.toast--error {
+  border-left-color: var(--ont-danger, #dc2626);
+}
+
+.toast:focus-visible {
+  outline: 2px solid var(--ont-focus, #2563eb);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .toast {
+    animation: toast-enter 0.18s ease-out;
+  }
+}
+
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.375rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
