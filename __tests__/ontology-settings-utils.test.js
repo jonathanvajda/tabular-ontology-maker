@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Jonathan Vajda
 
 import {
+  createOntologySettingsViewFromMetadataRecord,
   generateOntologySettings,
 } from "../docs/app/tom-core-utils.js";
 import { COMMON_NAMESPACE_IRIS } from "../docs/app/shared/namespace-registry/namespace-registry.js";
@@ -42,12 +43,16 @@ describe("ontology settings utilities", () => {
       dateParts: { year: 2026, month: "04", day: "13" },
     });
 
-    expect(settings.iri).toBe("http://example.org#TestOntology");
-    expect(settings[COMMON_NAMESPACE_IRIS.owl.versionIRI]).toBe("http://example.org/2026-04-13#TestOntology");
-    expect(settings[COMMON_NAMESPACE_IRIS.owl.versionInfo]).toBe("2026-04-13");
-    expect(settings.opaqueLeading).toBe("ONT_");
-    expect(settings.opaqueDigits).toBe(5);
-    expect(settings.opaqueStart).toBe(42);
-    expect(settings.readableCase).toBe("snake_case");
+    expect(settings["@id"]).toBe("http://example.org#TestOntology");
+    expect(settings[COMMON_NAMESPACE_IRIS.owl.versionIRI]).toEqual([{ "@id": "http://example.org/2026-04-13#TestOntology" }]);
+    expect(settings[COMMON_NAMESPACE_IRIS.owl.versionInfo]).toEqual([{ "@value": "2026-04-13" }]);
+    expect(settings.opaqueLeading).toBeUndefined();
+
+    const view = createOntologySettingsViewFromMetadataRecord(settings);
+    expect(view.iri).toBe("http://example.org#TestOntology");
+    expect(view.opaqueLeading).toBe("ONT_");
+    expect(view.opaqueDigits).toBe(5);
+    expect(view.opaqueStart).toBe(42);
+    expect(view.readableCase).toBe("snake_case");
   });
 });

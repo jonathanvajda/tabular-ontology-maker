@@ -25,7 +25,7 @@ import {
   getPreferredExtensionForMimeType,
   getSupportedMimeTypeForFilename
 } from './shared/format-registry/mime-registry.js';
-import { guessRdfMimeTypeFromText } from './shared/format-registry/browser-file-actions.js';
+import { detectRdfMimeTypeFromText } from './shared/format-registry/rdf-content-detection.js';
 import {
   downloadTextFile,
   readFileAsArrayBuffer,
@@ -46,6 +46,7 @@ import {
   buildOpaqueOntologyIri,
   buildReadableOntologyIri,
   collectUsedOpaqueOntologyIriNumbers,
+  createOntologySettingsViewFromMetadataRecord,
   deriveOntologyImportTarget,
   findMaxOpaqueOntologyIriNumber,
   findNextAvailableOpaqueOntologyIriNumber,
@@ -183,7 +184,7 @@ let vocabByLabelLC = new Map();
 async function settingsLoad() {
   SETTINGS_CACHE = await readTomOntologySettings();
   if (SETTINGS_CACHE) return SETTINGS_CACHE;
-  SETTINGS_CACHE = generateOntologySettings();
+  SETTINGS_CACHE = createOntologySettingsViewFromMetadataRecord(generateOntologySettings());
   await writeTomOntologySettings(SETTINGS_CACHE);
   return SETTINGS_CACHE;
 }
@@ -200,7 +201,7 @@ function getOntologySettings() {
   if (!SETTINGS_CACHE) {
     console.warn('[getOntologySettings] Cache empty - did you await settingsLoad() during init?');
     // Last-resort fallback to keep UI from crashing:
-    return generateOntologySettings();
+    return createOntologySettingsViewFromMetadataRecord(generateOntologySettings());
   }
   return SETTINGS_CACHE;
 }
@@ -507,7 +508,7 @@ async function saveOntologySettingsFromModal() {
   const opaqueStart   = +document.getElementById('opaque-start').value;
   const readableCase  = document.getElementById('readable-case').value;
 
-  const next = generateOntologySettings({
+  const next = createOntologySettingsViewFromMetadataRecord(generateOntologySettings({
     base,
     label,
     creator,
@@ -519,7 +520,7 @@ async function saveOntologySettingsFromModal() {
     opaqueStart,
     readableCase,
     dateParts: getLocalDateParts()
-  });
+  }));
 
   await saveOntologySettings(next);
   document.getElementById('ontology-settings-modal').style.display = 'none';
@@ -2997,9 +2998,10 @@ async function handleInsertDataSave() {
 
 async function parseOntologyText(fileContent, fileName = '') {
   const detected = getSupportedMimeTypeForFilename(fileName);
+  const detectedFromText = detectRdfMimeTypeFromText(fileContent);
   const mimeType = detected && detected.ok && detected.value.category === 'rdf'
     ? detected.value.mimeType
-    : guessRdfMimeTypeFromText(fileContent);
+    : detectedFromText.value.mimeType;
 
   if (mimeType === 'text/plain') {
     throw new Error('Unsupported ontology file format.');
@@ -3635,9 +3637,10 @@ async function setLocalImport(iri, { content, mediaType }) {
 
   // Store local cache under a separate key
   settings.owlImportsLocal = settings.owlImportsLocal || {};
+  const detected = detectRdfMimeTypeFromText(content);
   settings.owlImportsLocal[iri] = {
     content,
-    mediaType: mediaType || guessRdfMimeTypeFromText(content),
+    mediaType: mediaType || detected.value.mimeType,
     updatedAt: new Date().toISOString(),
   };
 
@@ -3672,9 +3675,10 @@ async function cacheImportedOntology({ iri, ontologyIri, content, mediaType, qua
 async function processOntologyImportFile(file, fallbackIri = null) {
   const content = await file.text();
   const detected = getSupportedMimeTypeForFilename(file.name);
+  const detectedFromText = detectRdfMimeTypeFromText(content);
   const mediaType = detected && detected.ok && detected.value.category === 'rdf'
     ? detected.value.mimeType
-    : guessRdfMimeTypeFromText(content);
+    : detectedFromText.value.mimeType;
   const quads = await parseOntologyText(content, file.name);
   const derived = deriveOntologyImportTarget(quads);
   const targetIri = derived.importIri || fallbackIri;

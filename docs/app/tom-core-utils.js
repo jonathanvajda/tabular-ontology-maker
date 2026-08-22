@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
 import {
+  createOntologySettingsViewFromMetadataRecord,
   deriveOntologyImportTarget,
   generateOntologySettings
 } from './shared/ontology-metadata/index.js';
@@ -81,6 +82,7 @@ import { serializeDelimitedRows } from './shared/tabular-io/index.js';
   }
 
 const api = {
+  createOntologySettingsViewFromMetadataRecord,
   generateOntologySettings,
   normalizeTomTableRows,
   buildCsvExportRows,
@@ -89,6 +91,7 @@ const api = {
 };
 
 export {
+  createOntologySettingsViewFromMetadataRecord,
   generateOntologySettings,
   normalizeTomTableRows,
   buildCsvExportRows,
