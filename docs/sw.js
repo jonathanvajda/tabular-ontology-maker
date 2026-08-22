@@ -33,7 +33,7 @@ const PRECACHE_MANIFEST = [
   { url: './app/shared/format-registry/index.js', revision: 'v0.2.0' },
   { url: './app/shared/format-registry/mime-registry.js', revision: 'v0.2.0' },
   { url: './app/shared/format-registry/rdf-parser-formats.js', revision: 'v0.2.0' },
-  { url: './app/shared/format-registry/browser-file-actions.js', revision: 'v0.2.0' },
+  { url: './app/shared/format-registry/rdf-content-detection.js', revision: 'v0.2.0' },
   { url: './app/shared/browser-file-io/index.js', revision: 'v0.2.0' },
   { url: './app/shared/browser-file-io/create-accept-attribute.js', revision: 'v0.2.0' },
   { url: './app/shared/browser-file-io/create-text-blob.js', revision: 'v0.2.0' },

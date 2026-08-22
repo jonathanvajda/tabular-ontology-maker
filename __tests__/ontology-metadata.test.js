@@ -26,7 +26,7 @@ describe('TOM ontology metadata wiring', () => {
       description: 'Description',
       dateParts: { year: '2026', month: '08', day: '10' }
     }));
-    expect(settings[COMMON_NAMESPACE_IRIS.owl.versionIRI]).toBe('https://example.org/2026-08-10/ExampleOntology');
+    expect(settings[COMMON_NAMESPACE_IRIS.owl.versionIRI]).toEqual([{ '@id': 'https://example.org/2026-08-10/ExampleOntology' }]);
   });
 
   test('CoreUtils exports promoted ontology import target derivation', () => {

@@ -4,7 +4,7 @@
 import {
   getFilenameExtension,
   getInputKindForExtension,
-  guessRdfMimeTypeFromText,
+  detectRdfMimeTypeFromText,
 } from "../docs/app/shared/format-registry/index.js";
 import { classifyOntologyInput } from "../docs/app/shared/ontology-utils/index.js";
 
@@ -30,12 +30,27 @@ describe("file and media type helpers", () => {
     expect(getInputKindForExtension("exe")).toBe("unsupported");
   });
 
-  test("shared guessRdfMimeTypeFromText recognizes JSON-LD before Turtle-like punctuation", () => {
-    expect(guessRdfMimeTypeFromText('{ "@context": { "ex": "http://example.org/" }, "@id": "ex:test" }')).toBe("application/ld+json");
-    expect(guessRdfMimeTypeFromText('@prefix ex: <http://example.org/> .')).toBe("text/turtle");
-    expect(guessRdfMimeTypeFromText('<rdf:RDF></rdf:RDF>')).toBe("application/rdf+xml");
-    expect(guessRdfMimeTypeFromText('<http://ex/s> <http://ex/p> <http://ex/o> .')).toBe("application/n-triples");
-    expect(guessRdfMimeTypeFromText('plain text')).toBe("text/plain");
+  test("shared detectRdfMimeTypeFromText recognizes JSON-LD before Turtle-like punctuation", () => {
+    expect(detectRdfMimeTypeFromText('{ "@context": { "ex": "http://example.org/" }, "@id": "ex:test" }')).toMatchObject({
+      ok: true,
+      value: { mimeType: "application/ld+json" }
+    });
+    expect(detectRdfMimeTypeFromText('@prefix ex: <http://example.org/> .')).toMatchObject({
+      ok: true,
+      value: { mimeType: "text/turtle" }
+    });
+    expect(detectRdfMimeTypeFromText('<rdf:RDF></rdf:RDF>')).toMatchObject({
+      ok: true,
+      value: { mimeType: "application/rdf+xml" }
+    });
+    expect(detectRdfMimeTypeFromText('<http://ex/s> <http://ex/p> <http://ex/o> .')).toMatchObject({
+      ok: true,
+      value: { mimeType: "application/n-triples" }
+    });
+    expect(detectRdfMimeTypeFromText('plain text')).toMatchObject({
+      ok: true,
+      value: { mimeType: "text/plain" }
+    });
   });
 
   test("shared classifyOntologyInput accepts Turtle, RDF/XML, and JSON-LD markers", () => {
