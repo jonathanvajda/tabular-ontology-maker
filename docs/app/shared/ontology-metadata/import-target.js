@@ -42,4 +42,3 @@ export function deriveOntologyImportTarget(quads, iris = {}) {
     importIri: ontologyIri ? versionIris.get(ontologyIri) || ontologyIri : null
   };
 }
-

@@ -1,4 +1,4 @@
-import { COMMON_NAMESPACE_IRIS } from '../namespace-registry/index.js';
+import { COMMON_NAMESPACE_IRIS } from '../namespace-registry/namespace-registry.js';
 import { createRdfDataset, datasetToQuads, defaultGraph, literal, namedNode, quad } from './rdf-model.js';
 
 const RDF_XML_MIME = 'application/rdf+xml';

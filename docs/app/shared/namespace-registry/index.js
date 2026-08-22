@@ -12,7 +12,8 @@ export {
   namespaceIriMapFromRegistry,
   namespacePrefixMapFromRegistry,
   namespaceToPrefixMap,
-  iriForNamespaceId
+  iriForNamespaceId,
+  curieForNamespaceId
 } from './namespace-registry.js';
 
 export {

@@ -291,6 +291,20 @@ export function getFilenameExtension(fileName) {
 }
 
 /**
+ * Lists supported MIME descriptors, optionally filtered by category.
+ *
+ * @param {{category?: FormatCategory}} [options] - Optional descriptor filter.
+ * @returns {ReadonlyArray<MimeDescriptor>} Frozen descriptor objects from the
+ * registry.
+ */
+export function listSupportedMimeDescriptors(options = {}) {
+  const category = options.category || '';
+  return category
+    ? Object.freeze(FORMAT_LIST.filter((descriptor) => descriptor.category === category))
+    : FORMAT_LIST;
+}
+
+/**
  * Finds the supported MIME descriptor implied by a filename extension.
  *
  * This function does not know or enforce a file picker's accepted extensions.

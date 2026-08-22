@@ -7,7 +7,7 @@
  * boundaries.
  */
 
-import { COMMON_NAMESPACE_IRIS } from '../namespace-registry/index.js';
+import { COMMON_NAMESPACE_IRIS } from '../namespace-registry/namespace-registry.js';
 
 let blankNodeCounter = 0;
 

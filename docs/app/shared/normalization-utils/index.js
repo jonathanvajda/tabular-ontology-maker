@@ -1,6 +1,7 @@
 export {
   buildLabelFromWords,
   detectStringCaseStyle,
+  NORMALIZATION_CASE_STYLES,
   normalizeStringToAsciiSlug,
   normalizeStringToCamelCase,
   normalizeStringToCase,

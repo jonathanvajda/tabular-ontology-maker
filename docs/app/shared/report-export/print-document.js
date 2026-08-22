@@ -17,7 +17,7 @@ export function openPrintableHtmlDocument(html, {
   features = 'width=1200,height=800',
   closeAfterPrint = true
 } = {}) {
-  if (!html) throw createReportValidationError('openPrintableHtmlDocument expected HTML content.');
+  if (!String(html ?? '').trim()) throw createReportValidationError('openPrintableHtmlDocument expected HTML content.');
   if (!windowRef || typeof windowRef.open !== 'function') {
     throw new ReportExportError('openPrintableHtmlDocument expected a browser window object.', {
       code: 'PRINT_WINDOW_UNAVAILABLE'

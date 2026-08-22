@@ -185,4 +185,3 @@ function valueToDisplayValues(value) {
     return { value: String(item ?? ''), type: 'literal', language: '' };
   }).filter((item) => item.value);
 }
-
