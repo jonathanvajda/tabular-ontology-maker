@@ -1,4 +1,4 @@
-import { COMMON_NAMESPACE_IRIS } from '../namespace-registry/index.js';
+import { COMMON_NAMESPACE_IRIS } from '../namespace-registry/namespace-registry.js';
 import { datasetToQuads, literal, namedNode, quad } from './rdf-model.js';
 import { parseRdfTextWithN3, serializeRdfDatasetWithN3 } from './n3-adapter.js';
 import { parseJsonLdTextToRdfDataset, serializeRdfDatasetWithJsonLd } from './jsonld-adapter.js';
@@ -211,8 +211,7 @@ export async function parseRdfTextWithAdapters(text, options = {}) {
   if (adapter === 'n3') {
     if (runtime.N3?.Parser) parsed = parseRdfTextWithN3(text, { ...options, format, runtime });
     else if (format === 'ntriples' || format === 'nquads') parsed = parseRdfText(text, { ...options, format });
-    else if (runtime.N3) parsed = parseRdfTextWithN3(text, { ...options, format, runtime });
-    else parsed = parseRdfText(text, { ...options, format });
+    else parsed = parseRdfTextWithN3(text, { ...options, format, runtime });
   } else if (adapter === 'jsonld') {
     parsed = await parseJsonLdTextToRdfDataset(text, { ...options, format, runtime });
   } else if (adapter === 'rdflib') {

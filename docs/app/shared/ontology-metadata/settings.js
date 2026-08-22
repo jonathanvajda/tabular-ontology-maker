@@ -11,7 +11,11 @@ import {
 export const ONTOLOGY_METADATA_PROFILE_SETTING_KEY = COMMON_NAMESPACE_IRIS.okea.OntologyMetadataProfile;
 
 /**
- * Generate ontology metadata/settings used by ontology authoring apps.
+ * Generate canonical ontology metadata/settings used by ontology authoring apps.
+ *
+ * The returned object is the durable full-IRI JSON-LD-compatible metadata
+ * record. Browser UI code that still needs local field names should call
+ * `createOntologySettingsViewFromMetadataRecord()` at the adapter boundary.
  *
  * @param {object} [options]
  * @param {string} [options.base='http://example.org'] Base namespace IRI without the ontology local name.
@@ -25,7 +29,7 @@ export const ONTOLOGY_METADATA_PROFILE_SETTING_KEY = COMMON_NAMESPACE_IRIS.okea.
  * @param {number} [options.opaqueStart=1] First opaque number.
  * @param {string} [options.readableCase='PascalCase'] Human-readable local name style.
  * @param {{year:string|number, month:string|number, day:string|number}} [options.dateParts] Date parts for deterministic tests.
- * @returns {object} Ontology metadata/settings object.
+ * @returns {object} Canonical ontology metadata/settings record.
  */
 export function generateOntologySettings(options = {}) {
   const dateParts = options.dateParts || getLocalDateParts();
@@ -41,11 +45,11 @@ export function generateOntologySettings(options = {}) {
   const readableCase = options.readableCase || 'PascalCase';
   const normalizedLabel = normalizeStringToPascalCase(label);
 
-  return {
+  return normalizeOntologyMetadataRecord({
     iri: `${base}${delimiter}${normalizedLabel}`,
     [COMMON_NAMESPACE_IRIS.owl.versionIRI]: `${base}/${dateParts.year}-${dateParts.month}-${dateParts.day}${delimiter}${normalizedLabel}`,
     [COMMON_NAMESPACE_IRIS.owl.versionInfo]: `${dateParts.year}-${dateParts.month}-${dateParts.day}`,
-    [COMMON_NAMESPACE_IRIS.rdfs.label]: label,
+    [COMMON_NAMESPACE_IRIS.dcterms.title]: label,
     [COMMON_NAMESPACE_IRIS.dcterms.creator]: creator,
     [COMMON_NAMESPACE_IRIS.dcterms.description]: description,
     iriMode,
@@ -55,7 +59,7 @@ export function generateOntologySettings(options = {}) {
     readableCase,
     delimiter,
     base
-  };
+  });
 }
 
 /**
@@ -177,8 +181,8 @@ export function createOntologySettingsViewFromMetadataRecord(metadataRecord) {
  * @returns {{base: string, delimiter: string}}
  */
 export function getOntologyIriBaseAndDelimiter(settings = {}) {
-  const base = String(settings.base || '').replace(/[\/#]+$/, '') || 'http://example.org';
-  const delimiter = settings.delimiter || '/';
+  const base = String(firstValue(settings[COMMON_NAMESPACE_IRIS.okea.hasOntologyBaseIri]) || settings.base || '').replace(/[\/#]+$/, '') || 'http://example.org';
+  const delimiter = firstValue(settings[COMMON_NAMESPACE_IRIS.okea.hasIriLocalNameDelimiterTextValue]) || settings.delimiter || '/';
   return { base, delimiter };
 }
 
@@ -191,8 +195,8 @@ export function getOntologyIriBaseAndDelimiter(settings = {}) {
  */
 export function buildOpaqueOntologyIri(nextNumber, settings = {}) {
   const { base, delimiter } = getOntologyIriBaseAndDelimiter(settings);
-  const leading = settings.opaqueLeading || 'ont';
-  const digits = Math.max(1, settings.opaqueDigits || 6);
+  const leading = firstValue(settings[COMMON_NAMESPACE_IRIS.okea.hasOpaqueIriLocalNamePrefixTextValue]) || settings.opaqueLeading || 'ont';
+  const digits = Math.max(1, firstNumber(settings[COMMON_NAMESPACE_IRIS.okea.hasOpaqueIriLocalNameIntegerWidthValue], settings.opaqueDigits, 6));
   return `${base}${delimiter}${leading}${zeroPadNumber(nextNumber, digits)}`;
 }
 
@@ -206,7 +210,7 @@ export function buildOpaqueOntologyIri(nextNumber, settings = {}) {
  */
 export function buildReadableOntologyIri(label, settings = {}, existingIris = new Set()) {
   const { base, delimiter } = getOntologyIriBaseAndDelimiter(settings);
-  const style = settings.readableCase || 'PascalCase';
+  const style = firstValue(settings[COMMON_NAMESPACE_IRIS.okea.hasIriLocalNameStyleTextValue]) || settings.readableCase || 'PascalCase';
   const local = normalizeStringToCase(String(label || '').trim(), style, { fallbackStyle: 'PascalCase' }) || 'Unnamed';
   let candidate = `${base}${delimiter}${local}`;
   let suffix = 2;
@@ -244,8 +248,10 @@ export function collectUsedOpaqueOntologyIriNumbers(iris, settings = {}) {
  * @param {number} [startAt] Optional starting value.
  * @returns {number}
  */
-export function findNextAvailableOpaqueOntologyIriNumber(usedNumbers, settings = {}, startAt = settings.opaqueStart || 1) {
-  let next = Math.max(1, Number(startAt) || 1);
+export function findNextAvailableOpaqueOntologyIriNumber(usedNumbers, settings = {}, startAt = undefined) {
+  const defaultStart = firstNumber(settings[COMMON_NAMESPACE_IRIS.okea.hasOpaqueIriLocalNameIntegerStartValue], settings.opaqueStart, 1);
+  const start = startAt == null ? defaultStart : startAt;
+  let next = Math.max(1, Number(start) || 1);
   while (usedNumbers.has(next)) next += 1;
   return next;
 }
@@ -266,15 +272,16 @@ export function findMaxOpaqueOntologyIriNumber(iris, settings = {}) {
       for (const number of collectUsedOpaqueOntologyIriNumbers([value], settings)) used.add(number);
     }
   }
-  let max = settings.opaqueStart ? settings.opaqueStart - 1 : 0;
+  const opaqueStart = firstNumber(settings[COMMON_NAMESPACE_IRIS.okea.hasOpaqueIriLocalNameIntegerStartValue], settings.opaqueStart, 1);
+  let max = opaqueStart ? opaqueStart - 1 : 0;
   for (const number of used) if (number > max) max = number;
   return max;
 }
 
 function createOpaqueOntologyIriMatcher(settings = {}) {
   const { base, delimiter } = getOntologyIriBaseAndDelimiter(settings);
-  const leading = settings.opaqueLeading || 'ont';
-  const digits = Math.max(1, settings.opaqueDigits || 6);
+  const leading = firstValue(settings[COMMON_NAMESPACE_IRIS.okea.hasOpaqueIriLocalNamePrefixTextValue]) || settings.opaqueLeading || 'ont';
+  const digits = Math.max(1, firstNumber(settings[COMMON_NAMESPACE_IRIS.okea.hasOpaqueIriLocalNameIntegerWidthValue], settings.opaqueDigits, 6));
   const iriPrefix = `${base}${delimiter}${leading}`;
   return new RegExp(`^${escapeRegExp(iriPrefix)}(\\d{${digits}})$`);
 }

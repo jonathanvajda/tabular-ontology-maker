@@ -2,7 +2,12 @@
  * @file Pure string word-splitting and case-conversion utilities.
  */
 
-const CASE_STYLES = Object.freeze(new Set([
+/**
+ * Supported case-style identifiers accepted by {@link normalizeStringToCase}.
+ *
+ * @type {readonly string[]}
+ */
+export const NORMALIZATION_CASE_STYLES = Object.freeze([
   'flatcase',
   'UPPERFLATCASE',
   'camelCase',
@@ -12,7 +17,9 @@ const CASE_STYLES = Object.freeze(new Set([
   'kebab-case',
   'Train-Case',
   'COBOL-CASE'
-]));
+]);
+
+const CASE_STYLES = Object.freeze(new Set(NORMALIZATION_CASE_STYLES));
 
 /**
  * Splits mixed free text and identifier text into alphanumeric word segments.

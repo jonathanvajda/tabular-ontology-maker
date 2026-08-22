@@ -28,7 +28,7 @@ export function createIriMappingFromRows(rows, options = {}) {
     throw new Error(`Mapping rows must include old and new IRI columns. Found: ${headers.length ? headers.join(', ') : '(no columns)'}`);
   }
 
-  const duplicatePolicy = options.duplicatePolicy || 'last';
+  const duplicatePolicy = normalizeDuplicatePolicy(options.duplicatePolicy);
   const mapping = new Map();
   let duplicateOld = 0;
   let skippedRows = 0;
@@ -74,6 +74,12 @@ export function createIriMappingFromRows(rows, options = {}) {
     },
     warnings
   };
+}
+
+function normalizeDuplicatePolicy(value = 'last') {
+  const policy = String(value || 'last').trim();
+  if (policy === 'first' || policy === 'last' || policy === 'error') return policy;
+  throw new TypeError(`Unsupported IRI mapping duplicate policy: ${value}`);
 }
 
 function findHeader(headers, accepted) {

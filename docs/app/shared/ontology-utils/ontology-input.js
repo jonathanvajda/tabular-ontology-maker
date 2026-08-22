@@ -1,7 +1,7 @@
 import {
+  detectRdfMimeTypeFromText,
   getSupportedMimeTypeForFilename,
-  normalizeSupportedMimeType,
-  guessRdfMimeTypeFromText
+  normalizeSupportedMimeType
 } from '../format-registry/index.js';
 
 /**
@@ -68,10 +68,9 @@ export function classifyOntologyInput(input = {}) {
   }
 
   if (text) {
-    const guessed = guessRdfMimeTypeFromText(text);
-    const guessedDescriptor = guessed ? normalizeSupportedMimeType(guessed) : null;
-    if (guessedDescriptor?.ok && guessedDescriptor.value.category === 'rdf') {
-      detectedMimeType ||= guessed;
+    const detected = detectRdfMimeTypeFromText(text);
+    if (detected.ok && detected.value.category === 'rdf') {
+      detectedMimeType ||= detected.value.mimeType;
       isRdfCandidate = true;
       evidence.push('content:rdf-syntax');
     }

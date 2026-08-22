@@ -1,6 +1,7 @@
 export {
   SUPPORTED_MIME_DESCRIPTORS,
   getFilenameExtension,
+  listSupportedMimeDescriptors,
   getSupportedMimeTypeForFilename,
   getOutputMimeTypeForExtension,
   normalizeSupportedMimeType,
@@ -21,8 +22,4 @@ export {
   rdfSerializationPreservesNamedGraphs
 } from './rdf-parser-formats.js';
 
-export {
-  downloadTextFile,
-  getAcceptExtensions,
-  guessRdfMimeTypeFromText
-} from './browser-file-actions.js';
+export { detectRdfMimeTypeFromText } from './rdf-content-detection.js';

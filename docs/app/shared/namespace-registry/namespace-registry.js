@@ -624,3 +624,29 @@ export function iriForNamespaceId(registryKey, idKey, registry = COMMON_NAMESPAC
   if (!local) return Object.freeze({ ok: false, error: 'unknown namespace id', input: String(idKey || '') });
   return Object.freeze({ ok: true, value: `${entry.namespaceIri}${local}` });
 }
+
+/**
+ * Builds a CURIE from a registry entry and one of its known local IDs.
+ *
+ * This is for display, serialization setup, and JSON-LD context compaction.
+ * Internal semantic data records should continue to use full IRIs from
+ * `COMMON_NAMESPACE_IRIS` or `iriForNamespaceId`.
+ *
+ * @param {string} registryKey - Key in `COMMON_NAMESPACE_REGISTRY`.
+ * @param {string} idKey - Key in the entry's `ids` object.
+ * @param {Readonly<Record<string, NamespaceRegistryEntry>>} [registry]
+ * Registry to read from.
+ * @returns {Readonly<{ok: true, value: string, prefix: string, localName: string}> | Readonly<{ok: false, error: 'unknown namespace'|'unknown namespace id', input: string}>}
+ */
+export function curieForNamespaceId(registryKey, idKey, registry = COMMON_NAMESPACE_REGISTRY) {
+  const entry = registry?.[registryKey];
+  if (!entry) return Object.freeze({ ok: false, error: 'unknown namespace', input: String(registryKey || '') });
+  const localName = entry.ids?.[idKey];
+  if (!localName) return Object.freeze({ ok: false, error: 'unknown namespace id', input: String(idKey || '') });
+  return Object.freeze({
+    ok: true,
+    value: `${entry.prefix}:${localName}`,
+    prefix: entry.prefix,
+    localName
+  });
+}
