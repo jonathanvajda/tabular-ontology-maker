@@ -113,6 +113,10 @@
   <!-- App Local CSS -->
   <link rel="stylesheet" href="./styles/ontology_spreadsheet_styles.css" />
   <link rel="stylesheet" href="./styles/tom-axiom-builder.css" />
+  <link rel="modulepreload" href="./app/shared/namespace-registry/namespace-registry.js" />
+  <link rel="modulepreload" href="./app/shared/namespace-registry/prefix-map.js" />
+  <link rel="modulepreload" href="./app/shared/namespace-registry/curie.js" />
+  <link rel="modulepreload" href="./app/shared/namespace-registry/rdf-serialization-prefixes.js" />
 </head>
 <body data-page-id="tom">
   <header id="siteHeader" class="sitehdr-root" role="banner" aria-label="Site header"></header>
@@ -264,7 +268,7 @@
     <div class="tom-modal-scroll">
     <div style="margin-bottom:1rem;">
       <label for="new-import-file">Add ontology file:</label><br>
-      <input type="file" id="new-import-file" accept=".ttl,.nt,.trig,.jsonld,.rdf" />
+      <input type="file" id="new-import-file" accept=".ttl,.turtle,.n3,.nt,.ntriples,.nq,.trig,.jsonld,.json-ld,.rdf,.owl,.xml" />
       <div style="color:#666; font-size:12px; margin-top:4px;">
         Uses owl:versionIRI when present; otherwise falls back to the ontology IRI.
       </div>
@@ -396,7 +400,7 @@
     <div id="drop-area" style="border:2px dashed #ccc; padding:20px; text-align:center; margin-bottom:1em;">
       <p>Drag & drop a file here</p>
       <p>- or -</p>
-      <input type="file" id="file-input" accept=".csv,.tsv,.xls,.xlsx,.ttl,.rdf,.jsonld,.nt" />
+      <input type="file" id="file-input" accept=".csv,.tsv,.xls,.xlsx,.ttl,.turtle,.n3,.nt,.ntriples,.nq,.trig,.jsonld,.json-ld,.rdf,.owl,.xml" />
     </div>
 
     <!-- Filename display -->
@@ -440,13 +444,22 @@
     <span style="text-align:right"><small>Copyright 2026, Jonathan Vajda</small></span>
   </footer>
 
-  <script src="./app/glide-data-grid.min.js"></script>
-  <script src="./app/xlsx.full.min.js"></script>
-  <script src="./app/n3.min.js"></script>
-  <script src="./app/jsonld.min.js"></script>
-  <script src="./app/tom-core-utils.js"></script>
-  <script src="./app/tom-feature-utils.js"></script>
-  <script src="./app/tom-axiom-builder.js"></script>
+  <script src="./app/shared/vendor/glide-data-grid.min.js"></script>
+  <script src="./app/shared/vendor/xlsx.full.min.js"></script>
+  <script src="./app/shared/vendor/n3.min.js"></script>
+  <script src="./app/shared/vendor/jsonld.min.js"></script>
+  <script src="./app/shared/vendor/rdflib.min.js"></script>
+  <link rel="modulepreload" href="./app/shared/format-registry/mime-registry.js" />
+  <link rel="modulepreload" href="./app/shared/format-registry/rdf-parser-formats.js" />
+  <link rel="modulepreload" href="./app/shared/namespace-registry/namespace-registry.js" />
+  <link rel="modulepreload" href="./app/shared/browser-file-io/index.js" />
+  <link rel="modulepreload" href="./app/shared/tabular-io/index.js" />
+  <link rel="modulepreload" href="./app/shared/rdf-io/index.js" />
+  <link rel="modulepreload" href="./app/shared/indexeddb-data-management/index.js" />
+  <link rel="modulepreload" href="./app/tom-core-utils.js" />
+  <link rel="modulepreload" href="./app/tom-axiom-builder.js" />
+  <link rel="modulepreload" href="./app/tom-feature-utils.js" />
+  <link rel="modulepreload" href="./app/tom-project-storage.js" />
   <script src="./app/build-info.js"></script>
 
   <script>
@@ -539,3 +552,4 @@
     </script>
 </body>
 </html>
+

@@ -1,55 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
-
-(function (root, factory) {
-  if (typeof module === "object" && module.exports) {
-    module.exports = factory();
-    return;
-  }
-
-  const TOM = (root.TOM = root.TOM || {});
-  TOM.AxiomBuilder = factory();
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
-  const RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
-  const RDF_FIRST = "http://www.w3.org/1999/02/22-rdf-syntax-ns#first";
-  const RDF_REST = "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest";
-  const RDF_NIL = "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil";
-  const RDFS_SUBCLASS = "http://www.w3.org/2000/01/rdf-schema#subClassOf";
-  const OWL_RESTRICTION = "http://www.w3.org/2002/07/owl#Restriction";
-  const OWL_ON_PROPERTY = "http://www.w3.org/2002/07/owl#onProperty";
-  const OWL_SOME_VALUES_FROM = "http://www.w3.org/2002/07/owl#someValuesFrom";
-  const OWL_ALL_VALUES_FROM = "http://www.w3.org/2002/07/owl#allValuesFrom";
-  const OWL_HAS_VALUE = "http://www.w3.org/2002/07/owl#hasValue";
-  const OWL_MIN_CARDINALITY = "http://www.w3.org/2002/07/owl#minCardinality";
-  const OWL_MAX_CARDINALITY = "http://www.w3.org/2002/07/owl#maxCardinality";
-  const OWL_CARDINALITY = "http://www.w3.org/2002/07/owl#cardinality";
-  const OWL_MIN_QUALIFIED_CARDINALITY = "http://www.w3.org/2002/07/owl#minQualifiedCardinality";
-  const OWL_MAX_QUALIFIED_CARDINALITY = "http://www.w3.org/2002/07/owl#maxQualifiedCardinality";
-  const OWL_QUALIFIED_CARDINALITY = "http://www.w3.org/2002/07/owl#qualifiedCardinality";
-  const OWL_ON_CLASS = "http://www.w3.org/2002/07/owl#onClass";
-  const OWL_EQUIVALENT_CLASS = "http://www.w3.org/2002/07/owl#equivalentClass";
-  const OWL_DISJOINT_WITH = "http://www.w3.org/2002/07/owl#disjointWith";
-  const OWL_INTERSECTION_OF = "http://www.w3.org/2002/07/owl#intersectionOf";
-  const OWL_UNION_OF = "http://www.w3.org/2002/07/owl#unionOf";
-  const OWL_COMPLEMENT_OF = "http://www.w3.org/2002/07/owl#complementOf";
-  const XSD_NON_NEGATIVE_INTEGER = "http://www.w3.org/2001/XMLSchema#nonNegativeInteger";
+import { COMMON_NAMESPACE_IRIS } from './shared/namespace-registry/namespace-registry.js';
+import { createUuid, isBlankNodeTerm } from './shared/ontology-utils/index.js';
 
   const AXIOM_PREDICATES = {
-    SubClassOf: RDFS_SUBCLASS,
-    EquivalentTo: OWL_EQUIVALENT_CLASS,
-    DisjointWith: OWL_DISJOINT_WITH,
+    SubClassOf: COMMON_NAMESPACE_IRIS.rdfs.subClassOf,
+    EquivalentTo: COMMON_NAMESPACE_IRIS.owl.equivalentClass,
+    DisjointWith: COMMON_NAMESPACE_IRIS.owl.disjointWith,
   };
 
   const CARDINALITY_PREDICATES = {
-    min: OWL_MIN_CARDINALITY,
-    max: OWL_MAX_CARDINALITY,
-    exactly: OWL_CARDINALITY,
+    min: COMMON_NAMESPACE_IRIS.owl.minCardinality,
+    max: COMMON_NAMESPACE_IRIS.owl.maxCardinality,
+    exactly: COMMON_NAMESPACE_IRIS.owl.cardinality,
   };
 
   const QUALIFIED_CARDINALITY_PREDICATES = {
-    min: OWL_MIN_QUALIFIED_CARDINALITY,
-    max: OWL_MAX_QUALIFIED_CARDINALITY,
-    exactly: OWL_QUALIFIED_CARDINALITY,
+    min: COMMON_NAMESPACE_IRIS.owl.minQualifiedCardinality,
+    max: COMMON_NAMESPACE_IRIS.owl.maxQualifiedCardinality,
+    exactly: COMMON_NAMESPACE_IRIS.owl.qualifiedCardinality,
   };
 
   function cloneTerm(term) {
@@ -70,12 +39,12 @@
   function termToTurtle(term, prefixes) {
     if (!term) return "";
     if (term.termType === "NamedNode") return iriToDisplay(term.value, prefixes);
-    if (term.termType === "BlankNode") return `_:${term.value}`;
+    if (isBlankNodeTerm(term)) return `_:${term.value}`;
     if (term.termType === "Literal") {
       const escaped = String(term.value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
       if (term.language) return `"${escaped}"@${term.language}`;
       const dt = term.datatype?.value;
-      if (dt && dt !== "http://www.w3.org/2001/XMLSchema#string") {
+      if (dt && dt !== COMMON_NAMESPACE_IRIS.xsd.string) {
         return `"${escaped}"^^${iriToDisplay(dt, prefixes)}`;
       }
       return `"${escaped}"`;
@@ -114,7 +83,7 @@
 
     out.axioms = (Array.isArray(record?.axioms) ? record.axioms : [])
       .map((axiom) => ({
-        id: axiom.id || `ax_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        id: axiom.id || createAxiomRecordId(),
         kind: AXIOM_PREDICATES[axiom.kind] ? axiom.kind : "SubClassOf",
         expressionText: String(axiom.expressionText || "").trim(),
         expressionAst: axiom.expressionAst || null,
@@ -337,7 +306,7 @@
 
   function makeBlankNode(factory, seed) {
     if (factory?.blankNode) return factory.blankNode(seed);
-    return { termType: "BlankNode", value: seed || `b${Math.random().toString(36).slice(2)}` };
+    return { termType: "BlankNode", value: seed || `b${createUuid({ removeHyphens: true })}` };
   }
 
   function makeNamedNode(factory, iri) {
@@ -352,7 +321,7 @@
       termType: "Literal",
       value: String(value),
       language: "",
-      datatype: datatypeIri ? makeNamedNode(factory, datatypeIri) : makeNamedNode(factory, "http://www.w3.org/2001/XMLSchema#string"),
+      datatype: datatypeIri ? makeNamedNode(factory, datatypeIri) : makeNamedNode(factory, COMMON_NAMESPACE_IRIS.xsd.string),
     };
   }
 
@@ -368,31 +337,31 @@
     if (ast.type === "and" || ast.type === "or") {
       const node = makeBlankNode(factory, `${state.prefix || "axiom"}${state.nextBlank++}`);
       const list = makeRdfList((ast.items || []).map((item) => astToNode(item, out, factory, state)), out, factory, state);
-      addQuad(out, factory, node, ast.type === "and" ? OWL_INTERSECTION_OF : OWL_UNION_OF, list);
+      addQuad(out, factory, node, ast.type === "and" ? COMMON_NAMESPACE_IRIS.owl.intersectionOf : COMMON_NAMESPACE_IRIS.owl.unionOf, list);
       return node;
     }
     if (ast.type === "not") {
       const node = makeBlankNode(factory, `${state.prefix || "axiom"}${state.nextBlank++}`);
-      addQuad(out, factory, node, OWL_COMPLEMENT_OF, astToNode(ast.value, out, factory, state));
+      addQuad(out, factory, node, COMMON_NAMESPACE_IRIS.owl.complementOf, astToNode(ast.value, out, factory, state));
       return node;
     }
     if (ast.type === "restriction") {
       const node = makeBlankNode(factory, `${state.prefix || "axiom"}${state.nextBlank++}`);
-      addQuad(out, factory, node, RDF_TYPE, makeNamedNode(factory, OWL_RESTRICTION));
-      addQuad(out, factory, node, OWL_ON_PROPERTY, makeNamedNode(factory, ast.propertyIri));
+      addQuad(out, factory, node, COMMON_NAMESPACE_IRIS.rdf.type, makeNamedNode(factory, COMMON_NAMESPACE_IRIS.owl.Restriction));
+      addQuad(out, factory, node, COMMON_NAMESPACE_IRIS.owl.onProperty, makeNamedNode(factory, ast.propertyIri));
       if (ast.operator === "some") {
-        addQuad(out, factory, node, OWL_SOME_VALUES_FROM, astToNode(ast.filler, out, factory, state));
+        addQuad(out, factory, node, COMMON_NAMESPACE_IRIS.owl.someValuesFrom, astToNode(ast.filler, out, factory, state));
       } else if (ast.operator === "only") {
-        addQuad(out, factory, node, OWL_ALL_VALUES_FROM, astToNode(ast.filler, out, factory, state));
+        addQuad(out, factory, node, COMMON_NAMESPACE_IRIS.owl.allValuesFrom, astToNode(ast.filler, out, factory, state));
       } else if (ast.operator === "value") {
-        addQuad(out, factory, node, OWL_HAS_VALUE, makeNamedNode(factory, ast.valueIri));
+        addQuad(out, factory, node, COMMON_NAMESPACE_IRIS.owl.hasValue, makeNamedNode(factory, ast.valueIri));
       } else if (CARDINALITY_PREDICATES[ast.operator]) {
         const predicate = ast.filler
           ? QUALIFIED_CARDINALITY_PREDICATES[ast.operator]
           : CARDINALITY_PREDICATES[ast.operator];
-        addQuad(out, factory, node, predicate, makeLiteral(factory, ast.cardinality, XSD_NON_NEGATIVE_INTEGER));
+        addQuad(out, factory, node, predicate, makeLiteral(factory, ast.cardinality, COMMON_NAMESPACE_IRIS.xsd.nonNegativeInteger));
         if (ast.filler) {
-          addQuad(out, factory, node, OWL_ON_CLASS, astToNode(ast.filler, out, factory, state));
+          addQuad(out, factory, node, COMMON_NAMESPACE_IRIS.owl.onClass, astToNode(ast.filler, out, factory, state));
         }
       } else {
         throw new Error(`Unsupported restriction operator "${ast.operator}".`);
@@ -403,15 +372,15 @@
   }
 
   function makeRdfList(items, out, factory, state) {
-    if (!items.length) return makeNamedNode(factory, RDF_NIL);
+    if (!items.length) return makeNamedNode(factory, COMMON_NAMESPACE_IRIS.rdf.nil);
     const head = makeBlankNode(factory, `${state.prefix || "axiom"}list${state.nextBlank++}`);
     let current = head;
     items.forEach((item, index) => {
-      addQuad(out, factory, current, RDF_FIRST, item);
+      addQuad(out, factory, current, COMMON_NAMESPACE_IRIS.rdf.first, item);
       const next = index === items.length - 1
-        ? makeNamedNode(factory, RDF_NIL)
+        ? makeNamedNode(factory, COMMON_NAMESPACE_IRIS.rdf.nil)
         : makeBlankNode(factory, `${state.prefix || "axiom"}list${state.nextBlank++}`);
-      addQuad(out, factory, current, RDF_REST, next);
+      addQuad(out, factory, current, COMMON_NAMESPACE_IRIS.rdf.rest, next);
       current = next;
     });
     return head;
@@ -432,17 +401,17 @@
   function detectRestrictionAst(blankNode, bySubject, prefixes) {
     const pMap = bySubject.get(termKey(blankNode));
     if (!pMap) return null;
-    const types = pMap.get(RDF_TYPE) || [];
-    if (!types.some((term) => term.termType === "NamedNode" && term.value === OWL_RESTRICTION)) return null;
-    const prop = (pMap.get(OWL_ON_PROPERTY) || [])[0];
+    const types = pMap.get(COMMON_NAMESPACE_IRIS.rdf.type) || [];
+    if (!types.some((term) => term.termType === "NamedNode" && term.value === COMMON_NAMESPACE_IRIS.owl.Restriction)) return null;
+    const prop = (pMap.get(COMMON_NAMESPACE_IRIS.owl.onProperty) || [])[0];
     if (!prop || prop.termType !== "NamedNode") return null;
 
-    const some = (pMap.get(OWL_SOME_VALUES_FROM) || [])[0];
-    const only = (pMap.get(OWL_ALL_VALUES_FROM) || [])[0];
-    const value = (pMap.get(OWL_HAS_VALUE) || [])[0];
-    const min = (pMap.get(OWL_MIN_CARDINALITY) || [])[0];
-    const max = (pMap.get(OWL_MAX_CARDINALITY) || [])[0];
-    const exact = (pMap.get(OWL_CARDINALITY) || [])[0];
+    const some = (pMap.get(COMMON_NAMESPACE_IRIS.owl.someValuesFrom) || [])[0];
+    const only = (pMap.get(COMMON_NAMESPACE_IRIS.owl.allValuesFrom) || [])[0];
+    const value = (pMap.get(COMMON_NAMESPACE_IRIS.owl.hasValue) || [])[0];
+    const min = (pMap.get(COMMON_NAMESPACE_IRIS.owl.minCardinality) || [])[0];
+    const max = (pMap.get(COMMON_NAMESPACE_IRIS.owl.maxCardinality) || [])[0];
+    const exact = (pMap.get(COMMON_NAMESPACE_IRIS.owl.cardinality) || [])[0];
 
     if (some?.termType === "NamedNode") {
       return {
@@ -508,7 +477,7 @@
     const record = normalizeAxiomRecord({ subjectIri });
     if (!pMap) return record;
 
-    const subclassObjects = pMap.get(RDFS_SUBCLASS) || [];
+    const subclassObjects = pMap.get(COMMON_NAMESPACE_IRIS.rdfs.subClassOf) || [];
     let namedSeen = primaryIsA ? new Set([primaryIsA]) : new Set();
     subclassObjects.forEach((object) => {
       if (object.termType === "NamedNode") {
@@ -525,7 +494,7 @@
         return;
       }
 
-      if (object.termType === "BlankNode") {
+      if (isBlankNodeTerm(object)) {
         const ast = detectRestrictionAst(object, bySubject, prefixes);
         if (ast) {
           record.axioms.push({
@@ -538,7 +507,7 @@
         } else {
           record.preservedTriples.push({
             subject: { termType: "NamedNode", value: subjectIri },
-            predicate: { termType: "NamedNode", value: RDFS_SUBCLASS },
+            predicate: { termType: "NamedNode", value: COMMON_NAMESPACE_IRIS.rdfs.subClassOf },
             object: cloneTerm(object),
           });
           collectBlankNodeComponent(object, quads).forEach((triple) => record.preservedTriples.push(triple));
@@ -550,7 +519,7 @@
 
   function collectBlankNodeComponent(blankNode, quads, visited) {
     const seen = visited || new Set();
-    if (!blankNode || blankNode.termType !== "BlankNode") return [];
+    if (!isBlankNodeTerm(blankNode)) return [];
     const key = termKey(blankNode);
     if (seen.has(key)) return [];
     seen.add(key);
@@ -564,7 +533,7 @@
         object: cloneTerm(quad.object),
       };
       out.push(triple);
-      if (quad.object?.termType === "BlankNode") {
+      if (isBlankNodeTerm(quad.object)) {
         out.push(...collectBlankNodeComponent(quad.object, quads, seen));
       }
     });
@@ -724,7 +693,7 @@
         event.preventDefault();
         const ast = parseExpression(textarea.value, resolver);
         currentRecord.axioms.push({
-          id: `ax_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          id: createAxiomRecordId(),
           kind: kind.value,
           expressionText: textarea.value.trim(),
           expressionAst: ast,
@@ -824,6 +793,10 @@
       .replace(/"/g, "&quot;");
   }
 
+  function createAxiomRecordId() {
+    return `ax_${createUuid({ removeHyphens: true })}`;
+  }
+
   function insertAtCursor(textarea, token) {
     const start = textarea.selectionStart || 0;
     const end = textarea.selectionEnd || 0;
@@ -838,31 +811,7 @@
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
-  return {
-    constants: {
-      RDF_TYPE,
-      RDF_FIRST,
-      RDF_REST,
-      RDF_NIL,
-      RDFS_SUBCLASS,
-      OWL_RESTRICTION,
-      OWL_ON_PROPERTY,
-      OWL_SOME_VALUES_FROM,
-      OWL_ALL_VALUES_FROM,
-      OWL_HAS_VALUE,
-      OWL_EQUIVALENT_CLASS,
-      OWL_DISJOINT_WITH,
-      OWL_MIN_CARDINALITY,
-      OWL_MAX_CARDINALITY,
-      OWL_CARDINALITY,
-      OWL_MIN_QUALIFIED_CARDINALITY,
-      OWL_MAX_QUALIFIED_CARDINALITY,
-      OWL_QUALIFIED_CARDINALITY,
-      OWL_ON_CLASS,
-      OWL_INTERSECTION_OF,
-      OWL_UNION_OF,
-      OWL_COMPLEMENT_OF,
-    },
+const api = {
     AXIOM_PREDICATES,
     normalizeAxiomRecord,
     parseExpression,
@@ -872,4 +821,16 @@
     serializeTripleTerms,
     mount,
   };
-});
+
+export {
+  AXIOM_PREDICATES,
+  normalizeAxiomRecord,
+  parseExpression,
+  astToExpression,
+  axiomToQuads,
+  extractClassAxioms,
+  serializeTripleTerms,
+  mount,
+};
+
+export default api;

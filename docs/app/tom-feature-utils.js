@@ -1,14 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
 
-(function (root, factory) {
-  if (typeof module === "object" && module.exports) {
-    module.exports = factory();
-    return;
-  }
-
-  root.TOMFeatureUtils = factory();
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
   function defaultPredicateObjectMode(predicateType, iri) {
     const type = String(predicateType || "").trim();
 
@@ -138,15 +130,28 @@
     return record;
   }
 
-  return {
-    applyPredicateViewPlacement,
-    cloneRowsForWorkspace,
-    defaultPredicateObjectMode,
-    getPredicateViewPlacement,
-    getRecordOrderValue,
-    normalizePredicateMode,
-    normalizePredicateRecord,
-    normalizeWorkspaceSnapshot,
-    selectLatestRecord,
-  };
-});
+const api = {
+  applyPredicateViewPlacement,
+  cloneRowsForWorkspace,
+  defaultPredicateObjectMode,
+  getPredicateViewPlacement,
+  getRecordOrderValue,
+  normalizePredicateMode,
+  normalizePredicateRecord,
+  normalizeWorkspaceSnapshot,
+  selectLatestRecord,
+};
+
+export {
+  applyPredicateViewPlacement,
+  cloneRowsForWorkspace,
+  defaultPredicateObjectMode,
+  getPredicateViewPlacement,
+  getRecordOrderValue,
+  normalizePredicateMode,
+  normalizePredicateRecord,
+  normalizeWorkspaceSnapshot,
+  selectLatestRecord,
+};
+
+export default api;

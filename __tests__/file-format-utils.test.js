@@ -1,44 +1,63 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 Jonathan Vajda
 
-const {
-  parseFileExtension,
-  detectFormatByExtension,
-  guessMediaType,
-  isValidOntology,
-} = require("../docs/app/tom-core-utils.js");
+import {
+  getFilenameExtension,
+  getInputKindForExtension,
+  detectRdfMimeTypeFromText,
+} from "../docs/app/shared/format-registry/index.js";
+import { classifyOntologyInput } from "../docs/app/shared/ontology-utils/index.js";
 
 describe("file and media type helpers", () => {
-  test("parseFileExtension handles common and edge-case filenames", () => {
-    expect(parseFileExtension("data.csv")).toBe("csv");
-    expect(parseFileExtension("2026.04.13.ontology.JSONLD")).toBe("jsonld");
-    expect(parseFileExtension("no-extension")).toBe("");
-    expect(parseFileExtension("trailing.")).toBe("");
-    expect(parseFileExtension(null)).toBe("");
+  test("shared getFilenameExtension handles common and edge-case filenames", () => {
+    expect(getFilenameExtension("data.csv")).toBe("csv");
+    expect(getFilenameExtension("2026.04.13.ontology.JSONLD")).toBe("jsonld");
+    expect(getFilenameExtension("no-extension")).toBe("");
+    expect(getFilenameExtension("trailing.")).toBe("");
+    expect(getFilenameExtension(null)).toBe("");
   });
 
-  test("detectFormatByExtension classifies supported formats", () => {
-    expect(detectFormatByExtension("csv")).toBe("spreadsheet");
-    expect(detectFormatByExtension("xlsx")).toBe("spreadsheet");
-    expect(detectFormatByExtension("ttl")).toBe("ontology");
-    expect(detectFormatByExtension("jsonld")).toBe("ontology");
-    expect(detectFormatByExtension("trig")).toBe("ontology");
-    expect(detectFormatByExtension("exe")).toBe("unsupported");
+  test("shared getInputKindForExtension classifies supported formats", () => {
+    expect(getInputKindForExtension("csv")).toBe("spreadsheet");
+    expect(getInputKindForExtension("tsv")).toBe("spreadsheet");
+    expect(getInputKindForExtension("xlsx")).toBe("spreadsheet");
+    expect(getInputKindForExtension("ttl")).toBe("ontology");
+    expect(getInputKindForExtension("n3")).toBe("ontology");
+    expect(getInputKindForExtension("jsonld")).toBe("ontology");
+    expect(getInputKindForExtension("nq")).toBe("ontology");
+    expect(getInputKindForExtension("trig")).toBe("ontology");
+    expect(getInputKindForExtension("owl")).toBe("ontology");
+    expect(getInputKindForExtension("exe")).toBe("unsupported");
   });
 
-  test("guessMediaType recognizes JSON-LD before Turtle-like punctuation", () => {
-    expect(guessMediaType('{ "@context": { "ex": "http://example.org/" }, "@id": "ex:test" }')).toBe("application/ld+json");
-    expect(guessMediaType('@prefix ex: <http://example.org/> .')).toBe("text/turtle");
-    expect(guessMediaType('<rdf:RDF></rdf:RDF>')).toBe("application/rdf+xml");
-    expect(guessMediaType('<http://ex/s> <http://ex/p> <http://ex/o> .')).toBe("application/n-triples");
-    expect(guessMediaType('plain text')).toBe("text/plain");
+  test("shared detectRdfMimeTypeFromText recognizes JSON-LD before Turtle-like punctuation", () => {
+    expect(detectRdfMimeTypeFromText('{ "@context": { "ex": "http://example.org/" }, "@id": "ex:test" }')).toMatchObject({
+      ok: true,
+      value: { mimeType: "application/ld+json" }
+    });
+    expect(detectRdfMimeTypeFromText('@prefix ex: <http://example.org/> .')).toMatchObject({
+      ok: true,
+      value: { mimeType: "text/turtle" }
+    });
+    expect(detectRdfMimeTypeFromText('<rdf:RDF></rdf:RDF>')).toMatchObject({
+      ok: true,
+      value: { mimeType: "application/rdf+xml" }
+    });
+    expect(detectRdfMimeTypeFromText('<http://ex/s> <http://ex/p> <http://ex/o> .')).toMatchObject({
+      ok: true,
+      value: { mimeType: "application/n-triples" }
+    });
+    expect(detectRdfMimeTypeFromText('plain text')).toMatchObject({
+      ok: true,
+      value: { mimeType: "text/plain" }
+    });
   });
 
-  test("isValidOntology accepts Turtle, RDF/XML, and JSON-LD markers", () => {
-    expect(isValidOntology('@prefix ex: <http://example.org/> .')).toBe(true);
-    expect(isValidOntology('<rdf:RDF></rdf:RDF>')).toBe(true);
-    expect(isValidOntology('{ "@context": { "ex": "http://example.org/" } }')).toBe(true);
-    expect(isValidOntology("")).toBe(false);
-    expect(isValidOntology("just some text")).toBe(false);
+  test("shared classifyOntologyInput accepts Turtle, RDF/XML, and JSON-LD markers", () => {
+    expect(classifyOntologyInput({ text: '@prefix ex: <http://example.org/> .' }).isOntologyCandidate).toBe(true);
+    expect(classifyOntologyInput({ text: '<rdf:RDF></rdf:RDF>' }).isOntologyCandidate).toBe(true);
+    expect(classifyOntologyInput({ text: '{ "@context": { "ex": "http://example.org/" } }' }).isOntologyCandidate).toBe(true);
+    expect(classifyOntologyInput({ text: "" }).isOntologyCandidate).toBe(false);
+    expect(classifyOntologyInput({ text: "just some text" }).isOntologyCandidate).toBe(false);
   });
 });

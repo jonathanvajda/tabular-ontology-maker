@@ -1,10 +1,73 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2025-2026 Jonathan Vajda
+import {
+  COMMON_NAMESPACE_IRIS,
+  namespacePrefixMapFromRegistry
+} from './shared/namespace-registry/namespace-registry.js';
+import {
+  mergeProjectPrefixes,
+  normalizePrefixMap
+} from './shared/namespace-registry/prefix-map.js';
+import {
+  compactIriToCurie,
+  expandCurieToIri,
+  findLongestPrefixMatch
+} from './shared/namespace-registry/curie.js';
+import {
+  createN3WriterOptionsWithPrefixes,
+  selectPrefixesUsedByRdfTerms
+} from './shared/namespace-registry/rdf-serialization-prefixes.js';
+import {
+  createFormatExtensionMap,
+  createFormatMimeTypeMap,
+  getFilenameExtension,
+  getInputKindForExtension,
+  getPreferredExtensionForMimeType,
+  getSupportedMimeTypeForFilename
+} from './shared/format-registry/mime-registry.js';
+import { detectRdfMimeTypeFromText } from './shared/format-registry/rdf-content-detection.js';
+import {
+  downloadTextFile,
+  readFileAsArrayBuffer,
+  readFileAsText
+} from './shared/browser-file-io/index.js';
+import { serializeDelimitedRows } from './shared/tabular-io/index.js';
+import {
+  parseRdfTextWithN3,
+  parseRdfTextWithAdapters,
+  serializeRdfDatasetWithAdapters
+} from './shared/rdf-io/index.js';
+import { isBlankNodeTerm, normalizeIriToken } from './shared/ontology-utils/index.js';
+import {
+  getLocalDateParts,
+  normalizeStringToPascalCase
+} from './shared/normalization-utils/index.js';
+import {
+  buildOpaqueOntologyIri,
+  buildReadableOntologyIri,
+  collectUsedOpaqueOntologyIriNumbers,
+  createOntologySettingsViewFromMetadataRecord,
+  deriveOntologyImportTarget,
+  findMaxOpaqueOntologyIriNumber,
+  findNextAvailableOpaqueOntologyIriNumber,
+  generateOntologySettings,
+  writeOntologyMetadataQuads
+} from './shared/ontology-metadata/index.js';
+import {
+  deleteTomOntologySettings,
+  hasTomSavedSession,
+  readLatestTomSavedSession,
+  readTomOntologySettings,
+  storeTomAuthoringSession,
+  writeTomOntologySettings
+} from './tom-project-storage.js';
+import { renderToastNotification } from './shared/ui-feedback/index.js';
+import * as CoreUtils from './tom-core-utils.js';
+import AxiomBuilder from './tom-axiom-builder.js';
+import * as FeatureUtils from './tom-feature-utils.js';
+
 (function () {
 const TOM = (window.TOM = window.TOM || {});
-const CoreUtils = window.TOMCoreUtils || {};
-const FeatureUtils = window.TOMFeatureUtils || {};
-const AxiomBuilder = TOM.AxiomBuilder || {};
 
 const VIEW_KEYS = {
   ONTOLOGY: 'ontology',
@@ -47,8 +110,8 @@ const hiddenColumnsByView = {
   [VIEW_KEYS.ONTOLOGY]: new Set(DEFAULT_HIDDEN_COLUMNS_BY_VIEW[VIEW_KEYS.ONTOLOGY]),
   [VIEW_KEYS.RELATA]: new Set(DEFAULT_HIDDEN_COLUMNS_BY_VIEW[VIEW_KEYS.RELATA])
 };
-let hotInstance = null;
-let hotInitDone = false;
+let gridInstance = null;
+let gridInitDone = false;
 let currentImportFile = null;
 let lastPreviewableRdfFormat = 'ttl';
 let axiomRecordsBySubject = new Map();
@@ -61,27 +124,14 @@ const BASE_COLS = 6;
 const container = document.getElementById('ontology-grid');
 const output = document.getElementById('rdfOutput');
 
-// --- Constants so you can rename easily ---
-const DB_NAME = 'TabularOntologyDB';
-const DB_VERSION = 2;
-const STORE_NAME = 'rdfStore';
-const WORKSPACE_STORE = 'workspaceStore';
 let SETTINGS_CACHE = null;
-const SETTINGS_STORE = 'ontologySettingsStore';
 
-// Global prefix store (prepopulated)
+// Project/user prefixes extend the canonical shared registry.
 const iriPrefixes = {
-  owl: 'http://www.w3.org/2002/07/owl#',
-  rdf: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
-  rdfs: 'http://www.w3.org/2000/01/rdf-schema#',
-  skos: 'http://www.w3.org/2004/02/skos/core#',
-  dc: 'http://purl.org/dc/elements/1.1/',
-  dcterms: 'http://purl.org/dc/terms/',
-  obo: 'http://purl.obolibrary.org/obo/',
-  oboInOwl: 'http://www.geneontology.org/formats/oboInOwl#',
-  cco2: 'https://www.commoncoreontologies.org/',
-  cceo: 'http://www.ontologyrepository.com/CommonCoreOntologies/',
-  ex: 'http://example.org/'
+  ...mergeProjectPrefixes(
+    namespacePrefixMapFromRegistry(),
+    { ex: 'http://example.org/' }
+  ).prefixes
 };
 
 const getElementTypes = () => {
@@ -95,39 +145,17 @@ const getElementTypes = () => {
   ];
 };
 
-const w3cIRI = {
-  RDF_TYPE: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
-  RDFS_LABEL: 'http://www.w3.org/2000/01/rdf-schema#label',
-  RDFS_SUBCLASS: 'http://www.w3.org/2000/01/rdf-schema#subClassOf',
-  RDFS_SUBPROP: 'http://www.w3.org/2000/01/rdf-schema#subPropertyOf',
-  OWL_ONTOLOGY: 'http://www.w3.org/2002/07/owl#Ontology',
-  OWL_CLASS: 'http://www.w3.org/2002/07/owl#Class',
-  OWL_NAMEDIND: 'http://www.w3.org/2002/07/owl#NamedIndividual',
-  OWL_OBJPROP: 'http://www.w3.org/2002/07/owl#ObjectProperty',
-  OWL_DATAPROP: 'http://www.w3.org/2002/07/owl#DataProperty',
-  OWL_ANNOPROP: 'http://www.w3.org/2002/07/owl#AnnotationProperty',
-  OWL_DATATYPE: 'http://www.w3.org/2002/07/owl#DatatypeProperty',
-  OWL_IMPORTS: 'http://www.w3.org/2002/07/owl#imports',
-  SKOS_DEFINITION: 'http://www.w3.org/2004/02/skos/core#definition',
-  CCO_CURATEDIN: 'https://www.commoncoreontologies.org/ont00001760',
-  DCTERMS_CREATOR: 'http://purl.org/dc/terms/creator',
-  DCTERMS_CREATED: 'http://purl.org/dc/terms/created',
-  DCTERMS_DESCRIPTION: 'http://purl.org/dc/terms/description',
-  DCTERMS_CITATION: 'http://purl.org/dc/terms/bibliographicCitation',
-  OBO_CURATION_STATUS: 'http://purl.obolibrary.org/obo/IAO_0000114',
-};
-
 const getIsAPredicate = (elementType) => {
   console.info('getIsAPredicate happened');
   switch (elementType) {
     case 'Class':
-      return w3cIRI.RDFS_SUBCLASS ;
+      return COMMON_NAMESPACE_IRIS.rdfs.subClassOf ;
     case 'ObjectProperty':
     case 'DatatypeProperty':
     case 'AnnotationProperty':
-      return w3cIRI.RDFS_SUBPROP;
+      return COMMON_NAMESPACE_IRIS.rdfs.subPropertyOf;
     case 'NamedIndividual':
-      return w3cIRI.RDF_TYPE;
+      return COMMON_NAMESPACE_IRIS.rdf.type;
     default:
       return null;
   }
@@ -152,33 +180,20 @@ let vocabByLabelLC = new Map();
     
 */
 
-// Read from IDB (or create defaults) and cache
+// Read from shared project storage (or create defaults) and cache.
 async function settingsLoad() {
-  const db = await ensureDb();
-  const tx = db.transaction(SETTINGS_STORE, 'readonly');
-  const rec = await idbRequest(tx.objectStore(SETTINGS_STORE).get('ontologySettings'));
-
-  if (rec && rec.value) {
-    SETTINGS_CACHE = rec.value;
-    return SETTINGS_CACHE;
-  }
-
-  // No record: create defaults and persist once
-  SETTINGS_CACHE = generateOntologySettings();
-  const wtx = db.transaction(SETTINGS_STORE, 'readwrite');
-  wtx.objectStore(SETTINGS_STORE).put({ key: 'ontologySettings', value: SETTINGS_CACHE, updatedAt: new Date().toISOString() });
-  await idbTransactionDone(wtx);
+  SETTINGS_CACHE = await readTomOntologySettings();
+  if (SETTINGS_CACHE) return SETTINGS_CACHE;
+  SETTINGS_CACHE = createOntologySettingsViewFromMetadataRecord(generateOntologySettings());
+  await writeTomOntologySettings(SETTINGS_CACHE);
   return SETTINGS_CACHE;
 }
 
-// Save to IDB and cache
+// Save to shared project storage and cache.
 async function saveOntologySettings(next) {
   SETTINGS_CACHE = next;
-  const db = await ensureDb();
-  const tx = db.transaction(SETTINGS_STORE, 'readwrite');
-  tx.objectStore(SETTINGS_STORE).put({ key: 'ontologySettings', value: SETTINGS_CACHE, updatedAt: new Date().toISOString() });
-  await idbTransactionDone(tx);
-  showToast('Ontology settings saved to database.', 'success');
+  await writeTomOntologySettings(SETTINGS_CACHE);
+  showToast('Ontology settings saved to project storage.', 'success');
 }
 
 // Synchronous accessor *after* settingsLoad() has run
@@ -186,7 +201,7 @@ function getOntologySettings() {
   if (!SETTINGS_CACHE) {
     console.warn('[getOntologySettings] Cache empty - did you await settingsLoad() during init?');
     // Last-resort fallback to keep UI from crashing:
-    return generateOntologySettings();
+    return createOntologySettingsViewFromMetadataRecord(generateOntologySettings());
   }
   return SETTINGS_CACHE;
 }
@@ -379,11 +394,11 @@ function updateOntologyPreview() {
     const base = (settings.base || '').trim() || 'http://example.org';
     const label = (document.getElementById("ontology-label-input").value || '').trim() || 'Example Ontology';
     const delimiter = settings.delimiter || getSelectedDelimiter();
-    const { year, month, day } = getCurrentDateParts();
-    const normalizedLabel = toPascalCase(label);
+    const { year, month, day } = getLocalDateParts();
+    const normalizedLabel = normalizeStringToPascalCase(label);
     const entityPreview = settings.iriMode === 'readable'
-      ? buildReadableIri('Example Entity', settings, new Set())
-      : buildOpaqueIri(settings.opaqueStart || 1, settings);
+      ? buildReadableOntologyIri('Example Entity', settings, new Set())
+      : buildOpaqueOntologyIri(settings.opaqueStart || 1, settings);
 
     document.getElementById("version-iri-preview").textContent =
       `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`;
@@ -392,54 +407,6 @@ function updateOntologyPreview() {
   } catch (e) {
     console.error("[Preview] Failed to update preview", e);
   }
-}
-
-function generateOntologySettings(
-  base = "http://example.org",
-  label = "Example Ontology",
-  creator = "Barry Guarino",
-  description = "An example ontology",
-  delimiter = "/",
-  iriMode = "opaque",                 // "opaque" | "readable"
-  opaqueLeading = "ont",
-  opaqueDigits = 6,
-  opaqueStart = 1,
-  readableCase = "PascalCase"         // "PascalCase" | "camelCase" | "snake_case"
-) {
-  if (CoreUtils.generateOntologySettings) {
-    return CoreUtils.generateOntologySettings({
-      base,
-      label,
-      creator,
-      description,
-      delimiter,
-      iriMode,
-      opaqueLeading,
-      opaqueDigits,
-      opaqueStart,
-      readableCase,
-      dateParts: getCurrentDateParts()
-    });
-  }
-
-  const { year, month, day } = getCurrentDateParts();
-  const normalizedLabel = toPascalCase(label);
-
-  return {
-    iri: `${base}${delimiter}${normalizedLabel}`,
-    "http://www.w3.org/2002/07/owl#versionIRI": `${base}/${year}-${month}-${day}${delimiter}${normalizedLabel}`,
-    "http://www.w3.org/2002/07/owl#versionInfo": `${year}-${month}-${day}`,
-    "http://www.w3.org/2000/01/rdf-schema#label": label,
-    "http://purl.org/dc/terms/creator": creator,
-    "http://purl.org/dc/terms/description": description,
-    iriMode,
-    opaqueLeading,
-    opaqueDigits,
-    opaqueStart,
-    readableCase,
-    delimiter,
-    base
-  };
 }
 
 function getEffectiveOntologySettings() {
@@ -500,9 +467,9 @@ function openOntologySettingsModal() {
 
   // existing fields
   document.getElementById("ontology-base-iri-input").value = (s.base || s.iri.split("/").slice(0, -1).join("/"));
-  document.getElementById("ontology-label-input").value = s[w3cIRI.RDFS_LABEL] || "";
-  document.getElementById("ontology-creator-input").value = s[w3cIRI.DCTERMS_CREATOR] || "";
-  document.getElementById("ontology-description-input").value = s[w3cIRI.DCTERMS_DESCRIPTION] || "";
+  document.getElementById("ontology-label-input").value = s[COMMON_NAMESPACE_IRIS.rdfs.label] || "";
+  document.getElementById("ontology-creator-input").value = s[COMMON_NAMESPACE_IRIS.dcterms.creator] || "";
+  document.getElementById("ontology-description-input").value = s[COMMON_NAMESPACE_IRIS.dcterms.description] || "";
 
   // delimiter
   const delim = s.delimiter || getSelectedDelimiter();
@@ -541,123 +508,31 @@ async function saveOntologySettingsFromModal() {
   const opaqueStart   = +document.getElementById('opaque-start').value;
   const readableCase  = document.getElementById('readable-case').value;
 
-  const next = generateOntologySettings(
-    base, label, creator, description, delimiter,
-    iriMode, opaqueLeading, opaqueDigits, opaqueStart, readableCase
-  );
+  const next = createOntologySettingsViewFromMetadataRecord(generateOntologySettings({
+    base,
+    label,
+    creator,
+    description,
+    delimiter,
+    iriMode,
+    opaqueLeading,
+    opaqueDigits,
+    opaqueStart,
+    readableCase,
+    dateParts: getLocalDateParts()
+  }));
 
   await saveOntologySettings(next);
   document.getElementById('ontology-settings-modal').style.display = 'none';
 }
 
-function zeroPad(n, width) {
-  const s = String(Math.max(0, n|0));
-  return s.length >= width ? s : '0'.repeat(width - s.length) + s;
-}
-
-function toSnakeCase(str) {
-  if (CoreUtils.toSnakeCase) return CoreUtils.toSnakeCase(str);
-  return String(str || '')
-    .trim()
-    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .toLowerCase();
-}
-
-function fromLabelWithCase(label, caseStyle) {
-  const raw = String(label || '').trim();
-  switch (caseStyle) {
-    case 'camelCase':   return toCamelCase(raw);
-    case 'snake_case':  return toSnakeCase(raw);
-    case 'PascalCase':
-    default:            return toPascalCase(raw);
-  }
-}
-
-// Returns { base, delimiter } where base excludes trailing delimiter
-function getBaseAndDelimiter(settings) {
-  const base = (settings.base || '').replace(/[\/#]+$/,'') || 'http://example.org';
-  const delimiter = settings.delimiter || '/';
-  return { base, delimiter };
-}
-
-
-// Scan current grid for largest opaque number already used
-function findMaxOpaqueNumber(grid, settings) {
-  const { base, delimiter } = getBaseAndDelimiter(settings);
-  const lead = settings.opaqueLeading || 'ont';
-  const digits = Math.max(1, settings.opaqueDigits || 6);
-
-  const iriPrefix = `${base}${delimiter}${lead}`;
-  const re = new RegExp('^' + iriPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d{' + digits + '})$');
-
-  let max = (settings.opaqueStart ? settings.opaqueStart - 1 : 0);
-  const rows = grid.getData();
-  for (const row of rows) {
-    const iri = row?.[0] || '';
-    const m = re.exec(String(iri));
-    if (m) {
-      const num = parseInt(m[1], 10);
-      if (Number.isFinite(num) && num > max) max = num;
-    }
-  }
-  return max;
-}
-
-function collectUsedOpaqueNumbers(grid, settings) {
-  const { base, delimiter } = getBaseAndDelimiter(settings);
-  const lead = settings.opaqueLeading || 'ont';
-  const digits = Math.max(1, settings.opaqueDigits || 6);
-  const iriPrefix = `${base}${delimiter}${lead}`;
-  const re = new RegExp('^' + iriPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d{' + digits + '})$');
-  const used = new Set();
-  const rows = grid.getData();
-
-  for (const row of rows) {
-    const iri = row?.[0] || '';
-    const m = re.exec(String(iri));
-    if (!m) continue;
-    const num = parseInt(m[1], 10);
-    if (Number.isFinite(num)) used.add(num);
-  }
-
-  return used;
-}
-
-function findNextAvailableOpaqueNumber(usedNumbers, settings, startAt) {
-  let next = Math.max(1, Number(startAt) || 1);
-  while (usedNumbers.has(next)) {
-    next += 1;
-  }
-  return next;
-}
-
-function buildOpaqueIri(nextNum, settings) {
-  const { base, delimiter } = getBaseAndDelimiter(settings);
-  const lead   = settings.opaqueLeading || 'ont';
-  const digits = Math.max(1, settings.opaqueDigits || 6);
-  return `${base}${delimiter}${lead}${zeroPad(nextNum, digits)}`;
-}
-
-function buildReadableIri(label, settings, existingIris = new Set()) {
-  const { base, delimiter } = getBaseAndDelimiter(settings);
-  const style = settings.readableCase || 'PascalCase';
-
-  let local = fromLabelWithCase(label, style) || 'Unnamed';
-  let candidate = `${base}${delimiter}${local}`;
-
-  // Ensure uniqueness within current table
-  let i = 2;
-  while (existingIris.has(candidate)) {
-    candidate = `${base}${delimiter}${local}_${i++}`;
-  }
-  return candidate;
+function readGridSubjectIris(grid) {
+  return (grid?.getData?.() || []).map((row) => row?.[0] || '');
 }
 
 
 
-// Gets the columns definitions for the Handsontable instance.
+// Gets the column definitions for the active Glide-backed grid.
 const getColumnDefinitions = (viewKey = getActiveViewKey()) => {
   const baseColumns = [
     { type: 'text', hidden: !isColumnVisibleInView(viewKey, 0) ? true : undefined }, // IRI / Subject
@@ -682,7 +557,7 @@ const getColumnDefinitions = (viewKey = getActiveViewKey()) => {
         try {
           // infer type constraints from the row's Element Type
           const row = this.row;
-          const elType = hotInstance.getDataAtCell(row, 2); // "element type"
+          const elType = gridInstance.getDataAtCell(row, 2); // "element type"
           let typeHint = null;
           if (elType === 'Class' || elType === 'NamedIndividual') typeHint = 'Class';
           else if (elType === 'ObjectProperty') typeHint = 'ObjectProperty';
@@ -721,13 +596,13 @@ const getInitialData = () => {
 ];
 };
 
-// Gets the column headers for the Handsontable instance.  
+// Gets the column headers for the active Glide-backed grid.
 const getColumnHeaders = (viewKey = getActiveViewKey()) => {
   console.info('getColumnHeaders happened');
   return getBaseHeadersForView(viewKey).concat(getCustomPredicateIris());
 };
 
-// Creates a Handsontable instance in the given container with the provided data and column definitions.
+// Creates the active Glide-backed grid in the given container with the provided data and column definitions.
 const createTable = (container, data, colHeaders, columns) => {
   console.info('createTable happened');
   return TOM.Grid.createGrid(container, {
@@ -812,7 +687,7 @@ function setIsCuratedInForAllRows() {
     return;
   }
 
-  const headers = hotInstance.getColHeader();
+  const headers = gridInstance.getColHeader();
   const columnIndex = headers.indexOf("is curated in ontology");
 
   if (columnIndex === -1) {
@@ -820,13 +695,13 @@ function setIsCuratedInForAllRows() {
     return;
   }
 
-  const totalRows = hotInstance.countRows();
+  const totalRows = gridInstance.countRows();
   let updatedCount = 0;
 
   for (let row = 0; row < totalRows; row++) {
-    const currentValue = hotInstance.getDataAtCell(row, columnIndex);
+    const currentValue = gridInstance.getDataAtCell(row, columnIndex);
     if (currentValue === null || currentValue === "") {
-      hotInstance.setDataAtCell(row, columnIndex, ontologyIRI);
+      gridInstance.setDataAtCell(row, columnIndex, ontologyIRI);
       updatedCount++;
     }
   }
@@ -835,8 +710,8 @@ function setIsCuratedInForAllRows() {
 }
 
 function syncCurrentViewHiddenColumns() {
-  if (!hotInstance?.getHiddenColumns) return;
-  setHiddenColumnsForView(getActiveViewKey(), hotInstance.getHiddenColumns());
+  if (!gridInstance?.getHiddenColumns) return;
+  setHiddenColumnsForView(getActiveViewKey(), gridInstance.getHiddenColumns());
 }
 
 function updateViewToggleButtons() {
@@ -850,24 +725,24 @@ function updateViewToggleButtons() {
 }
 
 function applyViewSchema(viewKey, options = {}) {
-  if (!hotInstance) return;
+  if (!gridInstance) return;
 
   const targetView = viewKey || DEFAULT_VIEW;
   const previousView = getActiveViewKey();
-  if (options.captureCurrent !== false && hotInstance && previousView) {
+  if (options.captureCurrent !== false && gridInstance && previousView) {
     syncCurrentViewHiddenColumns();
   }
 
   activeViewKey = targetView;
-  hotInstance.setSchema(getColumnHeaders(targetView), getColumnDefinitions(targetView));
+  gridInstance.setSchema(getColumnHeaders(targetView), getColumnDefinitions(targetView));
 
   const hidden = Array.from(getHiddenColumnsForView(targetView));
-  hotInstance.setHiddenColumns(hidden);
+  gridInstance.setHiddenColumns(hidden);
   updateViewToggleButtons();
 }
 
 function switchView(nextViewKey) {
-  if (!hotInstance) return;
+  if (!gridInstance) return;
   if (!Object.values(VIEW_KEYS).includes(nextViewKey)) return;
   if (nextViewKey === getActiveViewKey()) return;
   applyViewSchema(nextViewKey);
@@ -875,11 +750,11 @@ function switchView(nextViewKey) {
 }
 
 /**
- * Initialize Handsontable once
+ * Initializes the active Glide-backed grid once.
  */
-function initHandsontable() {
-  if (hotInitDone) return;
-  if (hotInstance) { try { hotInstance.destroy(); } catch (_) {} }
+function initializeOntologyGrid() {
+  if (gridInitDone) return;
+  if (gridInstance) { try { gridInstance.destroy(); } catch (_) {} }
 
   // 1) Build rows/schema
   const rows     = getInitialData();
@@ -887,28 +762,28 @@ function initHandsontable() {
   const columns  = getColumnDefinitions();
   const settings = getOntologySettings(); // IndexedDB-backed cache
 
-  // 2) Create HOT using 4-arg createTable
-  hotInstance = createTable(container, rows, headers, columns);
-  attachHotHooks?.();
+  // 2) Create the grid using the active adapter.
+  gridInstance = createTable(container, rows, headers, columns);
+  attachGridHooks?.();
   applyViewSchema(getActiveViewKey(), { captureCurrent: false });
 
   // 3) Finish init
   harvestRowsIntoVocab?.(rows);
-  hotInitDone = true;
+  gridInitDone = true;
   updateViewToggleButtons();
 }
 
 
 // This function checks if the element type is a predicate
 window.getIsAPredicateForRow = (rowIndex) => {
-  const row = hotInstance.getSourceDataAtRow(rowIndex);
+  const row = gridInstance.getSourceDataAtRow(rowIndex);
   const elementType = row ? row[2] : null;
   return getIsAPredicate(elementType);
 };
 
 // This set of functions are used for outputting RDF.
 // getOntologyIRI retrieves the ontology IRI or returns a default value.
-// generateRdfString takes the rows of the Handsontable instance and converts them into an RDF string in the specified format.
+// generateRdfString takes the grid rows and converts them into an RDF string in the specified format.
 // handleExport generates the file
 
 function getOntologyIRI() {
@@ -919,8 +794,11 @@ function getOntologyIRI() {
 function quadSignature(quad) {
   const s = `${quad.subject.termType}:${quad.subject.value}`;
   const p = `${quad.predicate.termType}:${quad.predicate.value}`;
-  const o = `${quad.object.termType}:${quad.object.value}`;
-  return `${s}|${p}|${o}`;
+  const oDatatype = quad.object.datatype?.value ? `^^${quad.object.datatype.value}` : '';
+  const oLanguage = quad.object.language ? `@${quad.object.language}` : '';
+  const o = `${quad.object.termType}:${quad.object.value}${oDatatype}${oLanguage}`;
+  const g = `${quad.graph?.termType || 'DefaultGraph'}:${quad.graph?.value || ''}`;
+  return `${s}|${p}|${o}|${g}`;
 }
 
 function pushUniqueQuad(quads, seen, quad) {
@@ -933,8 +811,10 @@ function pushUniqueQuad(quads, seen, quad) {
 function parseRawAxiomRdf(rawRdf) {
   const text = String(rawRdf || '').trim();
   if (!text) return [];
-  const parser = new N3.Parser({ prefixes: iriPrefixes, format: 'Turtle' });
-  return parser.parse(text);
+  return parseRdfTextWithN3(text, {
+    format: 'text/turtle',
+    runtime: { N3 }
+  }).quads;
 }
 
 function appendAxiomRecordQuads(quads, seen, record) {
@@ -971,7 +851,7 @@ function appendAxiomRecordQuads(quads, seen, record) {
 
 function termFromSnapshot(term) {
   if (term.termType === 'NamedNode') return N3.DataFactory.namedNode(term.value);
-  if (term.termType === 'BlankNode') return N3.DataFactory.blankNode(term.value);
+  if (isBlankNodeTerm(term)) return N3.DataFactory.blankNode(term.value);
   if (term.termType === 'Literal') {
     if (term.language) return N3.DataFactory.literal(term.value, term.language);
     if (term.datatype?.value) return N3.DataFactory.literal(term.value, N3.DataFactory.namedNode(term.datatype.value));
@@ -984,62 +864,28 @@ function buildOntologyExportQuads(rows) {
   const quads = [];
   const seen = new Set();
   const settings = getOntologySettings();
-  const ontologyIRI = settings["iri"];
   const namedNode = N3.DataFactory.namedNode;
   const literal = N3.DataFactory.literal;
 
-  pushUniqueQuad(quads, seen,
-    N3.DataFactory.quad(
-      namedNode(ontologyIRI),
-      namedNode(w3cIRI.RDF_TYPE),
-      namedNode(w3cIRI.OWL_ONTOLOGY)
-    )
-  );
-
-  const resolvePredicate = (k) => {
-    return resolveNamedNodeIri(k);
-  };
-
-  for (const [key, value] of Object.entries(settings)) {
-    if (key === 'iri' || key === 'owlImportsLocal') continue;
-    if (key === w3cIRI.OWL_IMPORTS && Array.isArray(value)) {
-      for (const importIRI of value) {
-        pushUniqueQuad(quads, seen, N3.DataFactory.quad(
-          namedNode(ontologyIRI),
-          namedNode(w3cIRI.OWL_IMPORTS),
-          namedNode(importIRI)
-        ));
-      }
-      continue;
-    }
-
-    const pred = resolvePredicate(key);
-    const isScalar = ['string', 'number', 'boolean'].includes(typeof value);
-    if (pred && isScalar) {
-      pushUniqueQuad(quads, seen, N3.DataFactory.quad(
-        namedNode(ontologyIRI),
-        namedNode(pred),
-        literal(String(value))
-      ));
-    }
-  }
+  writeOntologyMetadataQuads(settings)
+    .forEach((metadataQuad) => pushUniqueQuad(quads, seen, metadataQuad));
 
   rows.forEach((row) => {
     const [subject, label, type, definition, isAObject, isCuratedInOntology] = row;
     if (!subject) return;
 
     const structuralTypeMap = {
-      Class: w3cIRI.OWL_CLASS,
-      NamedIndividual: w3cIRI.OWL_NAMEDIND,
-      ObjectProperty: w3cIRI.OWL_OBJPROP,
-      DatatypeProperty: w3cIRI.OWL_DATATYPE,
-      AnnotationProperty: w3cIRI.OWL_ANNOPROP,
+      Class: COMMON_NAMESPACE_IRIS.owl.Class,
+      NamedIndividual: COMMON_NAMESPACE_IRIS.owl.NamedIndividual,
+      ObjectProperty: COMMON_NAMESPACE_IRIS.owl.ObjectProperty,
+      DatatypeProperty: COMMON_NAMESPACE_IRIS.owl.DatatypeProperty,
+      AnnotationProperty: COMMON_NAMESPACE_IRIS.owl.AnnotationProperty,
     };
     const structuralTypeIri = structuralTypeMap[type];
     if (structuralTypeIri) {
       pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
-        namedNode(w3cIRI.RDF_TYPE),
+        namedNode(COMMON_NAMESPACE_IRIS.rdf.type),
         namedNode(structuralTypeIri)
       ));
     }
@@ -1047,7 +893,7 @@ function buildOntologyExportQuads(rows) {
     if (label) {
       pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
-        namedNode(w3cIRI.RDFS_LABEL),
+        namedNode(COMMON_NAMESPACE_IRIS.rdfs.label),
         literal(label)
       ));
     }
@@ -1055,7 +901,7 @@ function buildOntologyExportQuads(rows) {
     if (definition) {
       pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
-        namedNode(w3cIRI.SKOS_DEFINITION),
+        namedNode(COMMON_NAMESPACE_IRIS.skos.definition),
         literal(definition)
       ));
     }
@@ -1077,7 +923,7 @@ function buildOntologyExportQuads(rows) {
     if (isCuratedInOntology) {
       pushUniqueQuad(quads, seen, N3.DataFactory.quad(
         namedNode(subject),
-        namedNode(w3cIRI.CCO_CURATEDIN),
+        namedNode(COMMON_NAMESPACE_IRIS.cco2.curatedIn),
         asObjectTerm(isCuratedInOntology)
       ));
     }
@@ -1115,63 +961,46 @@ function buildOntologyExportQuads(rows) {
   return quads;
 }
 
-function serializeQuads(quads, format = 'ttl') {
-  const formatMap = {
-    ttl: 'Turtle',
-    nt: 'N-Triples',
-    trig: 'TriG',
-    nquads: 'N-Quads'
-  };
-  const writer = new N3.Writer({ prefixes: iriPrefixes, format: formatMap[format] || 'Turtle' });
-  quads.forEach((quad) => writer.addQuad(quad));
-
-  return new Promise((resolve, reject) => {
-    writer.end((error, result) => {
-      if (error) {
-        console.error('serializeQuads failed:', error);
-        reject(error);
-      } else {
-        resolve(result);
-      }
-    });
+async function serializeQuads(quads, format = 'ttl') {
+  const mimeType = mimeTypes[format] || format;
+  const usedPrefixes = selectPrefixesUsedByRdfTerms(iriPrefixes, quads);
+  const prefixOptions = createN3WriterOptionsWithPrefixes({ prefixes: usedPrefixes.value });
+  const prefixWarnings = [
+    ...(usedPrefixes.warnings || []),
+    ...(prefixOptions.warnings || [])
+  ];
+  if (prefixWarnings.length) {
+    console.warn('[export] Ignored invalid prefixes:', prefixWarnings);
+  }
+  const serialized = await serializeRdfDatasetWithAdapters(quads, {
+    format: mimeType,
+    prefixes: prefixOptions.value.prefixes,
+    runtime: { N3, jsonld: window.jsonld, $rdf: window.$rdf }
   });
+  return serialized.text;
 }
 
-function buildJsonLdContext() {
+function buildJsonLdContext(quads = []) {
+  const usedPrefixes = selectPrefixesUsedByRdfTerms(iriPrefixes, quads);
   const context = {};
-  Object.entries(iriPrefixes).forEach(([prefix, iri]) => {
+  Object.entries(usedPrefixes.value).forEach(([prefix, iri]) => {
     context[prefix] = iri;
   });
   return context;
-}
-
-async function convertNQuadsToJsonLd(nquads) {
-  if (!window.jsonld) {
-    throw new Error('jsonld.min.js is not loaded. Add it to docs/app/jsonld.min.js to enable JSON-LD support.');
-  }
-
-  const expanded = await window.jsonld.fromRDF(nquads, { format: 'application/n-quads' });
-  const compacted = await window.jsonld.compact(expanded, buildJsonLdContext());
-  return JSON.stringify(compacted, null, 2);
 }
 
 async function generateRdfString(rows, format = 'ttl') {
   console.info('generateRdfString happened');
   const quads = buildOntologyExportQuads(rows);
   if (format === 'jsonld') {
-    const nquads = await serializeQuads(quads, 'nquads');
-    return convertNQuadsToJsonLd(nquads);
+    const serialized = await serializeRdfDatasetWithAdapters(quads, {
+      format: mimeTypes.jsonld,
+      context: buildJsonLdContext(quads),
+      runtime: { N3, jsonld: window.jsonld, $rdf: window.$rdf }
+    });
+    return serialized.text;
   }
   return serializeQuads(quads, format);
-}
-
-function escapeCsvField(value) {
-  if (CoreUtils.escapeCsvField) return CoreUtils.escapeCsvField(value);
-  const text = String(value ?? '');
-  if (/[",\r\n]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
-  }
-  return text;
 }
 
 function buildCsvExportRows(rows) {
@@ -1202,9 +1031,11 @@ function buildCsvExportRows(rows) {
 }
 
 function generateCsvString(rows) {
-  return buildCsvExportRows(rows)
-    .map((row) => row.map(escapeCsvField).join(','))
-    .join('\r\n');
+  return serializeDelimitedRows(buildCsvExportRows(rows), {
+    delimiter: ',',
+    newline: '\r\n',
+    trailingNewline: false
+  });
 }
 
 function getPreviewFormat(selectedFormat) {
@@ -1217,39 +1048,9 @@ function getSaveableRdfFormat(selectedFormat) {
   return selectedFormat === 'csv' ? (lastPreviewableRdfFormat || 'ttl') : selectedFormat;
 }
 
-const mimeTypes = {
-  ttl: 'text/turtle',
-  rdf: 'application/rdf+xml',
-  jsonld: 'application/ld+json',
-  nt: 'application/n-triples',
-  trig: 'application/trig',
-  csv: 'text/csv',
-  nquads: 'application/n-quads'
-};
-
-const extensions = {
-  ttl: 'ttl',
-  rdf: 'rdf',
-  jsonld: 'jsonld',
-  nt: 'nt',
-  trig: 'trig',
-  csv: 'csv'
-};
-
-function idbRequest(req) {
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function idbTransactionDone(tx) {
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error || new Error('Transaction failed'));
-    tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
-  });
-}
+const exportFormatKeys = ['ttl', 'rdf', 'jsonld', 'nt', 'trig', 'csv', 'nquads'];
+const mimeTypes = createFormatMimeTypeMap(exportFormatKeys);
+const extensions = createFormatExtensionMap(exportFormatKeys);
 
 function cloneRowsForWorkspace(rows, expectedColumnCount = null) {
   if (FeatureUtils.cloneRowsForWorkspace) {
@@ -1263,6 +1064,37 @@ function cloneRowsForWorkspace(rows, expectedColumnCount = null) {
     }
     return nextRow.slice(0, expectedColumnCount);
   });
+}
+
+function readCurrentTableRows() {
+  const headers = getColumnHeaders();
+  const fields = typeof gridInstance?.getFields === 'function'
+    ? gridInstance.getFields()
+    : ['iri', 'label', 'elementType', 'definition', 'isA', 'isCuratedInOntology'];
+  const expectedColumnCount = headers.length;
+  const directRows = CoreUtils.normalizeTomTableRows(gridInstance?.getData?.() || [], {
+    headers,
+    fields,
+    expectedColumnCount,
+  });
+  if (directRows.some((row) => row.some((cell) => String(cell || '').trim()))) {
+    return directRows;
+  }
+
+  if (!gridInstance || typeof gridInstance.countRows !== 'function' || typeof gridInstance.getDataAtCell !== 'function') {
+    return directRows;
+  }
+
+  const fallbackRows = [];
+  const rowCount = gridInstance.countRows();
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    const row = [];
+    for (let colIndex = 0; colIndex < expectedColumnCount; colIndex += 1) {
+      row.push(String(gridInstance.getDataAtCell(rowIndex, colIndex) ?? ''));
+    }
+    fallbackRows.push(row);
+  }
+  return fallbackRows;
 }
 
 function isValidViewKey(viewKey) {
@@ -1319,7 +1151,7 @@ function buildWorkspaceSnapshot(timestamp = new Date().toISOString()) {
     activeView: isValidViewKey(getActiveViewKey()) ? getActiveViewKey() : DEFAULT_VIEW,
     predicates,
     axioms: getPersistableAxiomRecords(),
-    rows: cloneRowsForWorkspace(hotInstance?.getData?.() || [], BASE_COLS + predicates.length),
+    rows: cloneRowsForWorkspace(readCurrentTableRows(), BASE_COLS + predicates.length),
   };
 }
 
@@ -1373,29 +1205,14 @@ function getRecordOrderValue(record) {
   return typeof record?.id === 'number' ? record.id : -1;
 }
 
-async function getLatestSavedRecord(db, storeName) {
-  const tx = db.transaction(storeName, 'readonly');
-  const records = await storeGetAll(tx.objectStore(storeName));
-  await idbTransactionDone(tx);
-
-  if (!records.length) return null;
-  if (FeatureUtils.selectLatestRecord) {
-    return FeatureUtils.selectLatestRecord(records);
-  }
-  return records.reduce((latest, current) => {
-    if (!latest) return current;
-    return getRecordOrderValue(current) >= getRecordOrderValue(latest) ? current : latest;
-  }, null);
-}
-
 function applyWorkspaceSnapshot(snapshot) {
   const normalized = normalizeWorkspaceSnapshot(snapshot);
-  if (!normalized || !hotInstance) return null;
+  if (!normalized || !gridInstance) return null;
 
   replacePredicateRegistry(normalized.predicates);
   mergeAxiomRecords(normalized.axioms, { replace: true });
   applyViewSchema(normalized.activeView, { captureCurrent: false });
-  hotInstance.replaceRows(normalized.rows, 'LoadData');
+  gridInstance.replaceRows(normalized.rows, 'LoadData');
   harvestRowsIntoVocab?.(normalized.rows);
 
   try {
@@ -1407,16 +1224,14 @@ function applyWorkspaceSnapshot(snapshot) {
 
 // Delete (optional)
 async function clearOntologySettings() {
-  const db = await ensureDb();
-  const tx = db.transaction(SETTINGS_STORE, 'readwrite');
-  tx.objectStore(SETTINGS_STORE).delete('ontologySettings');
-  await idbTransactionDone(tx);
-  showToast('Ontology settings cleared from database.', 'info');
+  await deleteTomOntologySettings();
+  SETTINGS_CACHE = null;
+  showToast('Ontology settings cleared from project storage.', 'info');
 }
 
 const handleExport = async (shouldDownload = false) => {
   console.info('handleExport happened');
-  const rows = hotInstance.getData();
+  const rows = readCurrentTableRows();
   const selectedFormat = document.getElementById('exportFormat')?.value || 'ttl';
   const format = shouldDownload ? selectedFormat : getPreviewFormat(selectedFormat);
 
@@ -1427,15 +1242,8 @@ const handleExport = async (shouldDownload = false) => {
     output.value = exportString;
 
     if (shouldDownload) {
-      const blob = new Blob([exportString], { type: mimeTypes[format] || 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `ontology.${extensions[format]}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      const fileName = `ontology.${extensions[format] || 'txt'}`;
+      downloadTextFile(fileName, exportString, { mimeType: mimeTypes[format] || 'text/plain' });
     }
   } catch (e) {
     console.error('handleExport failed:', e);
@@ -1444,14 +1252,13 @@ const handleExport = async (shouldDownload = false) => {
 };
 
 /**
- * Saves the current RDF data to IndexedDB.
- * Uses the idb library for IndexedDB operations.
- * @params none
+ * Stores the current TOM workspace and generated RDF in shared project storage.
+ *
  * @returns {Promise<void>}
  */
-async function saveRDFtoIndexedDB() {
-  console.info('saveRDFtoIndexedDB happened');
-  const rows = hotInstance.getData();
+async function storeTomWorkspaceProjectState() {
+  console.info('storeTomWorkspaceProjectState happened');
+  const rows = readCurrentTableRows();
   const selectedFormat = document.getElementById('exportFormat')?.value || 'ttl';
   const format = getSaveableRdfFormat(selectedFormat);
 
@@ -1459,64 +1266,31 @@ async function saveRDFtoIndexedDB() {
     const rdfString = await generateRdfString(rows, format);
     output.value = rdfString;
 
-    const db = await ensureDb();
     const timestamp = new Date().toISOString();
-    const tx = db.transaction([STORE_NAME, WORKSPACE_STORE], 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const workspaceStore = tx.objectStore(WORKSPACE_STORE);
-    store.add({ rdfData: rdfString, format, timestamp });
-    workspaceStore.add(buildWorkspaceSnapshot(timestamp));
-    await idbTransactionDone(tx);
+    await storeTomAuthoringSession({
+      workspaceSnapshot: buildWorkspaceSnapshot(timestamp),
+      rdfString,
+      format,
+      timestamp
+    });
 
-    console.info('Workspace and RDF data saved to IndexedDB successfully.');
-    showToast('Workspace and RDF data saved to database successfully.', 'success');
+    console.info('Workspace and RDF artifact saved to shared project storage successfully.');
+    showToast('Workspace and RDF artifact saved to project storage successfully.', 'success');
 
     updateReloadSessionButton(); // reflect availability immediately
   } catch (e) {
-    console.error('saveRDFtoIndexedDB failed:', e);
-    showToast('Failed to save workspace data to database.', 'error');
+    console.error('storeTomWorkspaceProjectState failed:', e);
+    showToast('Failed to save workspace data to project storage.', 'error');
   }
 };
 
 /**
- * Checks if there is a prior saved session in IndexedDB.
+ * Checks if there is a prior saved session in shared or legacy project storage.
  * @params none
  * @returns {Promise<boolean>} 
  */
 async function hasPriorSession() {
-  const db = await ensureDb();
-  const tx = db.transaction([STORE_NAME, WORKSPACE_STORE], 'readonly');
-  const rdfCount = await idbRequest(tx.objectStore(STORE_NAME).count());
-  const workspaceCount = await idbRequest(tx.objectStore(WORKSPACE_STORE).count());
-  await idbTransactionDone(tx);
-  return rdfCount > 0 || workspaceCount > 0;
-}
-
-/**
- * Ensures DB + object store exist; returns an IDBPDatabase instance
- * @params none
- * @returns {Promise<IDBPDatabase>}
- */
-function ensureDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onupgradeneeded = (event) => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
-      }
-      if (!db.objectStoreNames.contains(WORKSPACE_STORE)) {
-        db.createObjectStore(WORKSPACE_STORE, { keyPath: 'id', autoIncrement: true });
-      }
-      if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
-        db.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
-      }
-    };
-
-    request.onsuccess = () => resolve(request.result); // <- IDBDatabase
-    request.onerror = () => reject(request.error);
-  });
+  return hasTomSavedSession();
 }
 
 // Show/hide + enable/disable the button
@@ -1535,22 +1309,6 @@ async function updateReloadSessionButton() {
   }
     catch (e) {
     console.warn('updateReloadSessionButton failed', e);}
-}
-
-/**
- * Maps saved format strings to N3.Parser formats.
- * @param {string} format
- * @returns 
- */
-function n3FormatForSaved(format) {
-  // Map your saved "format" (ttl|rdf|jsonld|nt|trig) to N3.Parser formats
-  const f = String(format || '').toLowerCase();
-  if (f === 'ttl' || f.includes('turtle')) return 'Turtle';
-  if (f === 'nt'  || f.includes('n-triple')) return 'N-Triples';
-  if (f === 'trig') return 'TriG';
-  // N3.Parser does not parse RDF/XML or JSON-LD. If you need those, convert before parse.
-  // For now, treat others as Turtle; you can extend later with rdfxml/jsonld conversions.
-  return 'Turtle';
 }
 
 function firstLiteral(objs) {
@@ -1576,12 +1334,12 @@ function iriFromObjects(objs) {
 
 function getSemanticRdfTypes(rdfTypes) {
   const structuralTypes = new Set([
-    w3cIRI.OWL_CLASS,
-    w3cIRI.OWL_OBJPROP,
-    w3cIRI.OWL_DATAPROP,
-    w3cIRI.OWL_ANNOPROP,
-    w3cIRI.OWL_NAMEDIND,
-    w3cIRI.OWL_ONTOLOGY,
+    COMMON_NAMESPACE_IRIS.owl.Class,
+    COMMON_NAMESPACE_IRIS.owl.ObjectProperty,
+    COMMON_NAMESPACE_IRIS.owl.DatatypeProperty,
+    COMMON_NAMESPACE_IRIS.owl.AnnotationProperty,
+    COMMON_NAMESPACE_IRIS.owl.NamedIndividual,
+    COMMON_NAMESPACE_IRIS.owl.Ontology,
   ]);
 
   return (rdfTypes || [])
@@ -1621,29 +1379,13 @@ function asObjectTerm(value) {
   return N3.DataFactory.literal(v);
 }
 
-async function storeGetAll(store) {
-  if ('getAll' in store) return idbRequest(store.getAll());
-  const out = [];
-  await new Promise((resolve, reject) => {
-    const req = store.openCursor();
-    req.onsuccess = (e) => {
-      const c = e.target.result;
-      if (c) { out.push(c.value); c.continue(); } else resolve();
-    };
-    req.onerror = () => reject(req.error);
-  });
-  return out;
-}
-
-// Reloads the most recent saved session from IndexedDB
+// Reloads the most recent saved session from shared project storage, with legacy fallback.
 async function reloadSavedSession() {
   try {
-    const db = await ensureDb();
-    const latestWorkspace = await getLatestSavedRecord(db, WORKSPACE_STORE);
-    const latestRdfRecord = await getLatestSavedRecord(db, STORE_NAME);
+    const { latestWorkspace, latestRdfRecord, source } = await readLatestTomSavedSession();
 
     if (!latestWorkspace && !latestRdfRecord) {
-      console.warn('No prior session found in IndexedDB.');
+      console.warn('No prior TOM session found in project or legacy IndexedDB storage.');
       showToast('No prior session found.', 'info');
       return;
     }
@@ -1654,7 +1396,7 @@ async function reloadSavedSession() {
     if (shouldUseWorkspace) {
       const restoredWorkspace = applyWorkspaceSnapshot(latestWorkspace);
       if (restoredWorkspace) {
-        showToast(`Reloaded ${restoredWorkspace.rows.length} row${restoredWorkspace.rows.length !== 1 ? 's' : ''} from latest saved workspace`, 'success');
+        showToast(`Reloaded ${restoredWorkspace.rows.length} row${restoredWorkspace.rows.length !== 1 ? 's' : ''} from latest saved workspace (${source})`, 'success');
         return;
       }
     }
@@ -1667,25 +1409,28 @@ async function reloadSavedSession() {
 
     const { rdfData, format } = latestRdfRecord;
 
-    // Parse RDF -> quads
-    const parser = new N3.Parser({ format: n3FormatForSaved(format) });
-    const quads = parser.parse(rdfData);
+    // Parse RDF -> quads through the shared RDF IO adapter layer.
+    const parsed = await parseRdfTextWithAdapters(rdfData, {
+      format: mimeTypes[String(format || '').toLowerCase()] || format || 'text/turtle',
+      runtime: { N3, jsonld: window.jsonld, $rdf: window.$rdf }
+    });
+    const quads = parsed.quads;
 
     // Build subject -> predicate->values map + set of all predicates
     const subjMap = new Map();
     const extraPreds = new Set();
 
     for (const q of quads) {
-      const s = q.subject.termType === 'BlankNode' ? `_:${q.subject.value}` : q.subject.value;
+      const s = isBlankNodeTerm(q.subject) ? `_:${q.subject.value}` : q.subject.value;
       const p = q.predicate.value;
 
       let o;
       if (q.object.termType === 'Literal') {
         const lang = q.object.language ? `@${q.object.language}` : '';
-        const dt = q.object.datatype && q.object.datatype.value !== 'http://www.w3.org/2001/XMLSchema#string'
+        const dt = q.object.datatype && q.object.datatype.value !== COMMON_NAMESPACE_IRIS.xsd.string
           ? `^^<${q.object.datatype.value}>` : '';
         o = `"${q.object.value}"${lang}${dt}`;
-      } else if (q.object.termType === 'BlankNode') {
+      } else if (isBlankNodeTerm(q.object)) {
         o = `_:${q.object.value}`;
       } else {
         o = `<${q.object.value}>`;
@@ -1715,33 +1460,33 @@ async function reloadSavedSession() {
     for (const [s, pMap] of subjMap.entries()) {
 
       if (s === ontologyIriFromSettings) continue;
-      const rdfTypes = Array.from(pMap.get(w3cIRI.RDF_TYPE)?.values() || []);
+      const rdfTypes = Array.from(pMap.get(COMMON_NAMESPACE_IRIS.rdf.type)?.values() || []);
       const hasType = iri => rdfTypes.includes(`<${iri}>`);
-      if (hasType(w3cIRI.OWL_ONTOLOGY)) continue;
+      if (hasType(COMMON_NAMESPACE_IRIS.owl.Ontology)) continue;
 
       let elementType = '';
-      if (hasType(w3cIRI.OWL_CLASS))           elementType = 'Class';
-      else if (hasType(w3cIRI.OWL_OBJPROP))    elementType = 'ObjectProperty';
-      else if (hasType(w3cIRI.OWL_DATATYPE))   elementType = 'DatatypeProperty';
-      else if (hasType(w3cIRI.OWL_ANNOPROP))   elementType = 'AnnotationProperty';
-      else if (hasType(w3cIRI.OWL_NAMEDIND))   elementType = 'NamedIndividual';
-      else if (hasType(w3cIRI.OWL_ONTOLOGY))   elementType = 'Ontology'; // This is an outlier case, mostly for error handling
+      if (hasType(COMMON_NAMESPACE_IRIS.owl.Class))           elementType = 'Class';
+      else if (hasType(COMMON_NAMESPACE_IRIS.owl.ObjectProperty))    elementType = 'ObjectProperty';
+      else if (hasType(COMMON_NAMESPACE_IRIS.owl.DatatypeProperty))   elementType = 'DatatypeProperty';
+      else if (hasType(COMMON_NAMESPACE_IRIS.owl.AnnotationProperty))   elementType = 'AnnotationProperty';
+      else if (hasType(COMMON_NAMESPACE_IRIS.owl.NamedIndividual))   elementType = 'NamedIndividual';
+      else if (hasType(COMMON_NAMESPACE_IRIS.owl.Ontology))   elementType = 'Ontology'; // This is an outlier case, mostly for error handling
       else if (rdfTypes.length)                elementType = 'NamedIndividual';
 
-      const label = firstLiteral(Array.from(pMap.get(w3cIRI.RDFS_LABEL)?.values() || []));
-      const definition = firstLiteral(Array.from(pMap.get(w3cIRI.SKOS_DEFINITION)?.values() || []));
+      const label = firstLiteral(Array.from(pMap.get(COMMON_NAMESPACE_IRIS.rdfs.label)?.values() || []));
+      const definition = firstLiteral(Array.from(pMap.get(COMMON_NAMESPACE_IRIS.skos.definition)?.values() || []));
 
       let isA = '';
       if (elementType === 'Class') {
-        isA = iriFromObjects(Array.from(pMap.get(w3cIRI.RDFS_SUBCLASS)?.values() || []));
+        isA = iriFromObjects(Array.from(pMap.get(COMMON_NAMESPACE_IRIS.rdfs.subClassOf)?.values() || []));
       } else if (elementType === 'ObjectProperty' || elementType === 'DatatypeProperty' || elementType === 'AnnotationProperty') {
-        isA = iriFromObjects(Array.from(pMap.get(w3cIRI.RDFS_SUBPROP)?.values() || []));
+        isA = iriFromObjects(Array.from(pMap.get(COMMON_NAMESPACE_IRIS.rdfs.subPropertyOf)?.values() || []));
       } else if (elementType === 'NamedIndividual') {
         const classish = getSemanticRdfTypes(rdfTypes);
         if (classish.length) isA = classish[0];
       }
 
-      const curatedVals = Array.from(pMap.get(w3cIRI.CCO_CURATEDIN)?.values() || []);
+      const curatedVals = Array.from(pMap.get(COMMON_NAMESPACE_IRIS.cco2.curatedIn)?.values() || []);
       const curatedIn = iriFromObjects(curatedVals) || firstLiteral(curatedVals);
 
       // base row
@@ -1756,8 +1501,8 @@ async function reloadSavedSession() {
       // gather extra predicates (not mapped to base columns)
       for (const p of pMap.keys()) {
         if (
-          p === w3cIRI.RDFS_LABEL || p === w3cIRI.SKOS_DEFINITION || p === w3cIRI.RDF_TYPE ||
-          p === w3cIRI.RDFS_SUBCLASS || p === w3cIRI.RDFS_SUBPROP || p === w3cIRI.CCO_CURATEDIN
+          p === COMMON_NAMESPACE_IRIS.rdfs.label || p === COMMON_NAMESPACE_IRIS.skos.definition || p === COMMON_NAMESPACE_IRIS.rdf.type ||
+          p === COMMON_NAMESPACE_IRIS.rdfs.subClassOf || p === COMMON_NAMESPACE_IRIS.rdfs.subPropertyOf || p === COMMON_NAMESPACE_IRIS.cco2.curatedIn
         ) continue;
         extraPreds.add(p);
       }
@@ -1791,8 +1536,8 @@ async function reloadSavedSession() {
 
     const newHeaders = getColumnHeaders();
     const newColumns = getColumnDefinitions();
-    hotInstance.setSchema(newHeaders, newColumns);
-    hotInstance.replaceRows(finalRows, 'LoadData');
+    gridInstance.setSchema(newHeaders, newColumns);
+    gridInstance.replaceRows(finalRows, 'LoadData');
     mergeAxiomRecords(rdfFallbackAxiomRecords, { replace: true });
     harvestRowsIntoVocab?.(finalRows);
 
@@ -1801,38 +1546,6 @@ async function reloadSavedSession() {
     console.error('[reloadSavedSession] failed:', e);
     showToast('Failed to reload prior session - see console', 'error');
   }
-}
-
-/**
- * Gets the current date parts (year, month, day) as zero-padded strings.
- * @returns 
- */
-function getCurrentDateParts() {
-  return (CoreUtils.getCurrentDateParts || (() => {
-    const now = new Date();
-    return {
-      year: now.getFullYear(),
-      month: String(now.getMonth() + 1).padStart(2, '0'),
-      day: String(now.getDate()).padStart(2, '0')
-    };
-  }))();
-}
-
-// This is called by generateOntologySettings to get the camelCase version of the label
-function toCamelCase(str) {
-  if (CoreUtils.toCamelCase) return CoreUtils.toCamelCase(str);
-  return str
-    .toLowerCase()
-    .replace(/[^a-z0-9]+(.)/g, (_, chr) => chr.toUpperCase());
-}
-
-// Converts a string to PascalCase (e.g., "example term" -> "ExampleTerm")
-function toPascalCase(str) {
-  if (CoreUtils.toPascalCase) return CoreUtils.toPascalCase(str);
-  return str
-    .toLowerCase()
-    .replace(/[^a-z0-9]+(.)/g, (_, chr) => chr.toUpperCase()) // handle word boundaries
-    .replace(/^./, chr => chr.toUpperCase()); // capitalize first letter
 }
 
 /*
@@ -1891,14 +1604,14 @@ function extractOntologyVocabEntries(quads, source = "Imported Ontology") {
     }
     const entry = subjectData.get(subject);
 
-    if (predicate === w3cIRI.RDFS_LABEL && !entry.label) entry.label = object;
-    if (predicate === 'http://www.w3.org/2004/02/skos/core#altLabel') entry.altLabels.push(object);
-    if (predicate === w3cIRI.RDF_TYPE) {
-      if (object === w3cIRI.OWL_CLASS) entry.type = 'Class';
-      else if (object === w3cIRI.OWL_OBJPROP) entry.type = 'ObjectProperty';
-      else if (object === w3cIRI.OWL_DATATYPE || object === w3cIRI.OWL_DATAPROP) entry.type = 'DatatypeProperty';
-      else if (object === w3cIRI.OWL_ANNOPROP) entry.type = 'AnnotationProperty';
-      else if (object === w3cIRI.OWL_NAMEDIND) entry.type = 'NamedIndividual';
+    if (predicate === COMMON_NAMESPACE_IRIS.rdfs.label && !entry.label) entry.label = object;
+    if (predicate === COMMON_NAMESPACE_IRIS.skos.altLabel) entry.altLabels.push(object);
+    if (predicate === COMMON_NAMESPACE_IRIS.rdf.type) {
+      if (object === COMMON_NAMESPACE_IRIS.owl.Class) entry.type = 'Class';
+      else if (object === COMMON_NAMESPACE_IRIS.owl.ObjectProperty) entry.type = 'ObjectProperty';
+      else if (object === COMMON_NAMESPACE_IRIS.owl.DatatypeProperty) entry.type = 'DatatypeProperty';
+      else if (object === COMMON_NAMESPACE_IRIS.owl.AnnotationProperty) entry.type = 'AnnotationProperty';
+      else if (object === COMMON_NAMESPACE_IRIS.owl.NamedIndividual) entry.type = 'NamedIndividual';
     }
   }
 
@@ -1939,11 +1652,13 @@ function isPredicateVocabRecord(rec) {
   return PREDICATE_LOOKUP_TYPES.includes(type) || /Property$/i.test(type);
 }
 
-// quick CURIE builder using your existing prefixes
 function iriToCurie(iri) {
-  for (const [pfx, base] of Object.entries(iriPrefixes)) {
-    if (iri.startsWith(base)) return `${pfx}:${iri.slice(base.length)}`;
-  }
+  const result = compactIriToCurie(iri, iriPrefixes);
+  if (result.ok) return result.value;
+
+  const match = findLongestPrefixMatch(iri, iriPrefixes);
+  if (match.ok) return `${match.prefix}:${String(iri || '').slice(match.namespaceIri.length)}`;
+
   return null;
 }
 
@@ -1990,12 +1705,6 @@ function displayLabelAndCurie(rec) {
   return `${rec.label || rec.curie || rec.iri} - ${(rec.curie || rec.iri)}`;
 }
 
-function normalizeIriishToken(value) {
-  const v = String(value || '').trim();
-  const displayParts = v.split(/\s(?:-|::)\s/);
-  return displayParts.length > 1 ? displayParts[displayParts.length - 1].trim() : v;
-}
-
 function searchPredicateVocab(q, { max = 20 } = {}) {
   return searchVocab(q, { max, typeHint: PREDICATE_LOOKUP_TYPES }).filter(isPredicateVocabRecord);
 }
@@ -2003,7 +1712,7 @@ function searchPredicateVocab(q, { max = 20 } = {}) {
 function getKnownVocabRecordForIriish(value) {
   if (!value) return null;
   const v = String(value).trim();
-  const token = normalizeIriishToken(v);
+  const token = normalizeIriToken(v);
 
   if (vocabByIri.has(token)) return vocabByIri.get(token);
   if (vocabByCurie.has(token)) return vocabByCurie.get(token);
@@ -2027,16 +1736,15 @@ function formatPredicateHeaderTitle(value) {
 function resolvePredicateInputToIri(value) {
   if (!value) return null;
   const v = String(value).trim();
-  const token = normalizeIriishToken(v);
+  const token = normalizeIriToken(v);
 
   if (/^https?:\/\/\S+$/i.test(token) || /^urn:[^:\s]+:.+/i.test(token) || /^<[^>\s]+>$/.test(token)) {
     return token.replace(/^<|>$/g, '');
   }
 
   if (token.includes(':')) {
-    const [pfx, local] = token.split(':');
-    const base = iriPrefixes[pfx];
-    if (base) return base + local;
+    const expanded = expandCurieToIri(token, iriPrefixes);
+    if (expanded.ok) return expanded.value;
 
     const rec = vocabByCurie.get(token);
     if (rec && isPredicateVocabRecord(rec)) return rec.iri;
@@ -2108,9 +1816,8 @@ function resolveToIri(value) {
   }
 
   if (maybeCode.includes(':')) {
-    const [pfx, local] = maybeCode.split(':');
-    const base = iriPrefixes[pfx];
-    if (base) return base + local;
+    const expanded = expandCurieToIri(maybeCode, iriPrefixes);
+    if (expanded.ok) return expanded.value;
 
     const rec = vocabByCurie.get(maybeCode);
     if (rec) return rec.iri;
@@ -2127,7 +1834,7 @@ function resolveToIri(value) {
   return null;
 }
 
-// This function is used to harvest rows from a Handsontable instance into the vocabulary index.
+// This function is used to harvest rows from the grid into the vocabulary index.
 function harvestRowsIntoVocab(rows) {
   const IRI_COL = 0, LABEL_COL = 1, TYPE_COL = 2;
   const entries = [];
@@ -2152,7 +1859,7 @@ function normalizeIsAEdits(changes, source) {
     const newVal = ch[3];
 
     // Resolve prop to column index
-    const col = (typeof prop === 'number') ? prop : hotInstance.propToCol(prop);
+    const col = (typeof prop === 'number') ? prop : gridInstance.propToCol(prop);
     if (col !== 4) continue; // only "Is A" column
 
     const iri = resolveToIri(newVal);
@@ -2160,29 +1867,29 @@ function normalizeIsAEdits(changes, source) {
   }
 }
 
-function attachHotHooks() {
-  hotInstance.addHook('beforeChange', normalizeIsAEdits);
+function attachGridHooks() {
+  gridInstance.addHook('beforeChange', normalizeIsAEdits);
 
   // NEW: when rows are created, auto-assign IRIs
-  hotInstance.addHook('afterCreateRow', (index, amount, source) => {
+  gridInstance.addHook('afterCreateRow', (index, amount, source) => {
     try {
       const s = getOntologySettings();
       const mode = s.iriMode || 'opaque';
 
       if (mode === 'opaque') {
-        let maxNum = findMaxOpaqueNumber(hotInstance, s);
+        let maxNum = findMaxOpaqueOntologyIriNumber(readGridSubjectIris(gridInstance), s);
         for (let r = 0; r < amount; r++) {
           const rowIndex = index + r;
           maxNum += 1;
-          const iri = buildOpaqueIri(maxNum, s);
-          hotInstance.setDataAtCell(rowIndex, 0, iri); // col 0 = IRI
+          const iri = buildOpaqueOntologyIri(maxNum, s);
+          gridInstance.setDataAtCell(rowIndex, 0, iri); // col 0 = IRI
         }
       } else {
         // readable: we'll fill when/if label appears (see afterChange)
         for (let r = 0; r < amount; r++) {
           const rowIndex = index + r;
           // leave IRI blank for now
-          hotInstance.setDataAtCell(rowIndex, 0, '');
+          gridInstance.setDataAtCell(rowIndex, 0, '');
         }
       }
     } catch (e) {
@@ -2191,36 +1898,37 @@ function attachHotHooks() {
   });
 
   // NEW: when label changes in readable mode, (re)build IRI if empty or previously auto-generated
-  hotInstance.addHook('afterChange', (changes, source) => {
+  gridInstance.addHook('afterChange', (changes, source) => {
     if (!Array.isArray(changes) || source === 'LoadData') return;
     try {
       const s = getOntologySettings();
       if ((s.iriMode || 'opaque') !== 'readable') return;
 
       // gather existing iris for uniqueness checks
-      const allIris = new Set(hotInstance.getData().map(r => String(r?.[0] || '')));
+      const allIris = new Set(readCurrentTableRows().map(r => String(r?.[0] || '')));
 
       for (const ch of changes) {
         const row = ch[0];
-        const col = (typeof ch[1] === 'number') ? ch[1] : hotInstance.propToCol(ch[1]);
+        const col = (typeof ch[1] === 'number') ? ch[1] : gridInstance.propToCol(ch[1]);
         const newVal = ch[3];
 
         // Column 1 = label
         if (col === 1) {
-          const currentIri = String(hotInstance.getDataAtCell(row, 0) || '');
+          const currentIri = String(gridInstance.getDataAtCell(row, 0) || '');
           const label = String(newVal || '').trim();
           if (!label) continue;
 
           // Rebuild if IRI is blank OR was previously auto-generated (matches our base+delimiter)
-          const { base, delimiter } = getBaseAndDelimiter(s);
+          const base = String(s.base || '').replace(/[\/#]+$/, '') || 'http://example.org';
+          const delimiter = s.delimiter || '/';
           const looksAuto = currentIri.startsWith(`${base}${delimiter}`);
 
           if (!currentIri || looksAuto) {
             // Temporarily exclude our own current IRI to avoid self-collision logic
             if (currentIri) allIris.delete(currentIri);
 
-            const iri = buildReadableIri(label, s, allIris);
-            hotInstance.setDataAtCell(row, 0, iri);
+            const iri = buildReadableOntologyIri(label, s, allIris);
+            gridInstance.setDataAtCell(row, 0, iri);
 
             allIris.add(iri); // reserve
           }
@@ -2232,10 +1940,10 @@ function attachHotHooks() {
   });
 }
 
-// This function backfills IRIs in the Handsontable instance based on the selected mode.
+// This function backfills IRIs in the grid based on the selected mode.
 function backfillIris() {
   try {
-    if (!hotInstance) {
+    if (!gridInstance) {
       console.warn('[IRI] No table instance');
       showToast('Table not ready', 'error');
       return;
@@ -2244,12 +1952,12 @@ function backfillIris() {
     const s = getEffectiveOntologySettings();
     const mode = s.iriMode || 'opaque';
 
-    const total = hotInstance.countRows();
+    const total = gridInstance.countRows();
 
     // collect already-used IRIs to ensure uniqueness
     const existing = new Set();
     for (let r = 0; r < total; r++) {
-      const iri = String(hotInstance.getDataAtCell(r, 0) || '').trim();
+      const iri = String(gridInstance.getDataAtCell(r, 0) || '').trim();
       if (iri) existing.add(iri);
     }
 
@@ -2258,14 +1966,14 @@ function backfillIris() {
 
     if (mode === 'opaque') {
       const startAt = Math.max(1, s.opaqueStart || 1);
-      const usedOpaqueNumbers = collectUsedOpaqueNumbers(hotInstance, s);
+      const usedOpaqueNumbers = collectUsedOpaqueOntologyIriNumbers(readGridSubjectIris(gridInstance), s);
 
       for (let r = 0; r < total; r++) {
-        const iri = String(hotInstance.getDataAtCell(r, 0) || '').trim();
+        const iri = String(gridInstance.getDataAtCell(r, 0) || '').trim();
         if (!iri) {
-          const next = findNextAvailableOpaqueNumber(usedOpaqueNumbers, s, startAt);
-          const newIri = buildOpaqueIri(next, s);
-          hotInstance.setDataAtCell(r, 0, newIri);
+          const next = findNextAvailableOpaqueOntologyIriNumber(usedOpaqueNumbers, s, startAt);
+          const newIri = buildOpaqueOntologyIri(next, s);
+          gridInstance.setDataAtCell(r, 0, newIri);
           existing.add(newIri);
           usedOpaqueNumbers.add(next);
           filled++;
@@ -2274,12 +1982,12 @@ function backfillIris() {
     } else {
       // human-readable: derive from label when present
       for (let r = 0; r < total; r++) {
-        const iri = String(hotInstance.getDataAtCell(r, 0) || '').trim();
+        const iri = String(gridInstance.getDataAtCell(r, 0) || '').trim();
         if (!iri) {
-          const label = String(hotInstance.getDataAtCell(r, 1) || '').trim();
+          const label = String(gridInstance.getDataAtCell(r, 1) || '').trim();
           if (!label) { skipped++; continue; }
-          const newIri = buildReadableIri(label, s, existing);
-          hotInstance.setDataAtCell(r, 0, newIri);
+          const newIri = buildReadableOntologyIri(label, s, existing);
+          gridInstance.setDataAtCell(r, 0, newIri);
           existing.add(newIri);
           filled++;
         }
@@ -2293,34 +2001,25 @@ function backfillIris() {
   }
 }
 
-function isValidOntology(content) {
-  if (CoreUtils.isValidOntology) return CoreUtils.isValidOntology(content);
-  return (
-    typeof content === 'string' &&
-    content.length > 0 &&
-    /rdf:RDF|@prefix|owl:Ontology|"@context"\s*:/.test(content)
-  );
-}
-
-// Gets n rows to the bottom of the Handsontable instance.
+// Gets n rows to the bottom of the grid.
 function getRowCountInput() {
   const n = parseInt(document.getElementById("row-count").value, 10);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 
-// This function adds n blank rows to the bottom of the Handsontable instance.
+// This function adds n blank rows to the bottom of the grid.
 function addRowsToTable(n = 1) {
-  if (!hotInstance || n < 1) return;
-  hotInstance.insertRows(hotInstance.countRows(), n);
+  if (!gridInstance || n < 1) return;
+  gridInstance.insertRows(gridInstance.countRows(), n);
 }
 
-// This function deletes n rows from the bottom of the Handsontable instance.
+// This function deletes n rows from the bottom of the grid.
 function removeRowsFromBottom(n = 1) {
-  if (!hotInstance || n < 1) return;
-  const total = hotInstance.countRows();
+  if (!gridInstance || n < 1) return;
+  const total = gridInstance.countRows();
   const toRemove = Math.min(n, total);
-  if (toRemove > 0) hotInstance.removeRows(total - toRemove, toRemove);
+  if (toRemove > 0) gridInstance.removeRows(total - toRemove, toRemove);
 }
 
 
@@ -2329,8 +2028,8 @@ function removeRowsFromBottom(n = 1) {
  * Returns [ {index, header} ] for custom predicate columns (all columns after BASE_COLS).
  */
 function getCustomPredicateColumns() {
-  if (!hotInstance) return [];
-  const headers = hotInstance.getColHeader(); // includes hidden columns
+  if (!gridInstance) return [];
+  const headers = gridInstance.getColHeader(); // includes hidden columns
   const out = [];
   for (let c = BASE_COLS; c < headers.length; c++) {
     out.push({ index: c, header: String(headers[c]) });
@@ -2339,7 +2038,7 @@ function getCustomPredicateColumns() {
 }
 
 function getHiddenColumnIndexes() {
-  return hotInstance?.getHiddenColumns?.() || [];
+  return gridInstance?.getHiddenColumns?.() || [];
 }
 
 function getHiddenColumnSet() {
@@ -2404,8 +2103,8 @@ function setColumnsVisibilityForView(viewKey, indexes, visible) {
   });
 
   setHiddenColumnsForView(viewKey, hidden);
-  if (viewKey === getActiveViewKey() && hotInstance) {
-    hotInstance.setHiddenColumns(Array.from(hidden));
+  if (viewKey === getActiveViewKey() && gridInstance) {
+    gridInstance.setHiddenColumns(Array.from(hidden));
   }
 
   try {
@@ -2420,7 +2119,7 @@ function setViewColumnVisibility(viewKey, index, visible) {
 }
 
 function showAllViewColumns(viewKey) {
-  setColumnsVisibilityForView(viewKey, hotInstance?.getColHeader?.().map((_, index) => index) || [], true);
+  setColumnsVisibilityForView(viewKey, gridInstance?.getColHeader?.().map((_, index) => index) || [], true);
 }
 
 function openManagePredicatesModal() {
@@ -2443,13 +2142,13 @@ function closeAxiomBuilderDrawer() {
 }
 
 function openAxiomBuilderDrawer(rowIndex) {
-  if (!hotInstance || !AxiomBuilder.mount) {
+  if (!gridInstance || !AxiomBuilder.mount) {
     showToast('Axiom builder is not available.', 'error');
     return;
   }
 
-  harvestRowsIntoVocab?.(hotInstance.getData?.() || []);
-  const row = hotInstance.getSourceDataAtRow(rowIndex);
+  harvestRowsIntoVocab?.(gridInstance.getData?.() || []);
+  const row = gridInstance.getSourceDataAtRow(rowIndex);
   if (!row) return;
   const subjectIri = resolveToIri(row[0]) || String(row[0] || '').trim();
   if (!subjectIri) {
@@ -2508,15 +2207,15 @@ function openAxiomBuilderDrawer(rowIndex) {
 }
 
 function buildGridContextMenuItems(context) {
-  if (!hotInstance || !context) return [];
+  if (!gridInstance || !context) return [];
 
   const activeView = getActiveViewKey();
-  const totalColumns = hotInstance.getColHeader().length;
+  const totalColumns = gridInstance.getColHeader().length;
   const hiddenColumns = new Set(getHiddenColumnsForView(activeView));
   const selectedColumnIndexes = Array.from(new Set(context.colIndexes || []))
     .filter((index) => Number.isInteger(index) && index >= 0 && index < totalColumns);
   const selectedRowIndexes = Array.from(new Set(context.rowIndexes || []))
-    .filter((index) => Number.isInteger(index) && index >= 0 && index < hotInstance.countRows())
+    .filter((index) => Number.isInteger(index) && index >= 0 && index < gridInstance.countRows())
     .sort((a, b) => a - b);
 
   const items = [];
@@ -2564,7 +2263,7 @@ function buildGridContextMenuItems(context) {
       id: 'insert-rows-above',
       label: rowCount === 1 ? 'Insert Row Above' : `Insert ${rowCount} Rows Above`,
       onSelect: () => {
-        hotInstance.insertRows(startRow, rowCount);
+        gridInstance.insertRows(startRow, rowCount);
         showToast(`${rowCount} row${rowCount !== 1 ? 's' : ''} inserted above`, 'success');
       },
     });
@@ -2572,7 +2271,7 @@ function buildGridContextMenuItems(context) {
       id: 'insert-rows-below',
       label: rowCount === 1 ? 'Insert Row Below' : `Insert ${rowCount} Rows Below`,
       onSelect: () => {
-        hotInstance.insertRows(endRow + 1, rowCount);
+        gridInstance.insertRows(endRow + 1, rowCount);
         showToast(`${rowCount} row${rowCount !== 1 ? 's' : ''} inserted below`, 'success');
       },
     });
@@ -2580,7 +2279,7 @@ function buildGridContextMenuItems(context) {
       id: 'add-row-end',
       label: 'Add Row at End',
       onSelect: () => {
-        hotInstance.insertRows(hotInstance.countRows(), 1);
+        gridInstance.insertRows(gridInstance.countRows(), 1);
         showToast('1 row added at end', 'success');
       },
     });
@@ -2597,7 +2296,7 @@ function buildGridContextMenuItems(context) {
       id: 'remove-rows',
       label: rowCount === 1 ? 'Remove Row' : `Remove ${rowLabel}`,
       onSelect: () => {
-        hotInstance.removeRows(startRow, rowCount);
+        gridInstance.removeRows(startRow, rowCount);
         showToast(`${rowCount} row${rowCount !== 1 ? 's' : ''} removed`, 'info');
       },
     });
@@ -2762,8 +2461,8 @@ function renderPredicateModesChecklist(containerOrId) {
         syncPredicatePlacementToHiddenState(index, predicateRecord);
 
         const currentView = getActiveViewKey();
-        if (hotInstance) {
-          hotInstance.setHiddenColumns(Array.from(getHiddenColumnsForView(currentView)));
+        if (gridInstance) {
+          gridInstance.setHiddenColumns(Array.from(getHiddenColumnsForView(currentView)));
         }
         renderPredicateModesChecklist(container);
       });
@@ -2855,7 +2554,7 @@ function renderCustomPredicateChecklist(containerOrId, opts = {}) {
     }
     checkbox.checked = startChecked;
 
-    // (Optional) show if currently hidden in HOT
+    // Optionally show if currently hidden in the grid.
     const hiddenBadge = hiddenColumns.has(index) ? ' (hidden)' : '';
 
     const label = document.createElement('label');
@@ -2914,7 +2613,7 @@ async function confirmAddPredicate() {
 
         const newHeaders = getColumnHeaders(); // base + customs
         const newColumns = getColumnDefinitions();
-        const oldData = hotInstance.getData();
+        const oldData = readCurrentTableRows();
         const validTypes = getElementTypes();
 
         const cleanedRows = oldData.map(row => {
@@ -2926,8 +2625,8 @@ async function confirmAddPredicate() {
           return fixed;
         });
 
-        hotInstance.setSchema(newHeaders, newColumns);
-        hotInstance.replaceRows(cleanedRows, 'LoadData');
+        gridInstance.setSchema(newHeaders, newColumns);
+        gridInstance.replaceRows(cleanedRows, 'LoadData');
         harvestRowsIntoVocab?.(cleanedRows);
          // Refresh the modes UI if the modal is open
          try { renderPredicateModesChecklist('predicate-modes-list'); } catch (_) {}
@@ -2946,11 +2645,8 @@ function curieToIri(maybe) {
   if (!maybe) return null;
   const v = String(maybe).trim();
   if (/^https?:\/\//i.test(v)) return v;
-  if (v.includes(':')) {
-    const [pfx, local] = v.split(':');
-    const base = iriPrefixes?.[pfx];
-    if (base) return base + local;
-  }
+  const expanded = expandCurieToIri(v, iriPrefixes);
+  if (expanded.ok) return expanded.value;
   return null;
 }
 
@@ -2961,10 +2657,10 @@ function iriToNiceLabel(iri) {
 
 // base header map
 const BASE_HEADER_TO_PRED = new Map([
-  ['label',        w3cIRI.RDFS_LABEL],
-  ['definition',   w3cIRI.SKOS_DEFINITION],
-  ['element type', w3cIRI.RDF_TYPE],
-  ['is curated in ontology', w3cIRI.CCO_CURATEDIN],
+  ['label',        COMMON_NAMESPACE_IRIS.rdfs.label],
+  ['definition',   COMMON_NAMESPACE_IRIS.skos.definition],
+  ['element type', COMMON_NAMESPACE_IRIS.rdf.type],
+  ['is curated in ontology', COMMON_NAMESPACE_IRIS.cco2.curatedIn],
 ]);
 
 // Expand a single header to one or more concrete predicate IRIs for curation rules
@@ -2977,9 +2673,9 @@ function headerToPredicateIrisForRules(header) {
   // Special: "is a" expands
   if (h === 'is a') {
     return [
-      w3cIRI.RDF_TYPE,
-      w3cIRI.RDFS_SUBCLASS,
-      w3cIRI.RDFS_SUBPROP,
+      COMMON_NAMESPACE_IRIS.rdf.type,
+      COMMON_NAMESPACE_IRIS.rdfs.subClassOf,
+      COMMON_NAMESPACE_IRIS.rdfs.subPropertyOf,
     ].filter(Boolean);
   }
 
@@ -2988,10 +2684,10 @@ function headerToPredicateIrisForRules(header) {
   return iri ? [iri] : [];
 }
 
-// Build the predicate set from HOT headers (visible or hidden)
+// Build the predicate set from grid headers, visible or hidden.
 function collectPredicateIrisFromHeaders() {
-  if (!hotInstance) return [];
-  const headers = hotInstance.getColHeader(); // includes hidden
+  if (!gridInstance) return [];
+  const headers = gridInstance.getColHeader(); // includes hidden
   const set = new Set();
   for (const h of headers) {
     headerToPredicateIrisForRules(h).forEach((iri) => set.add(iri));
@@ -3053,14 +2749,14 @@ function presentPredicatesForRow(row, headers) {
 /**
  * Gathers all IRIs/CURIEs used as predicates in the table columns
  * (excluding utility columns like IRI, Label, Type).
- * This relies on the globally available hotInstance and curieToIri.
+ * This relies on the globally available gridInstance and curieToIri.
  * * @returns {Set<string>} A Set of unique predicate IRIs.
  */
 function getAllTablePredicates() {
-    if (!hotInstance) return new Set();
+    if (!gridInstance) return new Set();
 
     const allPredicates = new Set();
-    const headers = hotInstance.getColHeader();
+    const headers = gridInstance.getColHeader();
     
     // Adjust this based on where your first predicate column starts (e.g., 3 after IRI, Label, Type)
     const PREDICATE_START_INDEX = BASE_COLS - 3; // Assuming first 3 of BASE_COLS are not predicates
@@ -3187,62 +2883,6 @@ function handleFileTypeChange() {
 
 
 /**
- * Extracts and returns the lowercase file extension from a filename.
- * Logs the result and errors for debugging.
- *
- * @param {string} filename - The name of the file (e.g. "data.csv")
- * @returns {string} - The file extension in lowercase (e.g. "csv")
- */
-function parseFileExtension(filename) {
-  try {
-    console.info(`[parseFileExtension] Received filename: ${filename}`);
-    const ext = CoreUtils.parseFileExtension ? CoreUtils.parseFileExtension(filename) : '';
-    if (!ext) {
-      if (typeof filename !== 'string') {
-        console.error("[parseFileExtension] Invalid input: expected string");
-      } else {
-        console.warn("[parseFileExtension] No extension found or empty extension");
-      }
-      return '';
-    }
-    console.info(`[parseFileExtension] Parsed extension: ${ext}`);
-    return ext;
-  } catch (error) {
-    console.error("[parseFileExtension] Unexpected error:", error);
-    return '';
-  }
-}
-
-
-/**
- * Detects the file format type based on the file extension.
- * Supports spreadsheets, ontologies (coming soon), or returns 'unsupported'.
- *
- * @param {string} extension - File extension (lowercase, no dot)
- * @returns {string} - 'spreadsheet', 'ontology', or 'unsupported'
- */
-function detectFormatByExtension(extension) {
-  console.info(`[detectFormatByExtension] Checking extension: ${extension}`);
-
-  try {
-    const detected = CoreUtils.detectFormatByExtension
-      ? CoreUtils.detectFormatByExtension(extension)
-      : 'unsupported';
-    if (detected === 'spreadsheet') {
-      console.info("[detectFormatByExtension] Detected spreadsheet format");
-    } else if (detected === 'ontology') {
-      console.info("[detectFormatByExtension] Detected ontology format");
-    } else {
-      console.warn("[detectFormatByExtension] Unsupported extension");
-    }
-    return detected;
-  } catch (error) {
-    console.error("[detectFormatByExtension] Unexpected error:", error);
-    return 'unsupported';
-  }
-}
-
-/**
  * Parses CSV, TSV, XLS, or XLSX into a 2D row array using SheetJS.
  *
  * @param {File} file - The file object (from drag/drop or input)
@@ -3250,55 +2890,41 @@ function detectFormatByExtension(extension) {
  * @param {boolean} hasHeaderRow - Whether the first row is a header
  * @returns {Promise<{rows: string[][], header: string[] | null}>}
  */
-function parseSpreadsheetData(file, extension, hasHeaderRow) {
-  return new Promise((resolve, reject) => {
-    console.info(`[parseSpreadsheetData] Reading ${file.name}, header=${hasHeaderRow}`);
+async function parseSpreadsheetData(file, extension, hasHeaderRow) {
+  console.info(`[parseSpreadsheetData] Reading ${file.name}, header=${hasHeaderRow}`);
 
-    var reader = new FileReader();
+  try {
+    const isWorkbook = extension === "xls" || extension === "xlsx";
+    // Browser file I/O stops here; SheetJS parsing/normalization belongs to the tabular parsing cycle.
+    const data = isWorkbook
+      ? await readFileAsArrayBuffer(file)
+      : await readFileAsText(file);
 
-    reader.onload = function (event) {
-      try {
-        var data = event.target.result;
+    // Read workbook
+    var workbook = XLSX.read(data, {
+      type: isWorkbook ? 'array' : 'string',
+      raw: false
+    });
 
-        // Read workbook
-        var workbook = XLSX.read(data, {
-          type: extension === "xls" || extension === "xlsx" ? 'binary' : 'string',
-          raw: false
-        });
+    // Use first sheet
+    var sheetName = workbook.SheetNames[0];
+    var sheet = workbook.Sheets[sheetName];
 
-        // Use first sheet
-        var sheetName = workbook.SheetNames[0];
-        var sheet = workbook.Sheets[sheetName];
-
-        // Convert to 2D array
-        var options = {
-          header: 1, // raw rows
-          blankrows: false
-        };
-        var allRows = XLSX.utils.sheet_to_json(sheet, options);
-
-        var header = hasHeaderRow ? allRows[0] : null;
-        var rows = hasHeaderRow ? allRows.slice(1) : allRows;
-
-        resolve({ rows: rows, header: header });
-      } catch (error) {
-        console.error("[parseSpreadsheetData] Error parsing:", error);
-        reject(error);
-      }
+    // Convert to 2D array
+    var options = {
+      header: 1, // raw rows
+      blankrows: false
     };
+    var allRows = XLSX.utils.sheet_to_json(sheet, options);
 
-    reader.onerror = function (e) {
-      console.error("[parseSpreadsheetData] File read error:", e);
-      reject(e);
-    };
+    var header = hasHeaderRow ? allRows[0] : null;
+    var rows = hasHeaderRow ? allRows.slice(1) : allRows;
 
-    // Trigger appropriate read type
-    if (extension === "xls" || extension === "xlsx") {
-      reader.readAsBinaryString(file);
-    } else {
-      reader.readAsText(file);
-    }
-  });
+    return { rows: rows, header: header };
+  } catch (error) {
+    console.error("[parseSpreadsheetData] Error parsing:", error);
+    throw error;
+  }
 }
 
 /**
@@ -3325,7 +2951,7 @@ async function handleInsertDataSave() {
     const hasHeader = document.getElementById("first-row-header").checked;
 
     // Get file extension and parse
-    const extension = parseFileExtension(currentImportFile.name);
+    const extension = getFilenameExtension(currentImportFile.name);
     const parsed = await parseSpreadsheetData(currentImportFile, extension, hasHeader);
     const allHeaders = getColumnHeaders(); // already includes customs
     const allColumns = getColumnDefinitions();
@@ -3342,14 +2968,14 @@ async function handleInsertDataSave() {
 
     // Merge clean data
     const { mergedRows, stats } = mergeTableData(
-      hotInstance.getData(),
+      readCurrentTableRows(),
       result.cleanedRows,
       insertMode
     );
     mergeAxiomRecords(result.axiomRecords, { replace: insertMode === 'replace' });
 
-    hotInstance.setSchema(allHeaders, allColumns);
-    hotInstance.replaceRows(mergedRows, 'LoadData');
+    gridInstance.setSchema(allHeaders, allColumns);
+    gridInstance.replaceRows(mergedRows, 'LoadData');
     harvestRowsIntoVocab?.(mergedRows);
 
     
@@ -3370,122 +2996,32 @@ async function handleInsertDataSave() {
   }
 }
 
-function parseQuadsFromN3Text(text, mimeType) {
-  return new Promise((resolve, reject) => {
-    try {
-      const parser = new N3.Parser({ format: mimeType });
-      const quads = [];
-      parser.parse(text, (error, quad) => {
-        if (error) {
-          reject(new Error(`N3.js parsing error: ${error.message}`));
-          return;
-        }
-        if (quad) {
-          quads.push(quad);
-          return;
-        }
-        resolve(quads);
-      });
-    } catch (error) {
-      reject(new Error(`Parser initialization error: ${error.message}`));
-    }
-  });
-}
-
-async function parseQuadsFromJsonLdText(text) {
-  if (!window.jsonld) {
-    throw new Error('jsonld.min.js is not loaded. Add it to docs/app/jsonld.min.js to import JSON-LD.');
-  }
-
-  let doc;
-  try {
-    doc = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`Invalid JSON-LD: ${error.message}`);
-  }
-
-  const nquads = await window.jsonld.toRDF(doc, { format: 'application/n-quads' });
-  return parseQuadsFromN3Text(nquads, mimeTypes.nquads);
-}
-
 async function parseOntologyText(fileContent, fileName = '') {
-  const extension = parseFileExtension(fileName);
-  const mimeType = mimeTypes[extension] || guessMediaType(fileContent);
-
-  if (mimeType === 'application/rdf+xml') {
-    throw new Error('RDF/XML import is not supported yet. Please convert the file to Turtle, N-Triples, TriG, or JSON-LD first.');
-  }
-
-  if (mimeType === 'application/ld+json') {
-    return parseQuadsFromJsonLdText(fileContent);
-  }
+  const detected = getSupportedMimeTypeForFilename(fileName);
+  const detectedFromText = detectRdfMimeTypeFromText(fileContent);
+  const mimeType = detected && detected.ok && detected.value.category === 'rdf'
+    ? detected.value.mimeType
+    : detectedFromText.value.mimeType;
 
   if (mimeType === 'text/plain') {
     throw new Error('Unsupported ontology file format.');
   }
 
-  return parseQuadsFromN3Text(fileContent, mimeType);
-}
-
-function parseOntologyData(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = async (event) => {
-      try {
-        const fileContent = event.target.result;
-        const quads = await parseOntologyText(fileContent, file.name);
-        resolve(quads);
-      } catch (error) {
-        reject(error instanceof Error ? error : new Error(String(error)));
-      }
-    };
-
-    reader.onerror = () => {
-      reject(new Error('Failed to read the file.'));
-    };
-
-    reader.readAsText(file);
+  const parsed = await parseRdfTextWithAdapters(fileContent, {
+    format: mimeType,
+    runtime: { N3, jsonld: window.jsonld, $rdf: window.$rdf }
   });
+  return parsed.quads;
 }
 
-function deriveOntologyImportTarget(quads) {
-  if (CoreUtils.deriveOntologyImportTarget) {
-    return CoreUtils.deriveOntologyImportTarget(quads, {
-      rdfTypeIri: w3cIRI.RDF_TYPE,
-      owlOntologyIri: w3cIRI.OWL_ONTOLOGY,
-      owlVersionIri: 'http://www.w3.org/2002/07/owl#versionIRI'
-    });
-  }
-
-  const ontologySubjects = new Set();
-  const versionIris = new Map();
-
-  for (const quad of quads || []) {
-    const subject = quad.subject?.value;
-    const predicate = quad.predicate?.value;
-    const object = quad.object?.value;
-    if (!subject || !predicate || !object) continue;
-
-    if (predicate === w3cIRI.RDF_TYPE && object === w3cIRI.OWL_ONTOLOGY) {
-      ontologySubjects.add(subject);
-    }
-    if (predicate === 'http://www.w3.org/2002/07/owl#versionIRI') {
-      versionIris.set(subject, object);
-    }
-  }
-
-  const ontologyIri = ontologySubjects.values().next().value || null;
-  const importIri = ontologyIri ? (versionIris.get(ontologyIri) || ontologyIri) : null;
-
-  return {
-    ontologyIri,
-    importIri
-  };
+async function parseOntologyData(file) {
+  // Browser file I/O stops here; RDF parser selection belongs to the RDF parsing cycle.
+  const fileContent = await readFileAsText(file);
+  return parseOntologyText(fileContent, file.name);
 }
 
 /**
- * Helper function to pivot N3.js quads into a Handsontable-compatible row structure.
+ * Helper function to pivot N3.js quads into the TOM grid row structure.
  * It groups triples by subject and maps predicates to known table columns.
  * @param {Array} quads - Array of quads from parseOntologyData.
  * @param {Array<string>} knownPredicates - Array of column headers (e.g., ["IRI", "rdfs:label", ...])
@@ -3499,7 +3035,7 @@ function validateAndPivotOntologyData(quads, knownPredicates) {
   const customPredicatesByIndex = customHeaders.map((header) => curieToIri(header) || header);
 
   for (const q of quads || []) {
-    if (!q?.subject?.value || q.subject.termType === 'BlankNode') continue;
+    if (!q?.subject?.value || isBlankNodeTerm(q.subject)) continue;
 
     const s = q.subject.value;
     const p = q.predicate.value;
@@ -3507,10 +3043,10 @@ function validateAndPivotOntologyData(quads, knownPredicates) {
 
     if (q.object.termType === 'Literal') {
       const lang = q.object.language ? `@${q.object.language}` : '';
-      const dt = q.object.datatype && q.object.datatype.value !== 'http://www.w3.org/2001/XMLSchema#string'
+      const dt = q.object.datatype && q.object.datatype.value !== COMMON_NAMESPACE_IRIS.xsd.string
         ? `^^<${q.object.datatype.value}>` : '';
       o = `"${q.object.value}"${lang}${dt}`;
-    } else if (q.object.termType === 'BlankNode') {
+    } else if (isBlankNodeTerm(q.object)) {
       o = `_:${q.object.value}`;
     } else {
       o = `<${q.object.value}>`;
@@ -3539,35 +3075,35 @@ function validateAndPivotOntologyData(quads, knownPredicates) {
   for (const [subjectUri, pMap] of subjectData.entries()) {
     if (!subjectUri || subjectUri.startsWith('_:')) continue;
 
-    const rdfTypes = Array.from(pMap.get(w3cIRI.RDF_TYPE)?.values() || []);
+    const rdfTypes = Array.from(pMap.get(COMMON_NAMESPACE_IRIS.rdf.type)?.values() || []);
     const hasType = iri => rdfTypes.includes(`<${iri}>`);
-    if (hasType(w3cIRI.OWL_ONTOLOGY)) continue;
+    if (hasType(COMMON_NAMESPACE_IRIS.owl.Ontology)) continue;
 
     let elementType = '';
-    if (hasType(w3cIRI.OWL_CLASS)) elementType = 'Class';
-    else if (hasType(w3cIRI.OWL_OBJPROP)) elementType = 'ObjectProperty';
-    else if (hasType(w3cIRI.OWL_DATATYPE)) elementType = 'DatatypeProperty';
-    else if (hasType(w3cIRI.OWL_ANNOPROP)) elementType = 'AnnotationProperty';
-    else if (hasType(w3cIRI.OWL_NAMEDIND)) elementType = 'NamedIndividual';
+    if (hasType(COMMON_NAMESPACE_IRIS.owl.Class)) elementType = 'Class';
+    else if (hasType(COMMON_NAMESPACE_IRIS.owl.ObjectProperty)) elementType = 'ObjectProperty';
+    else if (hasType(COMMON_NAMESPACE_IRIS.owl.DatatypeProperty)) elementType = 'DatatypeProperty';
+    else if (hasType(COMMON_NAMESPACE_IRIS.owl.AnnotationProperty)) elementType = 'AnnotationProperty';
+    else if (hasType(COMMON_NAMESPACE_IRIS.owl.NamedIndividual)) elementType = 'NamedIndividual';
     else {
       const classish = getSemanticRdfTypes(rdfTypes);
       if (classish.length) elementType = 'NamedIndividual';
     }
 
-    const label = firstLiteral(Array.from(pMap.get(w3cIRI.RDFS_LABEL)?.values() || []));
-    const definition = firstLiteral(Array.from(pMap.get(w3cIRI.SKOS_DEFINITION)?.values() || []));
+    const label = firstLiteral(Array.from(pMap.get(COMMON_NAMESPACE_IRIS.rdfs.label)?.values() || []));
+    const definition = firstLiteral(Array.from(pMap.get(COMMON_NAMESPACE_IRIS.skos.definition)?.values() || []));
 
     let isA = '';
     if (elementType === 'Class') {
-      isA = iriFromObjects(Array.from(pMap.get(w3cIRI.RDFS_SUBCLASS)?.values() || []));
+      isA = iriFromObjects(Array.from(pMap.get(COMMON_NAMESPACE_IRIS.rdfs.subClassOf)?.values() || []));
     } else if (elementType === 'ObjectProperty' || elementType === 'DatatypeProperty' || elementType === 'AnnotationProperty') {
-      isA = iriFromObjects(Array.from(pMap.get(w3cIRI.RDFS_SUBPROP)?.values() || []));
+      isA = iriFromObjects(Array.from(pMap.get(COMMON_NAMESPACE_IRIS.rdfs.subPropertyOf)?.values() || []));
     } else if (elementType === 'NamedIndividual') {
       const classish = getSemanticRdfTypes(rdfTypes);
       if (classish.length) isA = classish[0];
     }
 
-    const curatedVals = Array.from(pMap.get(w3cIRI.CCO_CURATEDIN)?.values() || []);
+    const curatedVals = Array.from(pMap.get(COMMON_NAMESPACE_IRIS.cco2.curatedIn)?.values() || []);
     const curatedIn = iriFromObjects(curatedVals) || firstLiteral(curatedVals);
 
     const newRow = new Array(knownPredicates.length).fill('');
@@ -3661,14 +3197,14 @@ async function handleInsertOntologySave() {
 
     // Merge clean data (this logic remains identical)
     const { mergedRows, stats } = mergeTableData(
-      hotInstance.getData(),
+      readCurrentTableRows(),
       result.cleanedRows,
       insertMode
     );
     mergeAxiomRecords(result.axiomRecords, { replace: insertMode === 'replace' });
 
-    hotInstance.setSchema(allHeaders, allColumns);
-    hotInstance.replaceRows(mergedRows, 'LoadData');
+    gridInstance.setSchema(allHeaders, allColumns);
+    gridInstance.replaceRows(mergedRows, 'LoadData');
     harvestRowsIntoVocab?.(mergedRows);
 
     
@@ -3727,8 +3263,8 @@ async function handlePrimarySave() {
 function autoSelectFileType(file) {
   if (!file) return;
 
-  const extension = parseFileExtension(file.name);
-  const detectedType = detectFormatByExtension(extension);
+  const extension = getFilenameExtension(file.name);
+  const detectedType = getInputKindForExtension(extension);
   const nextType = detectedType === 'ontology' ? 'ontology' : 'spreadsheet';
   document.querySelector(`input[name="file-type"][value="${nextType}"]`).checked = true;
   handleFileTypeChange();
@@ -3770,31 +3306,31 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
     "subject": activeSubjectHeader,
     "label": "label",
     "rdfs:label": "label",
-    "http://www.w3.org/2000/01/rdf-schema#label": "label",
+    [COMMON_NAMESPACE_IRIS.rdfs.label]: "label",
     "element type": "element type",
     "type": "element type",
     "rdf:type": "element type",
-    "http://www.w3.org/1999/02/22-rdf-syntax-ns#type": "element type",
+    [COMMON_NAMESPACE_IRIS.rdf.type]: "element type",
     "definition": "definition",
     "skos:definition": "definition",
-    "http://www.w3.org/2004/02/skos/core#definition": "definition",
+    [COMMON_NAMESPACE_IRIS.skos.definition]: "definition",
     "is a": "is a",
     "subclass of": "is a",
     "rdfs:subClassOf": "is a",
-    "http://www.w3.org/2000/01/rdf-schema#subClassOf": "is a",
+    [COMMON_NAMESPACE_IRIS.rdfs.subClassOf]: "is a",
     "subproperty of": "is a",
     "rdfs:subPropertyOf": "is a",
-    "http://www.w3.org/2000/01/rdf-schema#subPropertyOf": "is a",
+    [COMMON_NAMESPACE_IRIS.rdfs.subPropertyOf]: "is a",
     "is curated in": "is curated in",
     "is defined by": "is curated in",
     "is curated in ontology": "is curated in",
     "cco2:ont00001760": "is curated in",
-    "https://www.commoncoreontologies.org/ont00001760": "is curated in",
+    [COMMON_NAMESPACE_IRIS.cco2.curatedIn]: "is curated in",
     "has curation status": "has curation status",
     "obo:IAO_0000114": "has curation status",
-    "http://purl.obolibrarry.org/obo/IAO_0000114": "has curation status",
+    [COMMON_NAMESPACE_IRIS.iao.curationStatus]: "has curation status",
     "cco2:ont00001753": "acronym",
-    "https://www.commoncoreontologies.org/ont00001753": "acronym",
+    [COMMON_NAMESPACE_IRIS.cco2.acronym]: "acronym",
     "cceo:acronym": "acronym"
     // Add more aliases as needed
   };
@@ -3885,7 +3421,7 @@ function validateTableData(rows, header, knownPredicates, hasHeaderRow) {
 /**
  * Merges cleaned spreadsheet data into the current table data.
  *
- * @param {string[][]} currentRows - Existing HOT data rows
+ * @param {string[][]} currentRows - Existing grid data rows.
  * @param {string[][]} newRows - New validated rows
  * @param {'append'|'replace'} mode - How to insert data
  * @returns {{ mergedRows: string[][], stats: { original: number, appended: number, total: number } }}
@@ -3936,27 +3472,17 @@ function mergeTableData(currentRows, newRows, mode) {
  * @param {*} duration 
  */
 function showToast(message, type = "success", duration = 3000) {
-  try {
-    const container = document.getElementById("toast-container");
-    const toast = document.createElement("div");
-
-    toast.classList.add("toast", type);
-    toast.textContent = message;
-
-    container.appendChild(toast);
-    setTimeout(() => toast.classList.add("show"), 200);
-
-    setTimeout(() => {
-      toast.classList.remove("show");
-      setTimeout(() => container.removeChild(toast), 1000);
-    }, duration);
-  } catch (error) {
-    console.error("Toast error:", error);
-  }
+  const result = renderToastNotification({
+    message,
+    severity: type,
+    timeoutMs: duration,
+    containerId: 'toast-container'
+  });
+  if (!result.ok) console.error("Toast error:", result.error);
 }
 
 // Attach event listener to the "Save to Database" button
-document.getElementById('saveToDatabaseBtn').addEventListener('click', saveRDFtoIndexedDB);
+document.getElementById('saveToDatabaseBtn').addEventListener('click', storeTomWorkspaceProjectState);
 
 // Ontology settings modal open/close/save
 document.getElementById('ontologySettingsModalSaveSettingsBtn').addEventListener('click', saveOntologySettingsFromModal);
@@ -4050,10 +3576,17 @@ function handlePrefixInputChange() {
 
 // Add new prefix
 function handleAddPrefix() {
-  const prefix = document.getElementById('new-prefix').value.trim();
-  const iri = document.getElementById('new-prefix-iri').value.trim();
+  const rawPrefix = document.getElementById('new-prefix').value.trim();
+  const rawIri = document.getElementById('new-prefix-iri').value.trim();
 
-  if (!prefix || !iri) return;
+  if (!rawPrefix || !rawIri) return;
+
+  const normalized = normalizePrefixMap({ [rawPrefix]: rawIri });
+  const [[prefix, iri] = []] = Object.entries(normalized.prefixes);
+  if (!prefix || !iri) {
+    alert(normalized.warnings[0] || 'Prefix must be a valid Turtle prefix and IRI must be absolute.');
+    return;
+  }
   if (iriPrefixes[prefix]) {
     alert('Prefix already exists!');
     return;
@@ -4097,16 +3630,17 @@ async function setLocalImport(iri, { content, mediaType }) {
   const settings = getOntologySettings();
 
   // Ensure owl:imports list exists and includes the IRI
-  settings[w3cIRI.OWL_IMPORTS] = settings[w3cIRI.OWL_IMPORTS] || [];
-  if (!settings[w3cIRI.OWL_IMPORTS].includes(iri)) {
-    settings[w3cIRI.OWL_IMPORTS].push(iri);
+  settings[COMMON_NAMESPACE_IRIS.owl.imports] = settings[COMMON_NAMESPACE_IRIS.owl.imports] || [];
+  if (!settings[COMMON_NAMESPACE_IRIS.owl.imports].includes(iri)) {
+    settings[COMMON_NAMESPACE_IRIS.owl.imports].push(iri);
   }
 
   // Store local cache under a separate key
   settings.owlImportsLocal = settings.owlImportsLocal || {};
+  const detected = detectRdfMimeTypeFromText(content);
   settings.owlImportsLocal[iri] = {
     content,
-    mediaType: mediaType || guessMediaType(content),
+    mediaType: mediaType || detected.value.mimeType,
     updatedAt: new Date().toISOString(),
   };
 
@@ -4114,22 +3648,16 @@ async function setLocalImport(iri, { content, mediaType }) {
 }
 
 function fileNameForMediaType(mediaType) {
-  switch (mediaType) {
-    case 'application/ld+json': return 'import.jsonld';
-    case 'application/n-triples': return 'import.nt';
-    case 'application/trig': return 'import.trig';
-    case 'application/rdf+xml': return 'import.rdf';
-    case 'text/turtle':
-    default:
-      return 'import.ttl';
-  }
+  const preferredExtension = getPreferredExtensionForMimeType(mediaType);
+  if (preferredExtension && preferredExtension.ok) return `import.${preferredExtension.value}`;
+  return 'import.ttl';
 }
 
 async function cacheImportedOntology({ iri, ontologyIri, content, mediaType, quads }) {
   const settings = getOntologySettings();
-  settings[w3cIRI.OWL_IMPORTS] = settings[w3cIRI.OWL_IMPORTS] || [];
-  if (!settings[w3cIRI.OWL_IMPORTS].includes(iri)) {
-    settings[w3cIRI.OWL_IMPORTS].push(iri);
+  settings[COMMON_NAMESPACE_IRIS.owl.imports] = settings[COMMON_NAMESPACE_IRIS.owl.imports] || [];
+  if (!settings[COMMON_NAMESPACE_IRIS.owl.imports].includes(iri)) {
+    settings[COMMON_NAMESPACE_IRIS.owl.imports].push(iri);
   }
 
   settings.owlImportsLocal = settings.owlImportsLocal || {};
@@ -4146,7 +3674,11 @@ async function cacheImportedOntology({ iri, ontologyIri, content, mediaType, qua
 
 async function processOntologyImportFile(file, fallbackIri = null) {
   const content = await file.text();
-  const mediaType = mimeTypes[parseFileExtension(file.name)] || guessMediaType(content);
+  const detected = getSupportedMimeTypeForFilename(file.name);
+  const detectedFromText = detectRdfMimeTypeFromText(content);
+  const mediaType = detected && detected.ok && detected.value.category === 'rdf'
+    ? detected.value.mimeType
+    : detectedFromText.value.mimeType;
   const quads = await parseOntologyText(content, file.name);
   const derived = deriveOntologyImportTarget(quads);
   const targetIri = derived.importIri || fallbackIri;
@@ -4170,16 +3702,6 @@ async function processOntologyImportFile(file, fallbackIri = null) {
   };
 }
 
-// Simple media type guessing based on content
-function guessMediaType(text) {
-  if (CoreUtils.guessMediaType) return CoreUtils.guessMediaType(text);
-  if (/^\s*\{[\s\S]*"@context"\s*:/.test(text) || /^\s*\[[\s\S]*"@context"\s*:/.test(text)) return "application/ld+json";
-  if (/<rdf:RDF\b/.test(text)) return "application/rdf+xml";
-  if (/^\s*@prefix\b|@base\b|:\s/.test(text)) return "text/turtle";
-  if (/^\s*<[^>]+>\s+<[^>]+>\s+/.test(text)) return "application/n-triples";
-  return "text/plain";
-}
-
 // This function opens the ontology imports modal and populates it with current imports.
 // It retrieves the imports from the ontology settings and displays them with their status.
 async function openImportsModal() {
@@ -4189,7 +3711,7 @@ async function openImportsModal() {
 
   // ensure cache is loaded
   const settings = getOntologySettings();
-  const imports = settings[w3cIRI.OWL_IMPORTS] || [];
+  const imports = settings[COMMON_NAMESPACE_IRIS.owl.imports] || [];
   const importsMap = getImportsMap();
 
   imports.forEach((iri) => {
@@ -4255,9 +3777,9 @@ async function addImportIRI() {
   if (!iri) return;
 
   const settings = getOntologySettings();
-  settings[w3cIRI.OWL_IMPORTS] = settings[w3cIRI.OWL_IMPORTS] || [];
-  if (!settings[w3cIRI.OWL_IMPORTS].includes(iri)) {
-    settings[w3cIRI.OWL_IMPORTS].push(iri);
+  settings[COMMON_NAMESPACE_IRIS.owl.imports] = settings[COMMON_NAMESPACE_IRIS.owl.imports] || [];
+  if (!settings[COMMON_NAMESPACE_IRIS.owl.imports].includes(iri)) {
+    settings[COMMON_NAMESPACE_IRIS.owl.imports].push(iri);
     await saveOntologySettings(settings);
   }
 
@@ -4441,9 +3963,9 @@ setupInsertDataModalListeners();
 
 function populateSettingsUi() {
   const s = getOntologySettings();
-  document.getElementById('ontology-label-input').value = s[w3cIRI.RDFS_LABEL] || '';
-  document.getElementById('ontology-creator-input').value = s[w3cIRI.DCTERMS_CREATOR] || '';
-  document.getElementById('ontology-description-input').value = s[w3cIRI.DCTERMS_DESCRIPTION] || '';
+  document.getElementById('ontology-label-input').value = s[COMMON_NAMESPACE_IRIS.rdfs.label] || '';
+  document.getElementById('ontology-creator-input').value = s[COMMON_NAMESPACE_IRIS.dcterms.creator] || '';
+  document.getElementById('ontology-description-input').value = s[COMMON_NAMESPACE_IRIS.dcterms.description] || '';
   document.getElementById('ontology-base-iri-input').value = s.base || '';
 
   const delimiterRadio = document.querySelector(`input[name="base-iri-delimiter"][value="${s.delimiter || '/'}"]`);
@@ -4463,7 +3985,7 @@ function populateSettingsUi() {
 async function bootstrapApp() {
   await settingsLoad();
   await rehydrateImportedOntologies();
-  initHandsontable();
+  initializeOntologyGrid();
   populateSettingsUi();
   setIsCuratedInForAllRows();
   updateReloadSessionButton();
@@ -4472,7 +3994,7 @@ async function bootstrapApp() {
 
 TOM.Core = {
   bootstrap: bootstrapApp,
-  getHotInstance: () => hotInstance,
+  getGridInstance: () => gridInstance,
   getCustomPredicates: () => getCustomPredicateIris(),
   getPredicateRegistry: () => getPredicateRegistry().map((record) => ({ ...record })),
   getActiveView: () => getActiveViewKey(),
@@ -4489,7 +4011,7 @@ TOM.Core = {
   setAxiomRecord,
   confirmAddPredicate,
   saveOntologySettingsFromModal,
-  saveRDFtoIndexedDB,
+  storeTomWorkspaceProjectState,
   reloadSavedSession,
   handlePrimarySave,
   handleExport,

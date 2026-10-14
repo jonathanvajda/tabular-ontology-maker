@@ -1,0 +1,652 @@
+/**
+ * @file Common namespace registry data and registry-derived prefix maps.
+ *
+ * This module owns common namespace facts. Project/user prefixes should extend
+ * this registry through `mergeProjectPrefixes`, not mutate this object.
+ */
+
+/**
+ * @typedef {Readonly<{
+ *   prefix: string,
+ *   namespaceIri: string,
+ *   ids: Readonly<Record<string, string>>
+ * }>} NamespaceRegistryEntry
+ */
+
+const deepFreeze = (value) => {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) {
+    return value;
+  }
+  Object.freeze(value);
+  for (const childValue of Object.values(value)) {
+    deepFreeze(childValue);
+  }
+  return value;
+};
+
+const defineEntry = (entry) => Object.freeze({
+  ...entry,
+  ids: Object.freeze(entry.ids || {})
+});
+
+/**
+ * Common ontology namespace registry.
+ *
+ * The `ids` object records frequently referenced local identifiers inside a
+ * namespace without requiring every app to hard-code the same IRI fragments.
+ *
+ * @type {Readonly<Record<string, NamespaceRegistryEntry>>}
+ */
+export const COMMON_NAMESPACE_REGISTRY = Object.freeze({
+  rdf: defineEntry({
+    prefix: 'rdf',
+    namespaceIri: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+    ids: {
+      type: 'type',
+      Property: 'Property',
+      Statement: 'Statement',
+      subject: 'subject',
+      predicate: 'predicate',
+      object: 'object',
+      Bag: 'Bag',
+      Seq: 'Seq',
+      Alt: 'Alt',
+      value: 'value',
+      List: 'List',
+      first: 'first',
+      rest: 'rest',
+      nil: 'nil',
+      langString: 'langString',
+      HTML: 'HTML',
+      XMLLiteral: 'XMLLiteral',
+      JSON: 'JSON',
+      PlainLiteral: 'PlainLiteral'
+    }
+  }),
+  rdfs: defineEntry({
+    prefix: 'rdfs',
+    namespaceIri: 'http://www.w3.org/2000/01/rdf-schema#',
+    ids: {
+      Resource: 'Resource',
+      Class: 'Class',
+      Literal: 'Literal',
+      Datatype: 'Datatype',
+      Container: 'Container',
+      ContainerMembershipProperty: 'ContainerMembershipProperty',
+      member: 'member',
+      label: 'label',
+      comment: 'comment',
+      domain: 'domain',
+      range: 'range',
+      subClassOf: 'subClassOf',
+      subPropertyOf: 'subPropertyOf',
+      seeAlso: 'seeAlso',
+      isDefinedBy: 'isDefinedBy'
+    }
+  }),
+  owl: defineEntry({
+    prefix: 'owl',
+    namespaceIri: 'http://www.w3.org/2002/07/owl#',
+    ids: {
+      AllDifferent: 'AllDifferent',
+      AllDisjointClasses: 'AllDisjointClasses',
+      AllDisjointProperties: 'AllDisjointProperties',
+      Annotation: 'Annotation',
+      AnnotationProperty: 'AnnotationProperty',
+      AsymmetricProperty: 'AsymmetricProperty',
+      Axiom: 'Axiom',
+      Class: 'Class',
+      DataRange: 'DataRange',
+      Datatype: 'Datatype',
+      DatatypeProperty: 'DatatypeProperty',
+      DeprecatedClass: 'DeprecatedClass',
+      DeprecatedProperty: 'DeprecatedProperty',
+      FunctionalProperty: 'FunctionalProperty',
+      InverseFunctionalProperty: 'InverseFunctionalProperty',
+      IrreflexiveProperty: 'IrreflexiveProperty',
+      NamedIndividual: 'NamedIndividual',
+      NegativePropertyAssertion: 'NegativePropertyAssertion',
+      Nothing: 'Nothing',
+      ObjectProperty: 'ObjectProperty',
+      Ontology: 'Ontology',
+      OntologyProperty: 'OntologyProperty',
+      ReflexiveProperty: 'ReflexiveProperty',
+      Restriction: 'Restriction',
+      SymmetricProperty: 'SymmetricProperty',
+      Thing: 'Thing',
+      TransitiveProperty: 'TransitiveProperty',
+      allValuesFrom: 'allValuesFrom',
+      annotatedProperty: 'annotatedProperty',
+      annotatedSource: 'annotatedSource',
+      annotatedTarget: 'annotatedTarget',
+      assertionProperty: 'assertionProperty',
+      backwardCompatibleWith: 'backwardCompatibleWith',
+      bottomDataProperty: 'bottomDataProperty',
+      bottomObjectProperty: 'bottomObjectProperty',
+      cardinality: 'cardinality',
+      complementOf: 'complementOf',
+      datatypeComplementOf: 'datatypeComplementOf',
+      deprecated: 'deprecated',
+      differentFrom: 'differentFrom',
+      disjointUnionOf: 'disjointUnionOf',
+      disjointWith: 'disjointWith',
+      distinctMembers: 'distinctMembers',
+      equivalentClass: 'equivalentClass',
+      equivalentProperty: 'equivalentProperty',
+      hasKey: 'hasKey',
+      hasSelf: 'hasSelf',
+      hasValue: 'hasValue',
+      imports: 'imports',
+      incompatibleWith: 'incompatibleWith',
+      intersectionOf: 'intersectionOf',
+      inverseOf: 'inverseOf',
+      maxCardinality: 'maxCardinality',
+      maxQualifiedCardinality: 'maxQualifiedCardinality',
+      members: 'members',
+      minCardinality: 'minCardinality',
+      minQualifiedCardinality: 'minQualifiedCardinality',
+      onClass: 'onClass',
+      onDataRange: 'onDataRange',
+      onDatatype: 'onDatatype',
+      oneOf: 'oneOf',
+      onProperties: 'onProperties',
+      onProperty: 'onProperty',
+      priorVersion: 'priorVersion',
+      propertyChainAxiom: 'propertyChainAxiom',
+      propertyDisjointWith: 'propertyDisjointWith',
+      qualifiedCardinality: 'qualifiedCardinality',
+      sameAs: 'sameAs',
+      someValuesFrom: 'someValuesFrom',
+      sourceIndividual: 'sourceIndividual',
+      targetIndividual: 'targetIndividual',
+      targetValue: 'targetValue',
+      topDataProperty: 'topDataProperty',
+      topObjectProperty: 'topObjectProperty',
+      unionOf: 'unionOf',
+      versionInfo: 'versionInfo',
+      versionIRI: 'versionIRI',
+      withRestrictions: 'withRestrictions'
+    }
+  }),
+  xsd: defineEntry({
+    prefix: 'xsd',
+    namespaceIri: 'http://www.w3.org/2001/XMLSchema#',
+    ids: {
+      string: 'string',
+      boolean: 'boolean',
+      decimal: 'decimal',
+      float: 'float',
+      double: 'double',
+      duration: 'duration',
+      dateTime: 'dateTime',
+      time: 'time',
+      date: 'date',
+      gYearMonth: 'gYearMonth',
+      gYear: 'gYear',
+      gMonthDay: 'gMonthDay',
+      gDay: 'gDay',
+      gMonth: 'gMonth',
+      hexBinary: 'hexBinary',
+      base64Binary: 'base64Binary',
+      anyURI: 'anyURI',
+      QName: 'QName',
+      NOTATION: 'NOTATION',
+      normalizedString: 'normalizedString',
+      token: 'token',
+      language: 'language',
+      NMTOKEN: 'NMTOKEN',
+      NMTOKENS: 'NMTOKENS',
+      Name: 'Name',
+      NCName: 'NCName',
+      ID: 'ID',
+      IDREF: 'IDREF',
+      IDREFS: 'IDREFS',
+      ENTITY: 'ENTITY',
+      ENTITIES: 'ENTITIES',
+      integer: 'integer',
+      nonPositiveInteger: 'nonPositiveInteger',
+      negativeInteger: 'negativeInteger',
+      long: 'long',
+      int: 'int',
+      short: 'short',
+      byte: 'byte',
+      nonNegativeInteger: 'nonNegativeInteger',
+      unsignedLong: 'unsignedLong',
+      unsignedInt: 'unsignedInt',
+      unsignedShort: 'unsignedShort',
+      unsignedByte: 'unsignedByte',
+      positiveInteger: 'positiveInteger'
+    }
+  }),
+  xhtml: defineEntry({
+    prefix: 'xhtml',
+    namespaceIri: 'http://www.w3.org/1999/xhtml',
+    ids: {}
+  }),
+  skos: defineEntry({
+    prefix: 'skos',
+    namespaceIri: 'http://www.w3.org/2004/02/skos/core#',
+    ids: {
+      Collection: 'Collection',
+      Concept: 'Concept',
+      ConceptScheme: 'ConceptScheme',
+      OrderedCollection: 'OrderedCollection',
+      altLabel: 'altLabel',
+      broadMatch: 'broadMatch',
+      broader: 'broader',
+      broaderTransitive: 'broaderTransitive',
+      changeNote: 'changeNote',
+      closeMatch: 'closeMatch',
+      definition: 'definition',
+      editorialNote: 'editorialNote',
+      exactMatch: 'exactMatch',
+      example: 'example',
+      hasTopConcept: 'hasTopConcept',
+      hiddenLabel: 'hiddenLabel',
+      historyNote: 'historyNote',
+      inScheme: 'inScheme',
+      mappingRelation: 'mappingRelation',
+      member: 'member',
+      memberList: 'memberList',
+      narrowMatch: 'narrowMatch',
+      narrower: 'narrower',
+      narrowerTransitive: 'narrowerTransitive',
+      notation: 'notation',
+      note: 'note',
+      prefLabel: 'prefLabel',
+      related: 'related',
+      relatedMatch: 'relatedMatch',
+      scopeNote: 'scopeNote',
+      semanticRelation: 'semanticRelation',
+      topConceptOf: 'topConceptOf'
+    }
+  }),
+  dcterms: defineEntry({
+    prefix: 'dcterms',
+    namespaceIri: 'http://purl.org/dc/terms/',
+    ids: {
+      Agent: 'Agent',
+      AgentClass: 'AgentClass',
+      BibliographicResource: 'BibliographicResource',
+      FileFormat: 'FileFormat',
+      Frequency: 'Frequency',
+      Jurisdiction: 'Jurisdiction',
+      LicenseDocument: 'LicenseDocument',
+      LinguisticSystem: 'LinguisticSystem',
+      Location: 'Location',
+      LocationPeriodOrJurisdiction: 'LocationPeriodOrJurisdiction',
+      MediaType: 'MediaType',
+      MediaTypeOrExtent: 'MediaTypeOrExtent',
+      MethodOfAccrual: 'MethodOfAccrual',
+      MethodOfInstruction: 'MethodOfInstruction',
+      Period: 'Period',
+      PeriodOfTime: 'PeriodOfTime',
+      PhysicalMedium: 'PhysicalMedium',
+      PhysicalResource: 'PhysicalResource',
+      Policy: 'Policy',
+      ProvenanceStatement: 'ProvenanceStatement',
+      RightsStatement: 'RightsStatement',
+      SizeOrDuration: 'SizeOrDuration',
+      Standard: 'Standard',
+      abstract: 'abstract',
+      accessRights: 'accessRights',
+      accrualMethod: 'accrualMethod',
+      accrualPeriodicity: 'accrualPeriodicity',
+      accrualPolicy: 'accrualPolicy',
+      alternative: 'alternative',
+      audience: 'audience',
+      available: 'available',
+      bibliographicCitation: 'bibliographicCitation',
+      conformsTo: 'conformsTo',
+      contributor: 'contributor',
+      coverage: 'coverage',
+      created: 'created',
+      creator: 'creator',
+      date: 'date',
+      dateAccepted: 'dateAccepted',
+      dateCopyrighted: 'dateCopyrighted',
+      dateSubmitted: 'dateSubmitted',
+      description: 'description',
+      educationLevel: 'educationLevel',
+      extent: 'extent',
+      format: 'format',
+      hasFormat: 'hasFormat',
+      hasPart: 'hasPart',
+      hasVersion: 'hasVersion',
+      identifier: 'identifier',
+      instructionalMethod: 'instructionalMethod',
+      isFormatOf: 'isFormatOf',
+      isPartOf: 'isPartOf',
+      isReferencedBy: 'isReferencedBy',
+      isReplacedBy: 'isReplacedBy',
+      isRequiredBy: 'isRequiredBy',
+      issued: 'issued',
+      isVersionOf: 'isVersionOf',
+      language: 'language',
+      license: 'license',
+      mediator: 'mediator',
+      medium: 'medium',
+      modified: 'modified',
+      provenance: 'provenance',
+      publisher: 'publisher',
+      references: 'references',
+      relation: 'relation',
+      replaces: 'replaces',
+      requires: 'requires',
+      rights: 'rights',
+      rightsHolder: 'rightsHolder',
+      source: 'source',
+      spatial: 'spatial',
+      subject: 'subject',
+      tableOfContents: 'tableOfContents',
+      temporal: 'temporal',
+      title: 'title',
+      type: 'type',
+      valid: 'valid'
+    }
+  }),
+  dc: defineEntry({
+    prefix: 'dc',
+    namespaceIri: 'http://purl.org/dc/elements/1.1/',
+    ids: {
+      title: 'title',
+      description: 'description',
+      rights: 'rights',
+      accessRights: 'accessRights',
+      bibliographicCitation: 'bibliographicCitation',
+      license: 'license',
+      rightsHolder: 'rightsHolder',
+      creator: 'creator',
+      contributor: 'contributor'
+    }
+  }),
+  obo: defineEntry({
+    prefix: 'obo',
+    namespaceIri: 'http://purl.obolibrary.org/obo/',
+    ids: {}
+  }),
+  bfo: defineEntry({
+    prefix: 'bfo',
+    namespaceIri: 'http://purl.obolibrary.org/obo/BFO_',
+    ids: {
+      genericallyDependentContinuant: '0000031',
+      role: '0000023',
+      continuantPartOf: '0000176',
+      hasContinuantPart: '0000178',
+      bearerOf: '0000196'
+    }
+  }),
+  iao: defineEntry({
+    prefix: 'iao',
+    namespaceIri: 'http://purl.obolibrary.org/obo/IAO_',
+    ids: {
+      definition: '0000115',
+      preferredTerm: '0000111',
+      definitionSource: '0000119',
+      exampleOfUsage: '0000112',
+      editorNote: '0000116',
+      termEditor: '0000117',
+      alternativeTerm: '0000118',
+      metadataComplete: '0000120',
+      metadataIncomplete: '0000123',
+      uncurated: '0000124',
+      pendingFinalVetting: '0000125',
+      readyForRelease: '0000122',
+      curationStatus: '0000114',
+      curatorNote: '0000232',
+      elucidation: '0000600',
+      obsolescenceReason: '0000231',
+      requiresDiscussion: '0000428',
+      termReplacedBy: '0100001',
+      acronym: '0000606'
+    }
+  }),
+  oboInOwl: defineEntry({
+    prefix: 'oboInOwl',
+    namespaceIri: 'http://www.geneontology.org/formats/oboInOwl#',
+    ids: {
+      hasDbXref: 'hasDbXref',
+      hasExactSynonym: 'hasExactSynonym',
+      hasNarrowSynonym: 'hasNarrowSynonym',
+      hasBroadSynonym: 'hasBroadSynonym',
+      hasRelatedSynonym: 'hasRelatedSynonym',
+      hasOBONamespace: 'hasOBONamespace',
+      id: 'id'
+    }
+  }),
+  swrl: defineEntry({
+    prefix: 'swrl',
+    namespaceIri: 'http://www.w3.org/2003/11/swrl#',
+    ids: {
+      Imp: 'Imp'
+    }
+  }),
+  cceo: defineEntry({
+    prefix: 'cceo',
+    namespaceIri: 'http://www.ontologyrepository.com/CommonCoreOntologies/',
+    ids: {
+      acronym: 'ont00001753',
+      ComputerProgramExecution: 'ComputerProgramExecution',
+      alternativeLabel: 'alternative_label',
+      definition: 'definition',
+      definitionSource: 'definition_source',
+      doctrinalSource: 'doctrinal_source',
+      exampleOfUsage: 'example_of_usage',
+      elucidation: 'elucidation',
+      hasTextValue: 'has_text_value',
+      hasIntegerValue: 'has_integer_value',
+      hasDecimalValue: 'has_decimal_value',
+      hasDateValue: 'has_date_value',
+      hasDatetimeValue: 'has_datetime_value',
+      hasBooleanValue: 'has_boolean_value',
+      curatedIn: 'is_curated_in_ontology'
+    }
+  }),
+  cco2: defineEntry({
+    prefix: 'cco2',
+    namespaceIri: 'https://www.commoncoreontologies.org/',
+    ids: {
+      database: 'ont00000756',
+      emailBox: 'ont00000906',
+      emailMessage: 'ont00000640',
+      emailMessaging: 'ont00000492',
+      informationContentEntity: 'ont00000958',
+      person: 'ont00001262',
+      acronym: 'ont00001753',
+      definitionSource: 'ont00001754',
+      doctrinalSource: 'ont00001745',
+      curatedIn: 'ont00001760',
+      isTokenizedBy: 'ont00001761',
+      hasTextValue: 'ont00001765',
+      hasDatetimeValue: 'ont00001767',
+      hasUriValue: 'ont00001768',
+      hasDecimalValue: 'ont00001769',
+      hasDoubleValue: 'ont00001770',
+      hasDateValue: 'ont00001771',
+      hasBooleanValue: 'ont00001772',
+      hasIntegerValue: 'ont00001773',
+      isSubjectOf: 'ont00001801'
+    }
+  }),
+  foaf: defineEntry({
+    prefix: 'foaf',
+    namespaceIri: 'http://xmlns.com/foaf/0.1/',
+    ids: {}
+  }),
+  prov: defineEntry({
+    prefix: 'prov',
+    namespaceIri: 'http://www.w3.org/ns/prov#',
+    ids: {}
+  }),
+  dcat: defineEntry({
+    prefix: 'dcat',
+    namespaceIri: 'http://www.w3.org/ns/dcat#',
+    ids: {}
+  }),
+  geo: defineEntry({
+    prefix: 'geo',
+    namespaceIri: 'http://www.w3.org/2003/01/geo/wgs84_pos#',
+    ids: {}
+  }),
+  geojson: defineEntry({
+    prefix: 'geojson',
+    namespaceIri: 'https://purl.org/geojson/vocab#',
+    ids: {}
+  }),
+  vcard: defineEntry({
+    prefix: 'vcard',
+    namespaceIri: 'http://www.w3.org/2006/vcard/ns#',
+    ids: {}
+  }),
+  okea: defineEntry({
+    prefix: 'okea',
+    namespaceIri: 'https://github.com/jonathanvajda/okea/',
+    ids: {
+      OntologyOfKnowledgeEngineeringArtifacts: 'OntologyOfKnowledgeEngineeringArtifacts',
+      OntologyMetadataProfile: 'OntologyMetadataProfile',
+      Graph: 'Graph',
+      Project: 'Project',
+      Setting: 'Setting',
+      WorkspaceInclusion: 'WorkspaceInclusion',
+      activeArtifact: 'activeArtifact',
+      appId: 'appId',
+      artifact: 'artifact',
+      artifactKind: 'artifactKind',
+      documentCount: 'documentCount',
+      enabled: 'enabled',
+      fileExtension: 'fileExtension',
+      fileName: 'fileName',
+      fingerprint: 'fingerprint',
+      graphIri: 'graphIri',
+      hasGeneratingSoftwareApplicationName: 'has_generating_software_application_name',
+      hasGenerationRunIdentifier: 'has_generation_run_identifier',
+      hasGitRepositoryUrl: 'has_git_repository_url',
+      hasIssueTrackerUrl: 'has_issue_tracker_url',
+      hasIriLocalNameDelimiterTextValue: 'has_iri_local_name_delimiter_text_value',
+      hasIriLocalNameStyleTextValue: 'has_iri_local_name_style_text_value',
+      hasIriPolicyModeTextValue: 'has_iri_policy_mode_text_value',
+      hasIriVersionInsertionPositionTextValue: 'has_iri_version_insertion_position_text_value',
+      hasIriVersionTokenStrategyTextValue: 'has_iri_version_token_strategy_text_value',
+      hasOntologyDownloadUrl: 'has_ontology_download_url',
+      hasOntologyBaseIri: 'has_ontology_base_iri',
+      hasOpaqueIriLocalNameIntegerStartValue: 'has_opaque_iri_local_name_integer_start_value',
+      hasOpaqueIriLocalNameIntegerWidthValue: 'has_opaque_iri_local_name_integer_width_value',
+      hasOpaqueIriLocalNamePrefixTextValue: 'has_opaque_iri_local_name_prefix_text_value',
+      hasQualityAssuranceReportUrl: 'has_quality_assurance_report_url',
+      includeMode: 'includeMode',
+      inputArtifact: 'inputArtifact',
+      materialization: 'materialization',
+      metadata: 'metadata',
+      ontologyCount: 'ontologyCount',
+      outputArtifact: 'outputArtifact',
+      payload: 'payload',
+      role: 'role',
+      runKind: 'runKind',
+      schemaVersion: 'schemaVersion',
+      scope: 'scope',
+      settingKey: 'settingKey',
+      storageBackend: 'storageBackend',
+      storageRef: 'storageRef',
+      summary: 'summary',
+      tag: 'tag',
+      target: 'target',
+      targetType: 'targetType',
+      uiState: 'uiState'
+    }
+  })
+});
+
+/**
+ * Builds full IRI maps from registry IDs while preserving the registry shape.
+ *
+ * @param {Readonly<Record<string, NamespaceRegistryEntry>>} [registry]
+ * Registry to read from.
+ * @returns {Readonly<Record<string, Readonly<Record<string, string>>>>}
+ * Frozen object keyed by registry key, then by the entry's stable ID keys.
+ */
+export function namespaceIriMapFromRegistry(registry = COMMON_NAMESPACE_REGISTRY) {
+  return deepFreeze(Object.fromEntries(
+    Object.entries(registry || {}).map(([registryKey, entry]) => [
+      registryKey,
+      Object.fromEntries(
+        Object.entries(entry.ids || {}).map(([idKey, localName]) => [
+          idKey,
+          `${entry.namespaceIri}${localName}`
+        ])
+      )
+    ])
+  ));
+}
+
+/**
+ * Generated full IRIs for the common namespace registry.
+ */
+export const COMMON_NAMESPACE_IRIS = namespaceIriMapFromRegistry();
+
+/**
+ * Converts a namespace registry into the package's plain prefix-map shape.
+ *
+ * @param {Readonly<Record<string, NamespaceRegistryEntry>>} [registry]
+ * Registry entries keyed by any stable name.
+ * @returns {Readonly<Record<string, string>>} Frozen prefix-to-namespace map.
+ */
+export function namespacePrefixMapFromRegistry(registry = COMMON_NAMESPACE_REGISTRY) {
+  return Object.freeze(Object.fromEntries(
+    Object.values(registry).map((entry) => [entry.prefix, entry.namespaceIri])
+  ));
+}
+
+/**
+ * Derives a namespace-to-prefix reverse map from a prefix map.
+ *
+ * @param {Record<string, string>} prefixes - Prefix-to-namespace map.
+ * @returns {Readonly<Record<string, string>>} Frozen namespace-to-prefix map.
+ */
+export function namespaceToPrefixMap(prefixes = namespacePrefixMapFromRegistry()) {
+  return Object.freeze(Object.fromEntries(
+    Object.entries(prefixes || {}).map(([prefix, namespaceIri]) => [namespaceIri, prefix])
+  ));
+}
+
+/**
+ * Builds a full IRI from a registry entry and one of its known local IDs.
+ *
+ * @param {string} registryKey - Key in `COMMON_NAMESPACE_REGISTRY`.
+ * @param {string} idKey - Key in the entry's `ids` object.
+ * @param {Readonly<Record<string, NamespaceRegistryEntry>>} [registry]
+ * Registry to read from.
+ * @returns {Readonly<{ok: true, value: string}> | Readonly<{ok: false, error: 'unknown namespace'|'unknown namespace id', input: string}>}
+ */
+export function iriForNamespaceId(registryKey, idKey, registry = COMMON_NAMESPACE_REGISTRY) {
+  const entry = registry?.[registryKey];
+  if (!entry) return Object.freeze({ ok: false, error: 'unknown namespace', input: String(registryKey || '') });
+  const local = entry.ids?.[idKey];
+  if (!local) return Object.freeze({ ok: false, error: 'unknown namespace id', input: String(idKey || '') });
+  return Object.freeze({ ok: true, value: `${entry.namespaceIri}${local}` });
+}
+
+/**
+ * Builds a CURIE from a registry entry and one of its known local IDs.
+ *
+ * This is for display, serialization setup, and JSON-LD context compaction.
+ * Internal semantic data records should continue to use full IRIs from
+ * `COMMON_NAMESPACE_IRIS` or `iriForNamespaceId`.
+ *
+ * @param {string} registryKey - Key in `COMMON_NAMESPACE_REGISTRY`.
+ * @param {string} idKey - Key in the entry's `ids` object.
+ * @param {Readonly<Record<string, NamespaceRegistryEntry>>} [registry]
+ * Registry to read from.
+ * @returns {Readonly<{ok: true, value: string, prefix: string, localName: string}> | Readonly<{ok: false, error: 'unknown namespace'|'unknown namespace id', input: string}>}
+ */
+export function curieForNamespaceId(registryKey, idKey, registry = COMMON_NAMESPACE_REGISTRY) {
+  const entry = registry?.[registryKey];
+  if (!entry) return Object.freeze({ ok: false, error: 'unknown namespace', input: String(registryKey || '') });
+  const localName = entry.ids?.[idKey];
+  if (!localName) return Object.freeze({ ok: false, error: 'unknown namespace id', input: String(idKey || '') });
+  return Object.freeze({
+    ok: true,
+    value: `${entry.prefix}:${localName}`,
+    prefix: entry.prefix,
+    localName
+  });
+}
